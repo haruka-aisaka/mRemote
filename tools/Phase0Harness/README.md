@@ -47,7 +47,7 @@ Command-line Simulator build (signing disabled):
 
 ```sh
 xcodebuild \
-  -project ios/Phase0Harness/Phase0Harness.xcodeproj \
+  -project tools/Phase0Harness/Phase0Harness.xcodeproj \
   -scheme Phase0Harness \
   -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' \
@@ -58,7 +58,7 @@ Run unit tests on an installed Simulator by replacing the destination:
 
 ```sh
 xcodebuild \
-  -project ios/Phase0Harness/Phase0Harness.xcodeproj \
+  -project tools/Phase0Harness/Phase0Harness.xcodeproj \
   -scheme Phase0Harness \
   -destination 'platform=iOS Simulator,name=<installed iPad simulator>' \
   CODE_SIGNING_ALLOWED=NO test
@@ -68,7 +68,7 @@ The protocol-independent input and `SecTrust` tests can also run without a
 Simulator:
 
 ```sh
-swift test --package-path ios/Phase0Harness
+swift test --package-path tools/Phase0Harness
 ```
 
 ## Native RDP smoke build
@@ -95,7 +95,7 @@ Then build or archive the statically linked app:
 
 ```sh
 xcodebuild \
-  -project ios/Phase0Harness/Phase0Harness.xcodeproj \
+  -project tools/Phase0Harness/Phase0Harness.xcodeproj \
   -scheme Phase0HarnessNative \
   -configuration Release \
   -destination 'generic/platform=iOS' \
@@ -103,7 +103,7 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO build
 
 xcodebuild \
-  -project ios/Phase0Harness/Phase0Harness.xcodeproj \
+  -project tools/Phase0Harness/Phase0Harness.xcodeproj \
   -scheme Phase0HarnessNative \
   -configuration Release \
   -destination 'generic/platform=iOS' \
@@ -119,7 +119,7 @@ inspection, use the non-distributable audit scheme:
 
 ```sh
 xcodebuild \
-  -project ios/Phase0Harness/Phase0Harness.xcodeproj \
+  -project tools/Phase0Harness/Phase0Harness.xcodeproj \
   -scheme Phase0HarnessNativeSymbolAudit \
   -configuration SymbolAudit \
   -destination 'generic/platform=iOS' \

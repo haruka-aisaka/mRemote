@@ -54,7 +54,7 @@ Deliberately carried forward rather than done here:
 |---|---|---|
 | Native dependency | [`config/dependencies/freerdp.lock`](../config/dependencies/freerdp.lock), build/verification scripts, notices, and SPDX SBOM | A generated XCFramework under `artifacts/` is intentionally ignored and must be rebuilt or retained as test evidence |
 | C ABI | [`bridge/`](../bridge/) opaque session API, pinned FreeRDP 3.31.1 adapter, strict PEM-to-DER certificate challenge, BGRA frames, bounded key/pointer queue, channel telemetry, count/hash-only `CF_UNICODETEXT` probe, DISP resize request, and PCM `rdpsnd` contract | Host contract tests deliberately use the unavailable/mock backend; only the generated bridge XCFramework contains the real adapter |
-| iOS harness | [`ios/Phase0Harness/`](../ios/Phase0Harness/) UIKit/Metal surface, physical input routing, HID-to-Set-1 mapping, pointer routes, IME proxies, `SecTrust` evaluator, and native bridge session | The fixture scheme remains connection-free; `Phase0HarnessNative` links both generated XCFrameworks and can establish the real session |
+| iOS harness | [`tools/Phase0Harness/`](../tools/Phase0Harness/) UIKit/Metal surface, physical input routing, HID-to-Set-1 mapping, pointer routes, IME proxies, `SecTrust` evaluator, and native bridge session | The fixture scheme remains connection-free; `Phase0HarnessNative` links both generated XCFrameworks and can establish the real session |
 | Windows observer | [`tools/KeyEcho/`](../tools/KeyEcho/) Win32 low-level keyboard event recorder and JSONL analyzer | The executable must be built and run on Windows |
 | Evidence | [`records/`](records/) Core test record, optional detailed baseline schema/matrix, validators, and legacy KeyProbe inventory | The first Core Gate needs no JSON baseline or matrix; templates and Simulator results are not physical-device evidence |
 | Certificate research | [`notes/freerdp-3.31.1-certificate-spike.md`](notes/freerdp-3.31.1-certificate-spike.md) | Source inspection proves callback feasibility, not NLA/TLS behavior |
@@ -92,7 +92,7 @@ scripts/verify-rdp-bridge-xcframework.sh \
 (cd artifacts && shasum -a 256 -c mRemoteRDPBridge.xcframework.sha256)
 
 # After creating the unsigned Release and SymbolAudit archives documented in
-# ios/Phase0Harness/README.md, inspect their distribution shape and static symbols
+# tools/Phase0Harness/README.md, inspect their distribution shape and static symbols
 scripts/verify-phase0-native-archives.sh \
   /tmp/mremote-phase0-native.xcarchive \
   /tmp/mremote-phase0-native-symbol-audit.xcarchive
@@ -106,7 +106,7 @@ tools/KeyEcho/tests/test-analyzer.sh
 env \
   SWIFTPM_MODULECACHE_OVERRIDE=/tmp/mremote-phase0-swiftpm-module-cache \
   CLANG_MODULE_CACHE_PATH=/tmp/mremote-phase0-clang-module-cache \
-  swift test --package-path ios/Phase0Harness \
+  swift test --package-path tools/Phase0Harness \
   --scratch-path /tmp/mremote-phase0-swiftpm-build
 ```
 

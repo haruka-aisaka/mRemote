@@ -46,7 +46,7 @@
 
 ### 実装
 
-- module/target 構成、DI、OSLog category（`ios/mRemote/` の SwiftPM package: `SessionCore` / `Persistence` / `AppleAdapters`）
+- module/target 構成、DI、OSLog category（`Packages/mRemoteKit/` の SwiftPM package: `SessionCore` / `Persistence` / `AppleAdapters`）
 - `ConnectionProfile`、RDP payload、global settings、migration
 - Keychain credential repository、trust repository
 - 接続先一覧、空状態、追加/編集/複製/削除 sheet

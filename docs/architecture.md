@@ -67,6 +67,16 @@ flowchart TB
 | `AppleAdapters` | Keychain、UIPasteboard、AVFoundation、OSLog | SessionCore |
 | `Persistence` | プロファイル/設定の schema と migration | SessionCore |
 
+リポジトリ上の配置は次のとおり。単一プロダクトなので、platform ではなく役割で切る。
+
+| モジュール | 配置 |
+|---|---|
+| `mRemoteApp`、各 Feature | `App/` と `mRemote.xcodeproj`（Phase 1 の UI 着手時に作成） |
+| `SessionCore`、`Persistence`、`AppleAdapters` | `Packages/mRemoteKit/` |
+| `InputCore`、`RDPProtocol` | Phase 3 で `Packages/mRemoteKit/` へ追加。現在は `tools/Phase0Harness/` 内にある |
+| `RemoteSurface` | Phase 2 で追加。現在は harness の `RemoteSurfaceView` |
+| `FreeRDPBridge` | `bridge/`（C）と `artifacts/` の生成 XCFramework |
+
 将来は `SSHProtocol` と `TerminalSurface` を追加する。`ConnectionFeature` は protocol discriminator に応じた設定セクションを差し込み、`SessionFeature` は session が提供する surface kind (`desktop`/`terminal`) を表示する。
 
 ## 4. コア interface

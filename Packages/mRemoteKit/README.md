@@ -18,8 +18,8 @@ inside them.
 ## Build and test
 
 ```sh
-swift build --package-path ios/mRemote
-swift test --package-path ios/mRemote
+swift build --package-path Packages/mRemoteKit
+swift test --package-path Packages/mRemoteKit
 ```
 
 The active toolchain must be a full Xcode rather than the Command Line Tools,
@@ -27,7 +27,7 @@ otherwise the test targets cannot resolve XCTest:
 
 ```sh
 env DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  swift test --package-path ios/mRemote
+  swift test --package-path Packages/mRemoteKit
 ```
 
 ## What is deliberately not covered by these tests
