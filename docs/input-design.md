@@ -157,6 +157,8 @@ RDP の keyboard PDU は USB HID usage をそのまま受け取らない。`Keyb
 
 先頭 2 行の英数/かなは本アプリの必須意味変換である。スクリーンショットでは Intl1（ろ）と Intl3（¥）のアプリ到達も確認済みだが、Intl2/4/5 と LANG3/4/5 は未検出である。また、いずれも remote scan code/IME 動作までは未検証である。PC JIS 実機と Windows 側 `KeyEcho` で候補 mapping を確定してから対応表を固定する。
 
+Phase 0 harness の `RDPScanCodeMapper` は、上表の日本語キーに加えて HID usage page 0x07 の標準キー（英字/数字/記号、F1–F24、編集・矢印キー、テンキー、左右修飾キー）を PC/AT Set 1 へ変換する。Pause だけは EXTENDED1 の 2 code 連続であり単一 code の `mr_rdp_key_event` で表現できないため、意図的に未対応（送信前に drop）とする。
+
 scan code/flag は magic number を送信箇所へ散らさず、FreeRDP の定数または型付きの生成テーブルに集約する。通常キー、右 Ctrl/Alt、Insert/Delete、矢印等の extended/extended1/release flag も unit test の対象にする。
 
 接続時の既定は Windows Japanese layout `0x00000411`、Japanese keyboard type `7` とする。接続 profile で「日本語 106/109」「US」「自動」を選べる余地を残すが、英数/かな→無変換/変換の保証対象は日本語 profile とする。US/自動を選んだ場合はこの保証外であることを接続設定に表示し、誤った意味変換を自動適用しない。
