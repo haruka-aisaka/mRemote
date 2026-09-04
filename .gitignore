@@ -1,4 +1,8 @@
-./work
+work/
 .build/
 artifacts/*
 !artifacts/README.md
+
+# Xcode per-user state
+**/xcuserdata/
+*.xcuserstate
