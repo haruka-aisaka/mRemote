@@ -208,7 +208,7 @@ Windows 側で既知周波数/timestamp の test tone を再生し、次を測�
 | SFT-MOD-01 | 両モードの Ctrl/Alt/Shift/Win one-shot/lock | 状態表示、順序、解放が正しく、marked text 中は先に確定/取消を求める |
 | SFT-SWITCH-01 | composition 中の mode/session 切替 | stale callback、未確定文字、modifier が次 mode/session へ漏れない |
 
-`SFT-POC-01` は Phase 0、残りは Phase 6 の gate とする。
+`SFT-POC-01` を含むソフトウェアキーボード試験は Phase 6 の gate とする。
 
 ## 11. セキュリティ試験
 

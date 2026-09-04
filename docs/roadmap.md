@@ -4,7 +4,7 @@
 
 最も不確実な FreeRDP の iOS build、Japanese scan code、描画/音声 bridge、複数セッションのメモリを先に実機で潰す。UI を作り込んだ後に native core の制約が判明しない順序にする。
 
-期間ではなく exit criteria で phase を区切る。各 phase で未完の native resource、入力押下状態、秘密データが残らない teardown test を加える。
+期間ではなく exit criteria で phase を区切る。各 phase で未完の native resource、入力押下状態、秘密データが残らない teardown test を加える。Phase 0 の `GO` は個人基準で native core を採用する判断であり、製品/互換性/リリースの承認ではない。
 
 ## 2. Phase 0 — Go/No-Go スパイク
 
@@ -19,25 +19,19 @@
 - 端末機種、OS build、キーボード機種/接続方式、iPadOS 関連設定を記録した入力基準環境
 - dependency license 一覧/SBOM の原型
 
-### 検証
+### Core Gate（最初の実機 run）
 
-1. NLA/TLS で実 Windows へ接続し、leaf/chain DER を `SecTrust` + SSL hostname policy で判定して challenge を扱える。
-2. BGRA desktop update を Metal に表示し、1080p/4K の基礎値を測れる。
-3. 英数→`0x7B`、かな→`0x79` の down/up を Windows 側で確認できる。
-4. usage ごとに UIKit/GCKeyboard の送信元を固定し、遅延 secondary event でも二重送信しない。
-5. 対象 press で `super.presses*` を呼ばず、iPadOS IME/入力ソース UI を起動しない (`KEY-IME-02`)。
-6. ASCII capable proxy が host IME mode でローカル日本語 IME を抑止できる (`SFT-POC-01`)。
-7. mouse 左右 click/drag/wheel の down/up/cancel を実機で lossless に取得でき、UIKit または GCMouse の単一送信経路として固定して送れる。
-8. 全 add-in を静的 link し、`cliprdr`/`rdpsnd` SVC と `drdynvc` 上の `disp` DVC を negotiate して実データを往復できる。
-9. `rdpsnd` backend が PCM だけを advertise し、wave confirm を含む callback 契約を確認できる。
-10. 2〜3 session の framebuffer/renderer/codec/worker memory baseline を得る。
-11. Release archive に private API、動的 plugin、不正 architecture がない。
+1. device arm64 の bridge を含む harness を実機で起動できる。
+2. NLA/TLS で実 Windows へ接続し、leaf/chain DER を `SecTrust` + SSL hostname policy で判定して challenge を扱える。
+3. 英数→`0x7B`、かな→`0x79` の各 down/up を Windows 側で 100 cycle 確認できる。
+4. 対象 press で `super.presses*` を呼ばず、iPadOS IME/入力ソース UI を起動しない (`KEY-IME-02`)。
+5. 接続停止・破棄後に callback/wait が残らず、再接続して crash/hang しない。
 
 ### Gate
 
 - FreeRDP を安全に停止/破棄できない、DER を authoritative trust 判定へ渡せない、必須 Japanese key event を送れない、または `KEY-IME-02` を満たせない場合は、その版/方式を採用しない。
-- 版変更、bridge 修正、代替 RDP core 評価の順で再判断する。
-- 合格後に FreeRDP version、codec/channel set、最低 OS を ADR として固定する。
+- 合格後は個人基準で native core を採用し、Phase 1/2 へ進む。版変更、bridge 修正、代替 RDP core 評価が必要な場合だけ Core Gate を再実施する。
+- pointer、4K、channel/audio、複数 session、archive/SBOM、多端末 matrix は実装済みの先行資産として残し、それぞれ Phase 3〜7 または対応機能の実装時に検証する。
 
 ## 3. Phase 1 — アプリ基盤と接続先
 

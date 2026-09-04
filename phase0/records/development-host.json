@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-04T13:08:27+09:00",
+  "host": {
+    "os": "macOS 26.6.2",
+    "os_build": "25G83",
+    "architecture": "arm64"
+  },
+  "toolchain": {
+    "xcode": "26.6",
+    "xcode_build": "17F113",
+    "swift": "6.3.3",
+    "cmake": "4.4.2",
+    "clang": "Apple clang 21.0.0"
+  },
+  "observations": [
+    "No .NET SDK is installed; KeyEcho requires a Windows build host.",
+    "CoreDevice and CoreSimulator services are unavailable inside the filesystem sandbox.",
+    "An unsandboxed read-only check found iOS 26.5 simulators, including iPad models.",
+    "No available physical Phase 0 test device was connected; one iPhone Air was listed as unavailable, so no physical-device baseline was inferred."
+  ]
+}

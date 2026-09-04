@@ -1,1 +1,4 @@
 ./work
+.build/
+artifacts/*
+!artifacts/README.md

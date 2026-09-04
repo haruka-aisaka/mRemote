@@ -137,7 +137,7 @@ FreeRDP/WinPR と必要な channel plugin を固定タグまたは commit から
 - iPhone/iPad device: `arm64`
 - Simulator: `arm64`、開発環境で必要なら `x86_64`
 
-iOS では任意コード/プラグインの後日ロードを行わず、全 add-in をバイナリへ静的リンク/ビルド時登録する。これは RDP wire 上の channel 種別とは別概念である。wire 上では `cliprdr`/`rdpsnd` は Static Virtual Channel、`drdynvc` は Dynamic Virtual Channel を運ぶ SVC、`disp`/`rdpgfx` はその上の DVC として扱う。不要な server、X11、Wayland、PulseAudio、カメラ/デバイス redirection backend は除く。
+iOS では任意コード/プラグインの後日ロードを行わず、全 add-in をバイナリへ静的リンク/ビルド時登録する。これは RDP wire 上の channel 種別とは別概念である。wire 上では `cliprdr`/`rdpsnd` は Static Virtual Channel、`drdynvc` は Dynamic Virtual Channel を運ぶ SVC、`disp`/`rdpgfx` はその上の DVC として扱う。FreeRDP の共通 client loader は `rdpsnd` 有効時に `rdpdr` 登録も要求するため、core `rdpdr` add-in は静的リンクするが、drive/printer/smart-card/serial/parallel の device service backend は無効化する。不要な server、X11、Wayland、PulseAudio、カメラ/デバイス redirection backend は除く。
 
 FreeRDP は Apache-2.0 系だが、リンクする TLS/codec/音声依存を含む Software Bill of Materials と notice を生成する。FFmpeg/OpenH264 等を追加する場合は、バイナリ配布条件と App Store 適合性を個別確認してから有効化する。
 
@@ -257,9 +257,11 @@ stateDiagram-v2
 
 ## 8. 音声
 
-FreeRDP の iOS 用 `RDPSND_DEVICE_PLUGIN` adapter を実装し、`FormatSupported`、`Open`、`SetFormat`、`Play`、`Close`、`Free` と wave confirm の契約を採用版に合わせる。MVP は PCM 形式だけを advertise し、server が選んだ sample block をセッション別 SPSC ring buffer に入れる。ADPCM/AAC 等は decoder を実装・検証した形式だけを後から advertise する。
+Phase 0 の FreeRDP 3.31.1 adapter は stock iOS subsystem を `rdpsnd,sys:ios` で明示選択し、PCM だけを advertise する。同版の public `rdpsndDevicePlugin` は `FormatSupported`、`Open`、`GetVolume`、`SetVolume`、`Play`/`PlayEx`、`Start`（deprecated/unused）、`Close`、`Free`、`DefaultFormat`、`ServerFormatAnnounce` を公開するが、wave block number、server timestamp、Wave Confirm 送信 hook は公開しない。core の `rdpsnd_treat_wave` が `Play`/`PlayEx` の前後に2回の Wave Confirm PDU を送るため、bridge の版非依存 `mr_rdpsnd` 契約から追加 confirm を送ってはならない。
 
-`AudioCoordinator` は process 共通の `AVAudioEngine`/mixer と `AVAudioSession` を所有する。focused session の `Play` だけを ring buffer へ入れ、非 focused session は protocol 上必要な confirm を返しつつ PCM を即時破棄する。focus 切替時は旧/新 session の ring を flush してから新しい sample を受け、過去の backlog を再生しない。
+Phase 5 で session 別 SPSC ring と focused-session policy を接続するには、上記 core-owned confirm を維持したまま、upstream 拡張または3.31.1専用の内部 hook を別途設計する。server が選んだ PCM sample block だけを ring buffer に入れ、ADPCM/AAC 等は decoder を実装・検証した形式だけを後から advertise する。
+
+`AudioCoordinator` は process 共通の `AVAudioEngine`/mixer と `AVAudioSession` を所有する。focused session の PCM だけを ring buffer へ入れ、非 focused session は PCM を即時破棄する一方、FreeRDP core は protocol 上必要な confirm を継続する。focus 切替時は旧/新 session の ring を flush してから新しい sample を受け、過去の backlog を再生しない。
 
 - native audio callback と AV render callback で allocation、lock、actor hop、UI 更新、ディスク I/O をしない。
 - SPSC ring を使う前に採用 FreeRDP 版が session 内の producer callback を一つの直列 context で呼ぶことを確認し、保証されなければ bridge 内で producer を直列化する。

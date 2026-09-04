@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mremote.invalid/schemas/input-baseline-v1.json",
+  "title": "mRemote Phase 0 input baseline",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_id",
+    "captured_at",
+    "operator",
+    "device",
+    "os",
+    "keyboard",
+    "pointer",
+    "ipados_settings",
+    "harness",
+    "windows_target",
+    "connection",
+    "expected_mappings",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "record_id": { "$ref": "#/$defs/nonPlaceholder" },
+    "captured_at": {
+      "allOf": [
+        { "$ref": "#/$defs/nonPlaceholder" },
+        { "format": "date-time" }
+      ]
+    },
+    "operator": { "$ref": "#/$defs/nonPlaceholder" },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_name", "model_identifier", "soc"],
+      "properties": {
+        "model_name": { "$ref": "#/$defs/nonPlaceholder" },
+        "model_identifier": { "$ref": "#/$defs/nonPlaceholder" },
+        "soc": { "$ref": "#/$defs/nonPlaceholder" }
+      }
+    },
+    "os": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product_version", "build"],
+      "properties": {
+        "product_version": { "$ref": "#/$defs/nonPlaceholder" },
+        "build": { "$ref": "#/$defs/nonPlaceholder" }
+      }
+    },
+    "keyboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manufacturer", "model", "layout", "transport", "firmware"],
+      "properties": {
+        "manufacturer": { "$ref": "#/$defs/nonPlaceholder" },
+        "model": { "$ref": "#/$defs/nonPlaceholder" },
+        "layout": { "enum": ["jis", "us", "other"] },
+        "transport": { "enum": ["smart_connector", "usb", "bluetooth"] },
+        "firmware": { "$ref": "#/$defs/nonPlaceholder" }
+      }
+    },
+    "pointer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manufacturer", "model", "kind", "transport", "firmware"],
+      "properties": {
+        "manufacturer": { "$ref": "#/$defs/nonPlaceholder" },
+        "model": { "$ref": "#/$defs/nonPlaceholder" },
+        "kind": { "enum": ["mouse", "trackpad", "none"] },
+        "transport": { "enum": ["integrated", "smart_connector", "usb", "bluetooth", "none"] },
+        "firmware": { "$ref": "#/$defs/nonPlaceholder" }
+      }
+    },
+    "ipados_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hardware_keyboard_layout",
+        "full_keyboard_access",
+        "stage_manager",
+        "window_mode",
+        "caps_lock_switches_language",
+        "globe_key_action",
+        "modifier_remapping",
+        "active_input_sources",
+        "other_accessibility_keyboard_features"
+      ],
+      "properties": {
+        "hardware_keyboard_layout": { "$ref": "#/$defs/nonPlaceholder" },
+        "full_keyboard_access": { "type": "boolean" },
+        "stage_manager": { "type": "boolean" },
+        "window_mode": { "enum": ["full_screen", "split_view", "stage_manager"] },
+        "caps_lock_switches_language": { "type": "boolean" },
+        "globe_key_action": { "$ref": "#/$defs/nonPlaceholder" },
+        "modifier_remapping": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["caps_lock", "control", "option", "command", "globe"],
+          "properties": {
+            "caps_lock": { "$ref": "#/$defs/nonPlaceholder" },
+            "control": { "$ref": "#/$defs/nonPlaceholder" },
+            "option": { "$ref": "#/$defs/nonPlaceholder" },
+            "command": { "$ref": "#/$defs/nonPlaceholder" },
+            "globe": { "$ref": "#/$defs/nonPlaceholder" }
+          }
+        },
+        "active_input_sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/nonPlaceholder" }
+        },
+        "other_accessibility_keyboard_features": { "$ref": "#/$defs/nonPlaceholder" }
+      }
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_commit", "build_configuration", "call_super", "keyboard_source_policy"],
+      "properties": {
+        "git_commit": { "$ref": "#/$defs/nonPlaceholder" },
+        "build_configuration": { "enum": ["Debug", "Release"] },
+        "call_super": { "type": "boolean" },
+        "keyboard_source_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["0x90", "0x91"],
+          "properties": {
+            "0x90": { "$ref": "#/$defs/sourcePolicy" },
+            "0x91": { "$ref": "#/$defs/sourcePolicy" }
+          }
+        }
+      }
+    },
+    "windows_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edition", "version", "build", "keyboard_layout", "keyboard_type",
+        "ime", "ime_key_assignments", "keyecho_version"
+      ],
+      "properties": {
+        "edition": { "$ref": "#/$defs/nonPlaceholder" },
+        "version": { "$ref": "#/$defs/nonPlaceholder" },
+        "build": { "$ref": "#/$defs/nonPlaceholder" },
+        "keyboard_layout": { "const": "0x00000411" },
+        "keyboard_type": { "const": 7 },
+        "ime": { "$ref": "#/$defs/nonPlaceholder" },
+        "ime_key_assignments": { "$ref": "#/$defs/nonPlaceholder" },
+        "keyecho_version": { "$ref": "#/$defs/nonPlaceholder" }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "rdp_server_kind", "network_notes"],
+      "properties": {
+        "transport": { "enum": ["wifi", "ethernet", "other"] },
+        "rdp_server_kind": { "enum": ["physical", "virtual_machine", "cloud"] },
+        "network_notes": { "$ref": "#/$defs/nonPlaceholder" }
+      }
+    },
+    "expected_mappings": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/$defs/mapping" },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": ["hid_usage", "set1_scan_code", "windows_virtual_key"],
+            "properties": {
+              "hid_usage": { "const": "0x91" },
+              "set1_scan_code": { "const": "0x7B" },
+              "windows_virtual_key": { "const": "0x1D" }
+            }
+          }
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["hid_usage", "set1_scan_code", "windows_virtual_key"],
+            "properties": {
+              "hid_usage": { "const": "0x90" },
+              "set1_scan_code": { "const": "0x79" },
+              "windows_virtual_key": { "const": "0x1C" }
+            }
+          }
+        }
+      ]
+    },
+    "notes": { "type": "string" }
+  },
+  "$defs": {
+    "nonPlaceholder": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "^\\s*(?:__REQUIRED|$)" }
+    },
+    "sourcePolicy": {
+      "enum": ["uikit", "game_controller", "unsupported"]
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "hid_usage", "set1_scan_code", "windows_virtual_key"],
+      "properties": {
+        "label": { "$ref": "#/$defs/nonPlaceholder" },
+        "hid_usage": { "type": "string", "pattern": "^0x[0-9A-F]{2}$" },
+        "set1_scan_code": { "type": "string", "pattern": "^0x[0-9A-F]{2}$" },
+        "windows_virtual_key": { "type": "string", "pattern": "^0x[0-9A-F]{2}$" }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+The WinPR HashTable implementation states:
+
+This implementation is based on the public domain hash table implementation
+made by Keith Pomakis:
+
+http://www.pomakis.com/hashtable/hashtable.c
+http://www.pomakis.com/hashtable/hashtable.h
+
+The WinPR modifications and surrounding implementation are licensed under
+Apache-2.0 as part of WinPR.

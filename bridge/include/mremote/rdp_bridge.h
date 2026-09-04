@@ -1,0 +1,423 @@
+#ifndef MREMOTE_RDP_BRIDGE_H
+#define MREMOTE_RDP_BRIDGE_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define MR_RDP_BRIDGE_ABI_VERSION 1u
+#define MR_RDP_DEFAULT_PORT 3389u
+#define MR_RDP_DEFAULT_CERTIFICATE_TIMEOUT_MS 30000u
+#define MR_RDP_MAX_CERTIFICATE_CHAIN 16u
+#define MR_RDP_MAX_CERTIFICATE_DER_BYTES (1024u * 1024u)
+#define MR_RDP_MAX_CERTIFICATE_CHAIN_BYTES (4u * 1024u * 1024u)
+#define MR_RDP_MAX_USERNAME_BYTES 1024u
+#define MR_RDP_MAX_DOMAIN_BYTES 1024u
+#define MR_RDP_MAX_PASSWORD_BYTES 4096u
+#define MR_RDP_DEFAULT_DESKTOP_WIDTH 1280u
+#define MR_RDP_DEFAULT_DESKTOP_HEIGHT 720u
+#define MR_RDP_MIN_DESKTOP_DIMENSION 200u
+#define MR_RDP_MAX_DESKTOP_DIMENSION 8192u
+#define MR_RDP_MAX_DESKTOP_FRAME_BYTES (512u * 1024u * 1024u)
+#define MR_RDP_MAX_DESKTOP_DIRTY_RECTS 512u
+#define MR_RDP_MAX_CLIPBOARD_PROBE_UTF16LE_BYTES (64u * 1024u)
+#define MR_RDP_MAX_WHEEL_DELTA 32767
+#define MR_RDP_SHA256_BYTES 32u
+
+typedef struct mr_rdp_session mr_rdp_session;
+typedef int32_t mr_rdp_status;
+
+enum {
+    MR_RDP_STATUS_OK = 0,
+    MR_RDP_ERROR_INVALID_ARGUMENT = -1,
+    MR_RDP_ERROR_OUT_OF_MEMORY = -2,
+    MR_RDP_ERROR_INVALID_STATE = -3,
+    MR_RDP_ERROR_STOPPED = -4,
+    MR_RDP_ERROR_TIMEOUT = -5,
+    MR_RDP_ERROR_STALE_CHALLENGE = -6,
+    MR_RDP_ERROR_BACKEND_UNAVAILABLE = -7,
+    MR_RDP_ERROR_BACKEND = -8,
+    MR_RDP_ERROR_INVALID_DATA = -9,
+    MR_RDP_ERROR_LIMIT_EXCEEDED = -10,
+    MR_RDP_ERROR_CERTIFICATE_REJECTED = -11,
+    MR_RDP_ERROR_UNSUPPORTED = -12
+};
+
+typedef uint32_t mr_rdp_session_state;
+enum {
+    MR_RDP_SESSION_CREATED = 0,
+    MR_RDP_SESSION_CONNECTING = 1,
+    MR_RDP_SESSION_AWAITING_CERTIFICATE = 2,
+    MR_RDP_SESSION_CONNECTED = 3,
+    MR_RDP_SESSION_STOPPING = 4,
+    MR_RDP_SESSION_STOPPED = 5,
+    MR_RDP_SESSION_FAILED = 6
+};
+
+typedef struct mr_rdp_config {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    uint64_t generation;
+    const char *hostname;
+    uint16_t port;
+    uint16_t reserved;
+    uint32_t certificate_timeout_ms;
+    uint32_t desktop_width;
+    uint32_t desktop_height;
+    const char *username;
+    size_t username_length;
+    const char *domain;
+    size_t domain_length;
+    const char *password;
+    size_t password_length;
+} mr_rdp_config;
+
+/* username/domain/password are borrowed byte spans used only during create;
+ * their lengths exclude any trailing NUL. Username and password must be
+ * non-empty, domain is absent only as NULL/0, and embedded NUL bytes are
+ * rejected. A trailing NUL is optional because the bridge appends its own.
+ * generation zero is reserved and rejected. */
+
+typedef struct mr_rdp_der_blob {
+    const uint8_t *bytes;
+    size_t length;
+} mr_rdp_der_blob;
+
+typedef struct mr_rdp_certificate_challenge {
+    uint32_t struct_size;
+    uint32_t reserved;
+    uint64_t generation;
+    uint64_t challenge_id;
+    const char *hostname;
+    size_t hostname_length;
+    uint16_t port;
+    uint16_t reserved2;
+    uint32_t reserved3;
+    const mr_rdp_der_blob *chain;
+    size_t chain_count;
+} mr_rdp_certificate_challenge;
+
+/* chain[0] is the leaf; remaining blobs are issuer certificates in backend
+ * order. Every blob is one complete DER-encoded X.509 certificate. */
+
+typedef uint8_t mr_rdp_certificate_decision;
+enum {
+    MR_RDP_CERTIFICATE_REJECT = 0,
+    MR_RDP_CERTIFICATE_ACCEPT_SYSTEM_TRUST = 1,
+    MR_RDP_CERTIFICATE_ACCEPT_USER_ONCE = 2,
+    MR_RDP_CERTIFICATE_ACCEPT_PIN = 3
+};
+
+typedef struct mr_rdp_state_event {
+    uint32_t struct_size;
+    mr_rdp_session_state state;
+    uint64_t generation;
+} mr_rdp_state_event;
+
+typedef struct mr_rdp_error_event {
+    uint32_t struct_size;
+    uint32_t reserved;
+    uint64_t generation;
+    mr_rdp_status status;
+    int32_t native_code;
+} mr_rdp_error_event;
+
+typedef struct mr_rdp_rect {
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+} mr_rdp_rect;
+
+typedef struct mr_rdp_desktop_frame {
+    uint32_t struct_size;
+    uint32_t reserved;
+    uint64_t generation;
+    uint64_t surface_generation;
+    uint64_t frame_id;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride;
+    uint32_t reserved2;
+    const uint8_t *bytes;
+    size_t length;
+    const mr_rdp_rect *dirty_rects;
+    size_t dirty_rect_count;
+} mr_rdp_desktop_frame;
+
+typedef uint8_t mr_rdp_channel_kind;
+enum {
+    MR_RDP_CHANNEL_CLIPRDR = 1,
+    MR_RDP_CHANNEL_RDPSND = 2,
+    MR_RDP_CHANNEL_DRDYNVC = 3,
+    MR_RDP_CHANNEL_DISP = 4,
+    MR_RDP_CHANNEL_RDPGFX = 5
+};
+
+typedef uint8_t mr_rdp_channel_transition;
+enum {
+    MR_RDP_CHANNEL_DISCONNECTED = 0,
+    MR_RDP_CHANNEL_CONNECTED = 1
+};
+
+typedef struct mr_rdp_channel_event {
+    uint32_t struct_size;
+    mr_rdp_channel_kind channel;
+    mr_rdp_channel_transition transition;
+    uint16_t reserved;
+    uint64_t generation;
+    uint64_t sequence;
+} mr_rdp_channel_event;
+
+typedef struct mr_rdp_clipboard_probe {
+    uint32_t struct_size;
+    uint32_t reserved;
+    uint64_t probe_id;
+    const uint8_t *utf16le_bytes;
+    size_t utf16le_byte_count;
+} mr_rdp_clipboard_probe;
+
+/* utf16le_bytes contains at least one non-NUL code unit and includes exactly
+ * one trailing U+0000 code unit. Embedded NUL,
+ * unpaired UTF-16 surrogates, odd lengths, and over-limit payloads are
+ * rejected before they reach a backend. The span is borrowed only until
+ * mr_rdp_session_start_clipboard_probe returns. */
+
+typedef uint8_t mr_rdp_clipboard_probe_stage;
+enum {
+    MR_RDP_CLIPBOARD_PROBE_FORMAT_LIST_SENT = 1,
+    MR_RDP_CLIPBOARD_PROBE_FORMAT_LIST_RESPONSE = 2,
+    MR_RDP_CLIPBOARD_PROBE_DATA_REQUEST = 3,
+    MR_RDP_CLIPBOARD_PROBE_DATA_RESPONSE_SENT = 4
+};
+
+typedef struct mr_rdp_clipboard_probe_event {
+    uint32_t struct_size;
+    mr_rdp_clipboard_probe_stage stage;
+    uint8_t reserved[3];
+    mr_rdp_status status;
+    uint32_t reserved2;
+    uint64_t generation;
+    uint64_t sequence;
+    uint64_t probe_id;
+    size_t payload_byte_count;
+    uint8_t payload_sha256[MR_RDP_SHA256_BYTES];
+} mr_rdp_clipboard_probe_event;
+
+typedef struct mr_rdp_display_resize_request {
+    uint32_t struct_size;
+    uint32_t reserved;
+    uint64_t request_id;
+    uint32_t width;
+    uint32_t height;
+} mr_rdp_display_resize_request;
+
+typedef struct mr_rdp_display_resize_event {
+    uint32_t struct_size;
+    mr_rdp_status status;
+    uint64_t generation;
+    uint64_t sequence;
+    uint64_t request_id;
+    uint32_t width;
+    uint32_t height;
+} mr_rdp_display_resize_event;
+
+typedef void (*mr_rdp_state_callback)(
+    void *context,
+    const mr_rdp_state_event *event);
+typedef void (*mr_rdp_certificate_callback)(
+    void *context,
+    const mr_rdp_certificate_challenge *challenge);
+typedef void (*mr_rdp_error_callback)(
+    void *context,
+    const mr_rdp_error_event *event);
+typedef void (*mr_rdp_desktop_frame_callback)(
+    void *context,
+    const mr_rdp_desktop_frame *frame);
+typedef void (*mr_rdp_channel_callback)(
+    void *context,
+    const mr_rdp_channel_event *event);
+typedef void (*mr_rdp_clipboard_probe_callback)(
+    void *context,
+    const mr_rdp_clipboard_probe_event *event);
+typedef void (*mr_rdp_display_resize_callback)(
+    void *context,
+    const mr_rdp_display_resize_event *event);
+
+typedef struct mr_rdp_callbacks {
+    uint32_t struct_size;
+    uint32_t abi_version;
+    mr_rdp_state_callback on_state_changed;
+    mr_rdp_certificate_callback on_certificate_challenge;
+    mr_rdp_error_callback on_error;
+    mr_rdp_desktop_frame_callback on_desktop_frame;
+    mr_rdp_channel_callback on_channel_event;
+    mr_rdp_clipboard_probe_callback on_clipboard_probe_event;
+    mr_rdp_display_resize_callback on_display_resize_event;
+} mr_rdp_callbacks;
+
+typedef uint8_t mr_rdp_key_action;
+enum {
+    MR_RDP_KEY_DOWN = 0,
+    MR_RDP_KEY_UP = 1
+};
+
+/* Raw keyboard Set 1 code plus explicit RDP EXTENDED/EXTENDED1 selectors.
+ * The platform-independent caller does not pass a FreeRDP RDP_SCANCODE.
+ * All reserved bytes must be zero. */
+typedef struct mr_rdp_key_event {
+    uint32_t struct_size;
+    uint16_t code;
+    uint8_t extended;
+    uint8_t extended1;
+    mr_rdp_key_action action;
+    uint8_t reserved[3];
+} mr_rdp_key_event;
+
+typedef uint8_t mr_rdp_pointer_kind;
+enum {
+    MR_RDP_POINTER_MOVE = 0,
+    MR_RDP_POINTER_BUTTON = 1,
+    MR_RDP_POINTER_WHEEL = 2
+};
+
+typedef uint8_t mr_rdp_pointer_button;
+enum {
+    MR_RDP_POINTER_BUTTON_NONE = 0,
+    MR_RDP_POINTER_BUTTON_LEFT = 1,
+    MR_RDP_POINTER_BUTTON_RIGHT = 2,
+    MR_RDP_POINTER_BUTTON_MIDDLE = 3
+};
+
+typedef struct mr_rdp_pointer_event {
+    uint32_t struct_size;
+    uint32_t x;
+    uint32_t y;
+    int32_t wheel_x;
+    int32_t wheel_y;
+    mr_rdp_pointer_kind kind;
+    mr_rdp_pointer_button button;
+    mr_rdp_key_action action;
+    uint8_t reserved;
+} mr_rdp_pointer_event;
+
+/* Each wheel axis is bounded to +/- MR_RDP_MAX_WHEEL_DELTA. The backend may
+ * split one accepted delta across multiple RDP pointer PDUs. */
+
+/* Pointer x/y are already-clamped remote desktop pixel coordinates. Wheel
+ * values are signed accumulated deltas; the backend adapter splits them to
+ * the protocol's per-event magnitude where required. reserved must be zero;
+ * action is DOWN (zero) for MOVE/WHEEL and is meaningful only for BUTTON. */
+
+/*
+ * Initializes ABI-versioned value types. Callers may then replace fields.
+ */
+void mr_rdp_config_init(mr_rdp_config *config);
+void mr_rdp_callbacks_init(mr_rdp_callbacks *callbacks);
+void mr_rdp_key_event_init(mr_rdp_key_event *event);
+void mr_rdp_pointer_event_init(mr_rdp_pointer_event *event);
+void mr_rdp_clipboard_probe_init(mr_rdp_clipboard_probe *probe);
+void mr_rdp_display_resize_request_init(mr_rdp_display_resize_request *request);
+
+/*
+ * Copies config, hostname, credentials, and the callback table before
+ * returning. The context is borrowed and must remain valid until destroy
+ * returns. The copied password is securely cleared on every cleanup path.
+ *
+ * The default CMake build uses an intentionally unavailable backend; the
+ * generated iOS bridge XCFramework selects the pinned FreeRDP adapter. Tests
+ * use the mock factory in rdp_bridge_mock.h.
+ */
+mr_rdp_status mr_rdp_session_create(
+    const mr_rdp_config *config,
+    const mr_rdp_callbacks *callbacks,
+    void *context,
+    mr_rdp_session **out_session);
+
+/*
+ * Runs one session synchronously. All callbacks are serialized on this
+ * calling thread. A session can be run at most once.
+ */
+mr_rdp_status mr_rdp_session_run(mr_rdp_session *session);
+
+/*
+ * Thread-safe and idempotent. It wakes backend I/O and any certificate wait.
+ * It does not wait for callbacks to drain; run returning is the stop barrier.
+ */
+mr_rdp_status mr_rdp_session_request_stop(mr_rdp_session *session);
+
+/*
+ * Answers exactly one active challenge. Both generation and challenge_id
+ * must match. Duplicate, late, or cross-generation answers are rejected.
+ * ACCEPT_SYSTEM_TRUST means the copied chain and hostname were accepted by
+ * the platform SSL trust policy; the bridge never performs silent acceptance.
+ */
+mr_rdp_status mr_rdp_session_respond_certificate(
+    mr_rdp_session *session,
+    uint64_t generation,
+    uint64_t challenge_id,
+    mr_rdp_certificate_decision decision);
+
+/* Rejects/cancels the matching challenge and wakes its worker wait. */
+mr_rdp_status mr_rdp_session_cancel_challenge(
+    mr_rdp_session *session,
+    uint64_t generation,
+    uint64_t challenge_id);
+
+mr_rdp_status mr_rdp_session_send_key(
+    mr_rdp_session *session,
+    const mr_rdp_key_event *event);
+mr_rdp_status mr_rdp_session_send_pointer(
+    mr_rdp_session *session,
+    const mr_rdp_pointer_event *event);
+
+/* Starts a user-initiated, local-to-remote CF_UNICODETEXT exercise. Only the
+ * probe id, stage counters, byte count, and SHA-256 are exposed to callbacks;
+ * clipboard contents never appear in telemetry. The backend must copy the
+ * validated payload before this call returns. The pinned FreeRDP backend
+ * reports MR_RDP_ERROR_TIMEOUT for the awaited stage and releases its copy
+ * when a format-list response or data request takes longer than 10 seconds.
+ * Because CLIPRDR responses have no probe id, retry after timeout requires a
+ * fresh channel/session so a late PDU cannot be attributed to a new probe. */
+mr_rdp_status mr_rdp_session_start_clipboard_probe(
+    mr_rdp_session *session,
+    const mr_rdp_clipboard_probe *probe);
+
+/* Queues one primary, landscape DISP monitor-layout request. Width must be
+ * even so FreeRDP 3.31.1 cannot silently round the recorded dimension. */
+mr_rdp_status mr_rdp_session_request_display_resize(
+    mr_rdp_session *session,
+    const mr_rdp_display_resize_request *request);
+
+/*
+ * Request stop, wait for the registered run/callback and in-flight calls, then
+ * free. Raw-pointer lifetime still belongs to the caller: an external gate
+ * must prevent new invocations before destroy starts and must not leave a call
+ * racing between invocation and its internal in-flight registration. Calling
+ * through a stale handle is never safe. A run known to be active and calls
+ * already registered in flight are drained. Calling this from the
+ * run/callback thread returns MR_RDP_ERROR_INVALID_STATE.
+ */
+mr_rdp_status mr_rdp_session_destroy(mr_rdp_session *session);
+
+const char *mr_rdp_status_name(mr_rdp_status status);
+
+/*
+ * Callback views are immutable and valid only until that callback returns.
+ * Certificate data is a bridge-owned snapshot; desktop bytes and dirty rects
+ * are validated backend-owned views. Copy all views before dispatching
+ * asynchronous Swift/MainActor work. In particular, never retain a
+ * FreeRDP/OpenSSL certificate or GDI framebuffer pointer. Channel, clipboard,
+ * and display telemetry contain no borrowed payload pointers. Callbacks must
+ * return promptly; certificate timeout measurement begins after its callback
+ * returns.
+ */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

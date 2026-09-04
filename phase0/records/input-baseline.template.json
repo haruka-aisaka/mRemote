@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "record_id": "__REQUIRED_UNIQUE_ID__",
+  "captured_at": "__REQUIRED_RFC3339__",
+  "operator": "__REQUIRED_OR_REDACTED__",
+  "device": {
+    "model_name": "__REQUIRED__",
+    "model_identifier": "__REQUIRED__",
+    "soc": "__REQUIRED__"
+  },
+  "os": {
+    "product_version": "__REQUIRED__",
+    "build": "__REQUIRED__"
+  },
+  "keyboard": {
+    "manufacturer": "__REQUIRED__",
+    "model": "__REQUIRED__",
+    "layout": "jis",
+    "transport": "smart_connector",
+    "firmware": "unknown"
+  },
+  "pointer": {
+    "manufacturer": "__REQUIRED_OR_NONE__",
+    "model": "__REQUIRED_OR_NONE__",
+    "kind": "mouse",
+    "transport": "bluetooth",
+    "firmware": "unknown"
+  },
+  "ipados_settings": {
+    "hardware_keyboard_layout": "Japanese-JIS",
+    "full_keyboard_access": false,
+    "stage_manager": false,
+    "window_mode": "full_screen",
+    "caps_lock_switches_language": false,
+    "globe_key_action": "__REQUIRED__",
+    "modifier_remapping": {
+      "caps_lock": "caps_lock",
+      "control": "control",
+      "option": "option",
+      "command": "command",
+      "globe": "globe"
+    },
+    "active_input_sources": [
+      "__REQUIRED__"
+    ],
+    "other_accessibility_keyboard_features": "none"
+  },
+  "harness": {
+    "git_commit": "__REQUIRED__",
+    "build_configuration": "Release",
+    "call_super": false,
+    "keyboard_source_policy": {
+      "0x90": "uikit",
+      "0x91": "uikit"
+    }
+  },
+  "windows_target": {
+    "edition": "__REQUIRED__",
+    "version": "__REQUIRED__",
+    "build": "__REQUIRED__",
+    "keyboard_layout": "0x00000411",
+    "keyboard_type": 7,
+    "ime": "Microsoft IME",
+    "ime_key_assignments": "__REQUIRED__",
+    "keyecho_version": "0.1.0"
+  },
+  "connection": {
+    "transport": "wifi",
+    "rdp_server_kind": "physical",
+    "network_notes": "__REQUIRED_OR_NONE__"
+  },
+  "expected_mappings": [
+    {
+      "label": "eisu_to_nonconvert",
+      "hid_usage": "0x91",
+      "set1_scan_code": "0x7B",
+      "windows_virtual_key": "0x1D"
+    },
+    {
+      "label": "kana_to_convert",
+      "hid_usage": "0x90",
+      "set1_scan_code": "0x79",
+      "windows_virtual_key": "0x1C"
+    }
+  ],
+  "notes": ""
+}

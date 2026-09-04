@@ -1,0 +1,234 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "mRemote FreeRDP native dependency prototype",
+  "documentNamespace": "https://mremote.invalid/spdx/freerdp-@FREERDP_VERSION@-@FREERDP_COMMIT@",
+  "creationInfo": {
+    "created": "@SBOM_CREATED@",
+    "creators": [
+      "Tool: scripts/generate-dependency-metadata.sh"
+    ],
+    "comment": "Phase 0 prototype. Regenerate from config/dependencies/freerdp.lock."
+  },
+  "packages": [
+    {
+      "name": "mRemote-FreeRDP-XCFramework",
+      "SPDXID": "SPDXRef-Package-mRemote-FreeRDP",
+      "versionInfo": "@FREERDP_VERSION@",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "comment": "Static device arm64 and Simulator arm64 assembly. The aggregate includes Apache-2.0, Zlib, Unicode-DFS-2016, public-domain statements, and Solar Designer's permissive fallback terms; binary checksums are emitted beside each built XCFramework."
+    },
+    {
+      "name": "FreeRDP",
+      "SPDXID": "SPDXRef-Package-FreeRDP",
+      "versionInfo": "@FREERDP_VERSION@",
+      "supplier": "Organization: FreeRDP project",
+      "downloadLocation": "git+@FREERDP_GIT_URL@@@FREERDP_COMMIT@",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:github/FreeRDP/FreeRDP@@FREERDP_COMMIT@"
+        },
+        {
+          "referenceCategory": "OTHER",
+          "referenceType": "vcs",
+          "referenceLocator": "git+@FREERDP_GIT_URL@@@FREERDP_COMMIT@"
+        }
+      ]
+    },
+    {
+      "name": "WinPR",
+      "SPDXID": "SPDXRef-Package-WinPR",
+      "versionInfo": "@FREERDP_VERSION@",
+      "supplier": "Organization: FreeRDP project",
+      "downloadLocation": "git+@FREERDP_GIT_URL@@@FREERDP_COMMIT@#winpr",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:github/FreeRDP/FreeRDP@@FREERDP_COMMIT@?subpath=winpr"
+        }
+      ],
+      "comment": "WinPR is built from the winpr/ subdirectory of the locked FreeRDP commit. Separately licensed bundled files are represented as child packages."
+    },
+    {
+      "name": "OpenSSL",
+      "SPDXID": "SPDXRef-Package-OpenSSL",
+      "versionInfo": "@OPENSSL_VERSION@",
+      "supplier": "Organization: OpenSSL Software Foundation",
+      "downloadLocation": "@OPENSSL_ARCHIVE_URL@",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "@OPENSSL_ARCHIVE_SHA256@"
+        }
+      ],
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:github/openssl/openssl@@OPENSSL_TAG@"
+        }
+      ]
+    },
+    {
+      "name": "TPCircularBuffer",
+      "SPDXID": "SPDXRef-Package-TPCircularBuffer",
+      "versionInfo": "@FREERDP_COMMIT@",
+      "supplier": "Organization: A Tasty Pixel",
+      "downloadLocation": "git+@FREERDP_GIT_URL@@@FREERDP_COMMIT@#channels/rdpsnd/client/ios",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Zlib",
+      "licenseDeclared": "Zlib",
+      "copyrightText": "Copyright (C) 2012-2013 A Tasty Pixel",
+      "primaryPackagePurpose": "LIBRARY",
+      "comment": "Bundled iOS rdpsnd ring buffer. Locked file SHA-256: TPCircularBuffer.c @TPCIRCULARBUFFER_C_SHA256@; TPCircularBuffer.h @TPCIRCULARBUFFER_H_SHA256@."
+    },
+    {
+      "name": "Solar Designer MD4 and MD5",
+      "SPDXID": "SPDXRef-Package-Solar-Designer-MD4-MD5",
+      "versionInfo": "@FREERDP_COMMIT@",
+      "supplier": "Person: Alexander Peslyak",
+      "downloadLocation": "git+@FREERDP_GIT_URL@@@FREERDP_COMMIT@#winpr/libwinpr/crypto",
+      "filesAnalyzed": false,
+      "licenseConcluded": "LicenseRef-Solar-Designer-Public-Domain-Fallback",
+      "licenseDeclared": "LicenseRef-Solar-Designer-Public-Domain-Fallback",
+      "copyrightText": "Copyright (c) 2001 Alexander Peslyak if the public-domain dedication is ineffective",
+      "primaryPackagePurpose": "LIBRARY",
+      "comment": "WinPR internal digest implementations. Locked file SHA-256: md4.c @SOLAR_MD4_C_SHA256@; md4.h @SOLAR_MD4_H_SHA256@; md5.c @SOLAR_MD5_C_SHA256@; md5.h @SOLAR_MD5_H_SHA256@."
+    },
+    {
+      "name": "Keith Pomakis HashTable",
+      "SPDXID": "SPDXRef-Package-Keith-Pomakis-HashTable",
+      "versionInfo": "@FREERDP_COMMIT@",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "git+@FREERDP_GIT_URL@@@FREERDP_COMMIT@#winpr/libwinpr/utils/collections/HashTable.c",
+      "filesAnalyzed": false,
+      "licenseConcluded": "LicenseRef-Keith-Pomakis-Public-Domain",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "comment": "WinPR describes its Apache-2.0 HashTable implementation as based on Keith Pomakis's public-domain implementation. Locked file SHA-256: @WINPR_HASHTABLE_C_SHA256@."
+    },
+    {
+      "name": "Unicode CLDR windowsZones data",
+      "SPDXID": "SPDXRef-Package-Unicode-CLDR-WindowsZones",
+      "versionInfo": "2021a",
+      "supplier": "Organization: Unicode, Inc.",
+      "downloadLocation": "git+@FREERDP_GIT_URL@@@FREERDP_COMMIT@#winpr/libwinpr/timezone/WindowsZones.c",
+      "filesAnalyzed": false,
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "@WINPR_WINDOWS_ZONES_C_SHA256@"
+        }
+      ],
+      "licenseConcluded": "Unicode-DFS-2016",
+      "licenseDeclared": "Unicode-DFS-2016",
+      "copyrightText": "Copyright Unicode, Inc.",
+      "primaryPackagePurpose": "FILE",
+      "comment": "Generated WinPR table derived from CLDR common/supplemental/windowsZones.xml; the source comment identifies typeVersion 2021a."
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-mRemote-FreeRDP"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-mRemote-FreeRDP",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-FreeRDP"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-mRemote-FreeRDP",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-WinPR"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-mRemote-FreeRDP",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-OpenSSL"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-mRemote-FreeRDP",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-TPCircularBuffer"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-mRemote-FreeRDP",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-Solar-Designer-MD4-MD5"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-mRemote-FreeRDP",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-Keith-Pomakis-HashTable"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-mRemote-FreeRDP",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-Unicode-CLDR-WindowsZones"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FreeRDP",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-WinPR"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-FreeRDP",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-TPCircularBuffer"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-WinPR",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-Solar-Designer-MD4-MD5"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-WinPR",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-Keith-Pomakis-HashTable"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-WinPR",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-Package-Unicode-CLDR-WindowsZones"
+    }
+  ],
+  "hasExtractedLicensingInfos": [
+    {
+      "licenseId": "LicenseRef-Solar-Designer-Public-Domain-Fallback",
+      "name": "Solar Designer public-domain dedication with permissive fallback",
+      "extractedText": "This software was written by Alexander Peslyak in 2001. No copyright is claimed, and the software is hereby placed in the public domain. In case this attempt to disclaim copyright and place the software in the public domain is deemed null and void, then the software is Copyright (c) 2001 Alexander Peslyak and it is hereby released to the general public under the following terms: Redistribution and use in source and binary forms, with or without modification, are permitted. There's ABSOLUTELY NO WARRANTY, express or implied."
+    },
+    {
+      "licenseId": "LicenseRef-Keith-Pomakis-Public-Domain",
+      "name": "Keith Pomakis HashTable public-domain statement",
+      "extractedText": "This implementation is based on the public domain hash table implementation made by Keith Pomakis. The WinPR changes and surrounding implementation are Apache-2.0."
+    }
+  ]
+}

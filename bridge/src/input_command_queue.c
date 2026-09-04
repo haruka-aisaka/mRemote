@@ -1,0 +1,296 @@
+#include "input_command_queue.h"
+
+#include <limits.h>
+#include <string.h>
+
+static size_t mr_input_queue_index(
+    const mr_input_command_queue *queue,
+    size_t logical_index)
+{
+    return (queue->head + logical_index) % queue->capacity;
+}
+
+static size_t mr_input_queue_used(const mr_input_command_queue *queue)
+{
+    return queue->count + queue->reservation_count;
+}
+
+static size_t mr_input_queue_free(const mr_input_command_queue *queue)
+{
+    const size_t used = mr_input_queue_used(queue);
+    return used < queue->capacity ? queue->capacity - used : 0u;
+}
+
+static void mr_input_queue_append(
+    mr_input_command_queue *queue,
+    const mr_input_command *command)
+{
+    const size_t tail = mr_input_queue_index(queue, queue->count);
+    queue->commands[tail] = *command;
+    ++queue->count;
+}
+
+static int32_t mr_input_saturating_add(int32_t left, int32_t right)
+{
+    const int64_t sum = (int64_t)left + (int64_t)right;
+    if (sum > MR_RDP_MAX_WHEEL_DELTA) {
+        return MR_RDP_MAX_WHEEL_DELTA;
+    }
+    if (sum < -MR_RDP_MAX_WHEEL_DELTA) {
+        return -MR_RDP_MAX_WHEEL_DELTA;
+    }
+    return (int32_t)sum;
+}
+
+static void mr_input_accumulate_wheel(
+    mr_input_command *destination,
+    const mr_input_command *source)
+{
+    destination->value.pointer.x = source->value.pointer.x;
+    destination->value.pointer.y = source->value.pointer.y;
+    destination->value.pointer.wheel_x = mr_input_saturating_add(
+        destination->value.pointer.wheel_x,
+        source->value.pointer.wheel_x);
+    destination->value.pointer.wheel_y = mr_input_saturating_add(
+        destination->value.pointer.wheel_y,
+        source->value.pointer.wheel_y);
+}
+
+static int mr_input_command_is_down(
+    const mr_input_command *command,
+    mr_input_release_reservation *out_reservation)
+{
+    memset(out_reservation, 0, sizeof(*out_reservation));
+    if (command->kind == MR_INPUT_COMMAND_KEY) {
+        if (command->value.key.action != MR_RDP_KEY_DOWN) {
+            return 0;
+        }
+        out_reservation->kind = MR_INPUT_RELEASE_KEY;
+        out_reservation->key_code = command->value.key.code;
+        out_reservation->extended = command->value.key.extended;
+        out_reservation->extended1 = command->value.key.extended1;
+        return 1;
+    }
+    if (command->kind == MR_INPUT_COMMAND_POINTER &&
+        command->value.pointer.kind == MR_RDP_POINTER_BUTTON &&
+        command->value.pointer.action == MR_RDP_KEY_DOWN) {
+        out_reservation->kind = MR_INPUT_RELEASE_BUTTON;
+        out_reservation->button = command->value.pointer.button;
+        return 1;
+    }
+    return 0;
+}
+
+static int mr_input_command_is_up(
+    const mr_input_command *command,
+    mr_input_release_reservation *out_reservation)
+{
+    memset(out_reservation, 0, sizeof(*out_reservation));
+    if (command->kind == MR_INPUT_COMMAND_KEY) {
+        if (command->value.key.action != MR_RDP_KEY_UP) {
+            return 0;
+        }
+        out_reservation->kind = MR_INPUT_RELEASE_KEY;
+        out_reservation->key_code = command->value.key.code;
+        out_reservation->extended = command->value.key.extended;
+        out_reservation->extended1 = command->value.key.extended1;
+        return 1;
+    }
+    if (command->kind == MR_INPUT_COMMAND_POINTER &&
+        command->value.pointer.kind == MR_RDP_POINTER_BUTTON &&
+        command->value.pointer.action == MR_RDP_KEY_UP) {
+        out_reservation->kind = MR_INPUT_RELEASE_BUTTON;
+        out_reservation->button = command->value.pointer.button;
+        return 1;
+    }
+    return 0;
+}
+
+static int mr_input_release_equal(
+    const mr_input_release_reservation *left,
+    const mr_input_release_reservation *right)
+{
+    if (left->kind != right->kind) {
+        return 0;
+    }
+    if (left->kind == MR_INPUT_RELEASE_KEY) {
+        return left->key_code == right->key_code &&
+            left->extended == right->extended &&
+            left->extended1 == right->extended1;
+    }
+    return left->button == right->button;
+}
+
+static size_t mr_input_find_reservation(
+    const mr_input_command_queue *queue,
+    const mr_input_release_reservation *reservation)
+{
+    size_t index;
+    for (index = 0u; index < queue->reservation_count; ++index) {
+        if (mr_input_release_equal(&queue->reservations[index], reservation)) {
+            return index;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static void mr_input_remove_reservation(
+    mr_input_command_queue *queue,
+    size_t reservation_index)
+{
+    size_t index;
+    for (index = reservation_index;
+         index + 1u < queue->reservation_count;
+         ++index) {
+        queue->reservations[index] = queue->reservations[index + 1u];
+    }
+    --queue->reservation_count;
+}
+
+int mr_input_command_queue_init(
+    mr_input_command_queue *queue,
+    size_t capacity)
+{
+    if (queue == NULL || capacity == 0u ||
+        capacity > MR_INPUT_COMMAND_QUEUE_CAPACITY) {
+        return 0;
+    }
+    memset(queue, 0, sizeof(*queue));
+    queue->capacity = capacity;
+    return 1;
+}
+
+void mr_input_command_queue_reset(mr_input_command_queue *queue)
+{
+    if (queue == NULL) {
+        return;
+    }
+    queue->head = 0u;
+    queue->count = 0u;
+    queue->reservation_count = 0u;
+}
+
+mr_input_enqueue_result mr_input_command_queue_enqueue(
+    mr_input_command_queue *queue,
+    const mr_input_command *command)
+{
+    mr_input_release_reservation reservation;
+    size_t index;
+    if (queue == NULL || command == NULL || queue->capacity == 0u ||
+        queue->capacity > MR_INPUT_COMMAND_QUEUE_CAPACITY) {
+        return MR_INPUT_ENQUEUE_INVALID;
+    }
+
+    if (mr_input_command_is_down(command, &reservation)) {
+        index = mr_input_find_reservation(queue, &reservation);
+        if (index != SIZE_MAX) {
+            /* Key repeat or a duplicate pointer down does not create another
+             * future release obligation. It may be dropped under pressure
+             * without risking a stuck remote transition. */
+            if (mr_input_queue_free(queue) == 0u) {
+                return MR_INPUT_ENQUEUE_DROPPED;
+            }
+            mr_input_queue_append(queue, command);
+            return MR_INPUT_ENQUEUE_QUEUED;
+        }
+        if (mr_input_queue_free(queue) < 2u) {
+            return MR_INPUT_ENQUEUE_TRANSITION_OVERFLOW;
+        }
+        mr_input_queue_append(queue, command);
+        queue->reservations[queue->reservation_count] = reservation;
+        ++queue->reservation_count;
+        return MR_INPUT_ENQUEUE_QUEUED;
+    }
+
+    if (mr_input_command_is_up(command, &reservation)) {
+        index = mr_input_find_reservation(queue, &reservation);
+        if (index != SIZE_MAX) {
+            mr_input_remove_reservation(queue, index);
+            mr_input_queue_append(queue, command);
+            return MR_INPUT_ENQUEUE_QUEUED;
+        }
+        if (mr_input_queue_free(queue) == 0u) {
+            return MR_INPUT_ENQUEUE_TRANSITION_OVERFLOW;
+        }
+        mr_input_queue_append(queue, command);
+        return MR_INPUT_ENQUEUE_QUEUED;
+    }
+
+    if (command->kind != MR_INPUT_COMMAND_POINTER) {
+        return MR_INPUT_ENQUEUE_INVALID;
+    }
+    if (command->value.pointer.kind == MR_RDP_POINTER_MOVE) {
+        if (queue->count > 0u) {
+            mr_input_command *tail = &queue->commands[
+                mr_input_queue_index(queue, queue->count - 1u)];
+            if (tail->kind == MR_INPUT_COMMAND_POINTER &&
+                tail->value.pointer.kind == MR_RDP_POINTER_MOVE) {
+                *tail = *command;
+                return MR_INPUT_ENQUEUE_COALESCED;
+            }
+        }
+        if (mr_input_queue_free(queue) > 0u) {
+            mr_input_queue_append(queue, command);
+            return MR_INPUT_ENQUEUE_QUEUED;
+        }
+        /* Never replace an older move across a key/button/wheel boundary:
+         * doing so would reorder pointer state relative to that transition. */
+        return MR_INPUT_ENQUEUE_DROPPED;
+    }
+    if (command->value.pointer.kind == MR_RDP_POINTER_WHEEL) {
+        if (queue->count > 0u) {
+            mr_input_command *tail = &queue->commands[
+                mr_input_queue_index(queue, queue->count - 1u)];
+            if (tail->kind == MR_INPUT_COMMAND_POINTER &&
+                tail->value.pointer.kind == MR_RDP_POINTER_WHEEL) {
+                mr_input_accumulate_wheel(tail, command);
+                return MR_INPUT_ENQUEUE_COALESCED;
+            }
+        }
+        if (mr_input_queue_free(queue) > 0u) {
+            mr_input_queue_append(queue, command);
+            return MR_INPUT_ENQUEUE_QUEUED;
+        }
+        if (queue->count > 0u) {
+            mr_input_command *tail = &queue->commands[
+                mr_input_queue_index(queue, queue->count - 1u)];
+            if (tail->kind == MR_INPUT_COMMAND_POINTER &&
+                tail->value.pointer.kind == MR_RDP_POINTER_MOVE) {
+                /* A wheel event carries its own current coordinates, so it
+                 * may replace only the immediately preceding move. */
+                *tail = *command;
+                return MR_INPUT_ENQUEUE_COALESCED;
+            }
+        }
+        return MR_INPUT_ENQUEUE_DROPPED;
+    }
+    return MR_INPUT_ENQUEUE_INVALID;
+}
+
+int mr_input_command_queue_dequeue(
+    mr_input_command_queue *queue,
+    mr_input_command *out_command)
+{
+    if (queue == NULL || out_command == NULL || queue->capacity == 0u ||
+        queue->count == 0u) {
+        return 0;
+    }
+    *out_command = queue->commands[queue->head];
+    queue->head = (queue->head + 1u) % queue->capacity;
+    --queue->count;
+    if (queue->count == 0u) {
+        queue->head = 0u;
+    }
+    return 1;
+}
+
+size_t mr_input_command_queue_count(const mr_input_command_queue *queue)
+{
+    return queue == NULL ? 0u : queue->count;
+}
+
+size_t mr_input_command_queue_reserved_count(
+    const mr_input_command_queue *queue)
+{
+    return queue == NULL ? 0u : queue->reservation_count;
+}

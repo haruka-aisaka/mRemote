@@ -1,0 +1,9 @@
+# Test evidence may contain machine names, host names, and input traces.
+evidence/
+*.local.json
+*.local.md
+
+!.gitignore
+!*.template.json
+!*.template.md
+!development-host.json
