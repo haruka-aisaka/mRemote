@@ -15,7 +15,15 @@
 
 ## 2. 永続モデル
 
-iOS 17 を最低対象とするため、profile は SwiftData を第一候補とする。persistent certificate pin は Keychain に置く。FreeRDP の設定をそのまま serialize せず、アプリが所有する versioned schema にする。
+profile はアプリが所有する versioned schema で永続化する。FreeRDP の設定をそのまま serialize しない。persistent certificate pin は Keychain に置く。
+
+**採用: 単一 JSON document（`Persistence` module）。** 当初 SwiftData を第一候補としたが、Phase 1 で次の理由から versioned JSON document store を採用した。
+
+- 保存件数は接続先数十件程度で、query engine を必要としない。
+- schema migration を明示的な chain（`SchemaMigrator`）として書けるため、migration test が Simulator なしで開発機上で回せる。SwiftData の migration plan は同じ検証が難しい。
+- 実ファイル 1 個なので、WAL/SHM/temporary file まで data protection を確認する対象が減る。
+
+security 要件は変えていない。ファイルは Application Support 配下に atomic write し、iOS では `completeUntilFirstUserAuthentication` を明示付与する（atomic write は新しい inode を作るため、書き込み option と書き込み後の属性設定の両方で指定する）。件数や query 要件が増えた場合は SwiftData への移行を再検討する。
 
 profile store は iOS Data Protection を有効にし、少なくとも最初の端末 unlock 前には読めない保護クラスを使う。SwiftData の実ファイルだけでなく WAL/SHM と migration 用 temporary file も同じ保護対象であることを実機で確認する。診断 export を除き、profile database や framebuffer/clipboard の temporary file を独自に作らない。
 

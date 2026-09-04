@@ -46,7 +46,7 @@
 
 ### 実装
 
-- module/target 構成、DI、OSLog category
+- module/target 構成、DI、OSLog category（`ios/mRemote/` の SwiftPM package: `SessionCore` / `Persistence` / `AppleAdapters`）
 - `ConnectionProfile`、RDP payload、global settings、migration
 - Keychain credential repository、trust repository
 - 接続先一覧、空状態、追加/編集/複製/削除 sheet
@@ -81,6 +81,7 @@
 
 ### 実装
 
+- Phase 0 harness の `InputRouter`/`RDPScanCodeMapper`/`ServerTrustEvaluator`/`ScrollWheelAccumulator` を `InputCore`/`RDPProtocol` へ移設（harness は入力回帰の治具として残す）
 - `RemoteInputView` first responder と UIKit keyboard capture
 - GCKeyboard lifecycle、usage ごとの静的 source policy、`KeyboardEventArbiter`
 - HID-to-RDP mapping、Japanese layout/type negotiation
