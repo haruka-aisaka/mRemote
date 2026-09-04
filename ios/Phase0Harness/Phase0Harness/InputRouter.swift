@@ -18,6 +18,7 @@ final class KeyboardEventArbiter {
 
     private weak var sink: HarnessInputSink?
     private let journal: EventJournal
+    private let repeatTimer: KeyRepeatTimer?
 
     private var defaultSource: KeyboardEventSource = .uiKit
     private var sourceOverrides: [UInt16: KeyboardEventSource] = [:]
@@ -32,12 +33,40 @@ final class KeyboardEventArbiter {
     private var remotelyPressed: [UInt16: KeyboardEventSource] = [:]
     private var quarantined: Set<UInt16> = []
 
-    private(set) var generation: UInt64 = 1
-    var isGateOpen = true
+    /// Held repeat-eligible usages in press order. A physical keyboard repeats
+    /// the most recent one and resumes on whatever is still held under it.
+    private var repeatCandidates: [UInt16] = []
+    private var repeatTarget: UInt16?
+    private var repeatGeneration: UInt64 = 0
+    private(set) var repeatSettings: KeyRepeatSettings
 
-    init(sink: HarnessInputSink, journal: EventJournal) {
+    private(set) var generation: UInt64 = 1
+    var isGateOpen = true {
+        didSet {
+            guard !isGateOpen else { return }
+            cancelRepeat()
+        }
+    }
+
+    init(
+        sink: HarnessInputSink,
+        journal: EventJournal,
+        repeatTimer: KeyRepeatTimer?,
+        repeatSettings: KeyRepeatSettings = .normal
+    ) {
         self.sink = sink
         self.journal = journal
+        self.repeatTimer = repeatTimer
+        self.repeatSettings = repeatSettings
+    }
+
+    /// Takes effect on the next press. A key held across the change keeps its
+    /// remote down and simply stops repeating.
+    func setRepeatSettings(_ settings: KeyRepeatSettings) {
+        guard settings != repeatSettings else { return }
+        repeatSettings = settings
+        cancelRepeat()
+        journal.append(.state, "key repeat \(settings)")
     }
 
     func requestUIKitPolicy() {
@@ -158,6 +187,7 @@ final class KeyboardEventArbiter {
                 .hardwareKey(usage: event.usage, transition: .down),
                 generation: generation
             )
+            noteRemoteDown(event.usage)
         case .up, .cancel:
             guard remotelyPressed.removeValue(forKey: event.usage) != nil else {
                 journal.appendKeyboardEvent(
@@ -172,6 +202,7 @@ final class KeyboardEventArbiter {
                 .hardwareKey(usage: event.usage, transition: .up),
                 generation: generation
             )
+            noteRemoteUp(event.usage)
         }
         applyPendingPolicyIfNeutral()
     }
@@ -185,6 +216,9 @@ final class KeyboardEventArbiter {
             pendingPolicyTouchedUsages.formUnion(remotelyPressed.keys)
         }
         quarantined.formUnion(heldPhysical)
+
+        cancelRepeat()
+        repeatCandidates.removeAll(keepingCapacity: true)
 
         let pressed = remotelyPressed.keys.sorted()
         remotelyPressed.removeAll(keepingCapacity: true)
@@ -245,6 +279,8 @@ final class KeyboardEventArbiter {
     }
 
     private func install(_ policy: SourcePolicy) {
+        cancelRepeat()
+        repeatCandidates.removeAll(keepingCapacity: true)
         let oldRoutes = pendingPolicyTouchedUsages.map { ($0, source(for: $0)) }
         defaultSource = policy.defaultSource
         sourceOverrides = policy.overrides
@@ -303,6 +339,64 @@ final class KeyboardEventArbiter {
     private func applyPendingPolicyIfNeutral() {
         guard isPhysicallyNeutral, remotelyPressed.isEmpty, let pendingPolicy else { return }
         install(pendingPolicy)
+    }
+
+    private func noteRemoteDown(_ usage: UInt16) {
+        guard KeyRepeatEligibility.repeats(usage) else { return }
+        repeatCandidates.removeAll { $0 == usage }
+        repeatCandidates.append(usage)
+        restartRepeat()
+    }
+
+    private func noteRemoteUp(_ usage: UInt16) {
+        guard repeatCandidates.contains(usage) else { return }
+        let wasTarget = repeatTarget == usage
+        repeatCandidates.removeAll { $0 == usage }
+        guard wasTarget else { return }
+        restartRepeat()
+    }
+
+    /// Arms the initial delay for the newest held candidate. Repeat carries no
+    /// journal line of its own: a per-press line would flood the trace and,
+    /// for a printable usage, would have to be redacted anyway. Every repeat
+    /// still lands in the send counter through the sink.
+    private func restartRepeat() {
+        repeatTimer?.cancel()
+        repeatTarget = nil
+        guard repeatSettings.isEnabled, isGateOpen, let repeatTimer,
+              let usage = repeatCandidates.last else { return }
+        repeatTarget = usage
+        repeatGeneration = generation
+        repeatTimer.schedule(after: repeatSettings.initialDelay) { [weak self] in
+            self?.fireRepeat()
+        }
+    }
+
+    private func fireRepeat() {
+        guard let usage = repeatTarget else { return }
+        // Re-checked at every fire rather than trusted from arming time: the
+        // gate, the quarantine and the remote press can all change underneath
+        // a pending timer, and a repeat must never outlive the down it extends.
+        guard repeatSettings.isEnabled,
+              isGateOpen,
+              generation == repeatGeneration,
+              remotelyPressed[usage] != nil,
+              !quarantined.contains(usage),
+              sourceSwitchDrains[usage] == nil else {
+            cancelRepeat()
+            return
+        }
+        // Down only. The single up stays bound to the physical release, so the
+        // remote never sees an extra transition to unwind.
+        sink?.enqueue(.hardwareKey(usage: usage, transition: .down), generation: generation)
+        repeatTimer?.schedule(after: repeatSettings.interval) { [weak self] in
+            self?.fireRepeat()
+        }
+    }
+
+    private func cancelRepeat() {
+        repeatTimer?.cancel()
+        repeatTarget = nil
     }
 }
 
@@ -563,11 +657,18 @@ final class HarnessInputRouter {
     init(
         sink: HarnessInputSink,
         journal: EventJournal,
-        hardwareGateInitiallyOpen: Bool = true
+        hardwareGateInitiallyOpen: Bool = true,
+        keyRepeatTimer: KeyRepeatTimer? = RunLoopKeyRepeatTimer(),
+        keyRepeatSettings: KeyRepeatSettings = .normal
     ) {
         self.sink = sink
         self.journal = journal
-        keyboard = KeyboardEventArbiter(sink: sink, journal: journal)
+        keyboard = KeyboardEventArbiter(
+            sink: sink,
+            journal: journal,
+            repeatTimer: keyRepeatTimer,
+            repeatSettings: keyRepeatSettings
+        )
         pointer = PointerEventArbiter(sink: sink, journal: journal)
         isHardwareGateOpen = hardwareGateInitiallyOpen
         keyboard.isGateOpen = hardwareGateInitiallyOpen

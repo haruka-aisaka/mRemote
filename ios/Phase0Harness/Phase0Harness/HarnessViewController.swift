@@ -43,6 +43,7 @@ final class HarnessViewController: UIViewController {
     private let kanaRouteControl = UISegmentedControl(items: ["UIKit", "GC", "Off"])
     private let pointerRouteControl = UISegmentedControl(items: ["UIKit", "GCMouse"])
     private let scrollDirectionControl = UISegmentedControl(items: ["Normal", "Reversed"])
+    private let keyRepeatControl = UISegmentedControl(items: ["Off", "Normal", "Fast"])
     private let fixtureControl = UISegmentedControl(
         items: DesktopFixturePreset.allCases.map(\.title)
     )
@@ -240,6 +241,14 @@ final class HarnessViewController: UIViewController {
             for: .valueChanged
         )
         stack.addArrangedSubview(scrollDirectionControl)
+
+        stack.addArrangedSubview(makeLabel(
+            "Key repeat (client-generated; RDP has no server-side repeat)",
+            style: .subheadline
+        ))
+        keyRepeatControl.selectedSegmentIndex = 1
+        keyRepeatControl.addTarget(self, action: #selector(keyRepeatChanged), for: .valueChanged)
+        stack.addArrangedSubview(keyRepeatControl)
 
         proxy.translatesAutoresizingMaskIntoConstraints = false
         proxy.heightAnchor.constraint(equalToConstant: 82).isActive = true
@@ -555,6 +564,16 @@ final class HarnessViewController: UIViewController {
         router.pointer.setScrollDirection(
             scrollDirectionControl.selectedSegmentIndex == 0 ? .normal : .reversed
         )
+    }
+
+    @objc private func keyRepeatChanged() {
+        let settings: KeyRepeatSettings
+        switch keyRepeatControl.selectedSegmentIndex {
+        case 0: settings = .disabled
+        case 2: settings = .fast
+        default: settings = .normal
+        }
+        router.keyboard.setRepeatSettings(settings)
     }
 
     @objc private func focusInput() {

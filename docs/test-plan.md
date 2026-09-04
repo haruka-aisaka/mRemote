@@ -126,7 +126,11 @@ Windows 10 等、サポート終了 OS を互換対象にするかは product po
 | KEY-SOURCE-01 | key 保持中に source policy/focus 切替 | neutral まで新 source/session へ orphan event を送らない |
 | KEY-QUARANTINE-01 | key 保持中にメニューを開き、メニュー中に解放 | GC physical state の up で隔離解除し、remote/次 session へ漏らさない |
 | KEY-FAST-01 | 高速交互/同キー連打 | event order が保たれ、隣接 press が重複扱いされない |
-| KEY-HOLD-01 | 文字/矢印を長押し | repeat と最後の key-up が成立 |
+| KEY-HOLD-01 | 文字/矢印を長押し | client 生成の repeat で down が連送され、key-up は解放時の一回だけ |
+| KEY-HOLD-02 | 長押し中に別の文字キーを押し、先に離す | repeat が新しいキーへ移り、解放後は保持中のキーへ戻る |
+| KEY-HOLD-03 | 長押し中に background/メニュー/切断 | repeat が即時停止し、押下残りも余分な down もない |
+| KEY-HOLD-04 | 英数/かな/修飾キーを長押し | repeat せず down/up が各一組のまま |
+| KEY-HOLD-05 | key repeat を Off にして長押し | down/up が各一組で、保持中に Off にしても解放は一回だけ |
 | KEY-CHORD-01 | Ctrl/Alt/Shift を含む組合せ | 左右/extended を含め順序と解放が正しい |
 | KEY-FOCUS-01 | modifier 押下中にメニュー/切替 | local state は即時 clear、writable な旧 session へ up を enqueue、他 session へ漏れなし |
 | KEY-LIFE-01 | 押下中に background/keyboard 切断 | 復帰後に押下残りなし |

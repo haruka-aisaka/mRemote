@@ -525,21 +525,171 @@ final class InputRouterTests: XCTestCase {
         ])
     }
 
-    private func makeContext(hardwareGateInitiallyOpen: Bool = true) -> (
+
+    // MARK: - Key repeat
+
+    func testHeldKeyRepeatsDownOnlyAndKeepsOneUp() {
+        let context = makeContext()
+        context.router.keyboard.receive(key(.down, usage: 0x04))
+        XCTAssertEqual(context.repeatTimer.scheduledDelay, KeyRepeatSettings.normal.initialDelay)
+
+        context.repeatTimer.fire()
+        XCTAssertEqual(context.repeatTimer.scheduledDelay, KeyRepeatSettings.normal.interval)
+        context.repeatTimer.fire()
+        context.router.keyboard.receive(key(.up, usage: 0x04))
+
+        XCTAssertEqual(context.sink.events.map { $0.0 }, [
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .up),
+        ])
+        XCTAssertFalse(context.repeatTimer.isScheduled)
+    }
+
+    func testKeyRepeatLeavesNoJournalLinesForPrintableUsages() {
+        let context = makeContext()
+        context.router.keyboard.receive(key(.down, usage: 0x04))
+        context.repeatTimer.fire()
+        context.repeatTimer.fire()
+        context.router.keyboard.receive(key(.up, usage: 0x04))
+
+        XCTAssertEqual(context.journal.counters.sent, 4)
+        XCTAssertTrue(context.journal.lines.isEmpty)
+    }
+
+    func testClosingHardwareGateStopsKeyRepeat() {
+        let context = makeContext()
+        context.router.keyboard.receive(key(.down, usage: 0x04))
+        context.repeatTimer.fire()
+        context.router.setHardwareGate(open: false, reason: "inactive")
+
+        XCTAssertFalse(context.repeatTimer.isScheduled)
+        XCTAssertEqual(context.sink.events.map { $0.0 }, [
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .up),
+        ])
+    }
+
+    func testReleaseAllStopsKeyRepeatAndAPendingFireSendsNothing() {
+        let context = makeContext()
+        context.router.keyboard.receive(key(.down, usage: 0x04))
+        let pending = context.repeatTimer.captureWithoutCancelling()
+        context.router.keyboard.releaseAll(reason: "manual")
+        pending()
+
+        XCTAssertEqual(context.sink.events.map { $0.0 }, [
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .up),
+        ])
+    }
+
+    func testKeyRepeatFollowsNewestKeyAndResumesTheOneStillHeld() {
+        let context = makeContext()
+        context.router.keyboard.receive(key(.down, usage: 0x04))
+        context.repeatTimer.fire()
+        context.router.keyboard.receive(key(.down, usage: 0x05))
+        XCTAssertEqual(context.repeatTimer.scheduledDelay, KeyRepeatSettings.normal.initialDelay)
+
+        context.repeatTimer.fire()
+        context.router.keyboard.receive(key(.up, usage: 0x05))
+        XCTAssertEqual(context.repeatTimer.scheduledDelay, KeyRepeatSettings.normal.initialDelay)
+        context.repeatTimer.fire()
+        context.router.keyboard.receive(key(.up, usage: 0x04))
+
+        XCTAssertEqual(context.sink.events.map { $0.0 }, [
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x05, transition: .down),
+            .hardwareKey(usage: 0x05, transition: .down),
+            .hardwareKey(usage: 0x05, transition: .up),
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .up),
+        ])
+        XCTAssertFalse(context.repeatTimer.isScheduled)
+    }
+
+    func testModifiersAndJapaneseModeKeysNeverRepeat() {
+        let context = makeContext()
+        for usage: UInt16 in [HIDUsage.eisu, HIDUsage.kana, 0x8A, 0x8B, 0xE1, 0x39] {
+            context.router.keyboard.receive(key(.down, usage: usage))
+            XCTAssertFalse(
+                context.repeatTimer.isScheduled,
+                String(format: "usage 0x%02X armed a repeat", usage)
+            )
+            context.router.keyboard.receive(key(.up, usage: usage))
+        }
+        XCTAssertEqual(context.sink.events.count, 12)
+    }
+
+    func testModifierHeldAcrossARepeatingKeyDoesNotStealTheRepeat() {
+        let context = makeContext()
+        context.router.keyboard.receive(key(.down, usage: 0x04))
+        context.router.keyboard.receive(key(.down, usage: 0xE1))
+        context.repeatTimer.fire()
+        context.router.keyboard.receive(key(.up, usage: 0xE1))
+        context.router.keyboard.receive(key(.up, usage: 0x04))
+
+        XCTAssertEqual(context.sink.events.map { $0.0 }, [
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0xE1, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0xE1, transition: .up),
+            .hardwareKey(usage: 0x04, transition: .up),
+        ])
+    }
+
+    func testDisabledKeyRepeatArmsNothing() {
+        let context = makeContext(keyRepeatSettings: .disabled)
+        context.router.keyboard.receive(key(.down, usage: 0x04))
+        XCTAssertFalse(context.repeatTimer.isScheduled)
+        context.router.keyboard.receive(key(.up, usage: 0x04))
+
+        XCTAssertEqual(context.sink.events.map { $0.0 }, [
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .up),
+        ])
+    }
+
+    func testTurningKeyRepeatOffStopsAHeldKeyWithoutReleasingIt() {
+        let context = makeContext()
+        context.router.keyboard.receive(key(.down, usage: 0x04))
+        context.repeatTimer.fire()
+        context.router.keyboard.setRepeatSettings(.disabled)
+        XCTAssertFalse(context.repeatTimer.isScheduled)
+        context.router.keyboard.receive(key(.up, usage: 0x04))
+
+        XCTAssertEqual(context.sink.events.map { $0.0 }, [
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .down),
+            .hardwareKey(usage: 0x04, transition: .up),
+        ])
+    }
+
+    private func makeContext(
+        hardwareGateInitiallyOpen: Bool = true,
+        keyRepeatSettings: KeyRepeatSettings = .normal
+    ) -> (
         journal: EventJournal,
         sink: RecordingInputSink,
-        router: HarnessInputRouter
+        router: HarnessInputRouter,
+        repeatTimer: ManualKeyRepeatTimer
     ) {
         let journal = EventJournal()
         let sink = RecordingInputSink(journal: journal)
+        let repeatTimer = ManualKeyRepeatTimer()
         return (
             journal,
             sink,
             HarnessInputRouter(
                 sink: sink,
                 journal: journal,
-                hardwareGateInitiallyOpen: hardwareGateInitiallyOpen
-            )
+                hardwareGateInitiallyOpen: hardwareGateInitiallyOpen,
+                keyRepeatTimer: repeatTimer,
+                keyRepeatSettings: keyRepeatSettings
+            ),
+            repeatTimer
         )
     }
 
@@ -561,5 +711,41 @@ final class InputRouterTests: XCTestCase {
         source: PointerEventSource
     ) -> PointerInputEvent {
         PointerInputEvent(payload: payload, source: source, uptime: 1)
+    }
+}
+
+/// Runs the arbiter's repeat on demand so the behaviour is asserted without
+/// waiting on wall-clock time.
+@MainActor
+final class ManualKeyRepeatTimer: KeyRepeatTimer {
+    private var pending: (@MainActor () -> Void)?
+    private(set) var scheduledDelay: TimeInterval?
+
+    var isScheduled: Bool { pending != nil }
+
+    func schedule(after delay: TimeInterval, _ fire: @escaping @MainActor () -> Void) {
+        pending = fire
+        scheduledDelay = delay
+    }
+
+    func cancel() {
+        pending = nil
+        scheduledDelay = nil
+    }
+
+    func fire() {
+        guard let pending else { return XCTFail("no pending key repeat") }
+        cancel()
+        pending()
+    }
+
+    /// The armed fire, detached from the timer without cancelling it, so a test
+    /// can deliver a fire that was already in flight when the arbiter cancelled.
+    func captureWithoutCancelling() -> @MainActor () -> Void {
+        guard let pending else {
+            XCTFail("no pending key repeat")
+            return {}
+        }
+        return pending
     }
 }

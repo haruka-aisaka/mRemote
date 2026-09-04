@@ -32,6 +32,7 @@ let package = Package(
                 "EventJournal.swift",
                 "InputModels.swift",
                 "InputRouter.swift",
+                "KeyRepeatScheduler.swift",
                 "OrderedMainActorDeliveryQueue.swift",
                 "RDPScanCodeMapper.swift",
                 "ScrollWheelAccumulator.swift",

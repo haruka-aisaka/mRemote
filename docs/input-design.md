@@ -118,7 +118,11 @@ UIKit と GCKeyboard には共通 event ID がなく、GC event には UIKit と
 
 source policy は対応 OS と検証済みキーボード種別/接続方式を含む compatibility table に束縛する。機器を識別できない場合は対応 matrix 全体で安全な共通 policy を使い、動的推測しない。変更は全物理キーが neutral の focus epoch 境界でだけ行う。選択外 source は物理状態と診断集計にだけ使う。遅延した GC down、source 切替中の保持キー、旧 focus で始まった orphan up/repeat は remote へ送らない。
 
-選択 source 内では `usage -> remotePressed` を保持し、最初の down と対応する up/cancel を各一回送る。重複 down は送らず、長押しは Windows 側 repeat を第一候補とする。repeat 成立は PoC で確認する。
+選択 source 内では `usage -> remotePressed` を保持し、最初の down と対応する up/cancel を各一回送る。観測された重複 down は送らない。
+
+長押しの repeat は client 側で生成する。当初は Windows 側 repeat を第一候補としたが、Phase 0 の実機確認で成立しないことが判明した。RDP に server 側 auto-repeat は存在せず、Windows の typematic は物理キーボードの driver 層が作るもので terminal server 経由で注入された scan code には適用されない。iPadOS からも repeat は届かない（`pressesBegan`/`pressesEnded` は物理遷移のみ、`pressesChanged` は analog force、`GCKeyboard.keyChangedHandler` は状態変化のみ）。したがって `KeyRepeatScheduler` が initial delay の後 interval ごとに **down だけ** を再送し、up は物理解放に束縛したまま各 press 一回に保つ。bridge 側の `mr_input_command_queue` は repeat された down に release reservation を追加しないため、teardown が解放すべき状態は増えない。
+
+repeat 対象は最後に down した repeat 適格 usage 一つとし、その解放時にまだ保持されている usage があれば typematic と同様に再開する。modifier、lock key、および LANG1/LANG2 を含む日本語入力モードキーは対象外とする（変換/無変換の repeat は文字入力ではなく host IME の候補操作になり、英数/かなの「1 press = 1 組」契約とも矛盾するため）。initial delay と interval は client 設定とする。iPadOS は system のキーリピート設定をアプリへ公開しないため、端末設定の反映はできない。repeat の停止条件は gate 閉、`releaseAll`、quarantine、source policy 適用、generation 不一致、remote 未押下のいずれかで、pending fire は発火時に毎回再検証する。
 
 同じ usage を持つ二つのキーボードを同時に押すケースは `GCKeyboard.coalesced` では個体識別できないため対象外とする。
 
