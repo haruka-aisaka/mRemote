@@ -741,12 +741,33 @@ final class HarnessViewController: UIViewController {
 
         resolveNativeCertificateReview(accept: false)
         certificateReviewGate.replace(with: response)
+        let bindingWarning = review.hostnameBinding.isVerified
+            ? ""
+            : """
+
+
+            This endpoint is an IP address, so the certificate's name was NOT \
+            checked. The fingerprint below is the only thing identifying this \
+            server.
+            """
+        // The chain, its signatures and its validity period have all passed by
+        // the time a review is offered, so this names the one requirement the
+        // user is actually being asked to override.
+        let purposeWarning = review.decidingStage == .serverPurpose
+            ? """
+
+
+            This certificate is not a valid iOS server certificate. Its chain \
+            and validity period are sound, but it does not meet what iOS asks \
+            of a TLS server certificate, so only the fingerprint identifies it.
+            """
+            : ""
         let alert = UIAlertController(
             title: "Untrusted RDP certificate",
             message: """
             \(review.hostname):\(review.port) was not accepted by iOS system trust.
 
-            \(review.systemTrustSummary)
+            \(review.systemTrustSummary)\(purposeWarning)\(bindingWarning)
 
             Leaf SHA-256:
             \(review.leafSHA256)

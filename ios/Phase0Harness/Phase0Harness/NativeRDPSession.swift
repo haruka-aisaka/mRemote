@@ -135,6 +135,10 @@ struct NativeCertificateReview: Equatable, Sendable {
     let port: UInt16
     let certificateFingerprints: ServerCertificateFingerprints
     let systemTrustSummary: String
+    let hostnameBinding: ServerTrustHostnameBinding
+    /// Drives the review UI's warning: the user is being asked to override a
+    /// different requirement depending on where the evaluation stopped.
+    let decidingStage: ServerTrustStage?
 
     var leafSHA256: String { certificateFingerprints.leafSHA256 }
 }
@@ -530,7 +534,9 @@ private final class NativeRDPCallbackContext: @unchecked Sendable {
                 hostname: snapshot.challenge.hostname,
                 port: snapshot.challenge.port,
                 certificateFingerprints: result.certificateFingerprints,
-                systemTrustSummary: result.summary
+                systemTrustSummary: result.summary,
+                hostnameBinding: result.hostnameBinding,
+                decidingStage: result.decidingStage
             )
             emitCertificate(
                 "certificate \(RDPDiagnosticRedaction.endpoint(port: snapshot.challenge.port)) \(result.evidenceDescription)"

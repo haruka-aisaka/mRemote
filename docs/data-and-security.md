@@ -104,6 +104,21 @@ FreeRDP/OpenSSL 内蔵の known-hosts file とアプリ独自 pin を二重運�
 
 system trust が成立しない場合、証明書が有効期間内かつ hostname 一致で、原因が private CA/自己署名等の untrusted root であるときだけ、ユーザーの明示承認を host + port + SHA-256 fingerprint に束縛して保存できる。期限切れと hostname mismatch は既定で hard reject とし、persistent override を許可しない。
 
+評価は段階に分け、拒否は必ず「どの段階で落ちたか」を evidence に残す。system 評価の error は自己署名なら常に `errSecNotTrusted` で、原因の識別に使えないためである。
+
+| 段階 | 内容 | 不成立時 |
+|---|---|---|
+| `system-trust` | platform trust store に対する authoritative 評価 | 次段へ |
+| `presented-chain` | 提示 chain の全 link・署名・有効期間を、終端証明書を anchor として Basic X.509 で検証 | **hard reject** |
+| `server-purpose` | name check を外した SSL policy（serverAuth 等） | **警告付き `今回のみ信頼`** |
+| `hostname-binding` | name check のみ（hostname 入力時） | **hard reject** |
+
+`presented-chain` が下限である。ここで落ちる証明書は「未知」ではなく壊れている（署名不正・期限切れ・chain 断絶）ため override を許可しない。一方 `server-purpose` は Apple が server 証明書に課す要件であって RDP の trust model が要求するものではなく、identity は fingerprint の明示レビューで確立される。Microsoft 純正クライアントも同種の証明書を警告のうえ継続させるため、hard reject ではなく警告付きの `今回のみ信頼` とし、承認 UI に「iOS の server 証明書要件を満たさない」ことを明示する。
+
+提示 chain に同一証明書が重複して含まれる場合は、提示順を保ったまま重複を落としてから評価する。gnome-remote-desktop は自己署名証明書を leaf と chain の両方として提示するため、そのままでは leaf 自身を issuer とする path を組もうとし、終端証明書を anchor に選ぶ規則も退化する。evidence の fingerprint は提示されたままの chain を hash する（重複は `repeated-chain-entries` として記録する）。
+
+hostname binding の例外は接続先を IPv4/IPv6 literal で入力した場合に限る。Windows RDP の自己署名証明書は machine name を dNSName として持ち iPAddress SAN を持たないため、IP literal 宛では SSL policy の name binding が原理的に成立しない。この場合に限り fallback 評価の SSL policy から hostname を外し、chain 署名・有効期間・serverAuth EKU は据え置いたまま、identity 確認を fingerprint の明示レビューへ置き換える。iPAddress SAN を持つ証明書は authoritative な system 評価で従来どおり `.trusted` に到達するため、この緩和路には入らない。緩和が効いた接続は evidence へ `binding=ip-literal-unverified` を残し、承認 UI に「hostname 未検証」を明示する。hostname を入力した接続の mismatch は従来どおり hard reject のままとする。
+
 persistent 承認時に Keychain へ保存する `TrustRecord` payload（`今回のみ`は memory 上の connection generation にだけ保持する）:
 
 ```text
@@ -117,7 +132,7 @@ notBefore, notAfter, createdAt
 検証規則:
 
 - fingerprint 一致だけで host/port の違う接続へ信頼を流用しない。
-- 有効期限切れ、hostname mismatch、fingerprint 変更を別々に表示する。前二者は既定で承認 action を出さない。
+- 有効期限切れ、hostname mismatch、fingerprint 変更を別々に表示する。前二者は既定で承認 action を出さない。IP literal 接続の name 未検証は mismatch とは別に扱い、承認 action を出したうえで警告文を必ず添える。
 - 保存済み fingerprint が変わった場合は MITM/再発行の可能性として強い警告を出し、自動置換しない。
 - `今回のみ信頼` は永続化しない。
 - trust callback 待ちの間も接続キャンセル可能にし、タイムアウト時は拒否扱いとする。DER callback memory は判定完了後に破棄する。

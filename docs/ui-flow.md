@@ -129,6 +129,7 @@ iPad は中央の form sheet、iPhone は large sheet とする。必須値を�
 - subject/issuer、有効期間、SHA-256 fingerprint
 - 有効期間/hostname が正常で private CA/自己署名だけが問題の場合: `キャンセル`、`今回のみ信頼`、`この接続先で信頼`
 - 期限切れ/hostname mismatch の場合: `キャンセル` のみ。fingerprint 変更時は旧信頼を設定画面で明示削除してから再確認
+- 接続先が IP literal で name binding が成立しない場合: `キャンセル`、`今回のみ信頼`、`この接続先で信頼` を出しつつ、「hostname は検証されていない。fingerprint だけがこのサーバーの識別根拠」である旨を必ず併記する
 
 fingerprint が以前の保存値から変化した場合は強い警告にし、通常の初回自己署名と同じ見た目で承認させない。
 

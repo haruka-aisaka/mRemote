@@ -213,6 +213,9 @@ Windows 側で既知周波数/timestamp の test tone を再生し、次を測�
 ## 11. セキュリティ試験
 
 - 正常な public/private CA、自己署名、期限切れ、hostname mismatch
+- IP literal 宛の name 未検証（`今回のみ信頼` を出す）と、その状態でも期限切れ/署名不正は hard reject のままであること
+- 拒否/警告のたびに evidence へ `stage=` が残り、`presented-chain` は hard reject、`server-purpose` は警告付き `今回のみ信頼`、`hostname-binding` は hard reject になること
+- 同一証明書を重複提示する server（gnome-remote-desktop）で単一提示と同じ判定になり、evidence に `repeated-chain-entries` が残ること
 - certificate callback の leaf/chain DER copy と `SecTrust` SSL hostname policy、OpenSSL known-hosts 非併用
 - certificate challenge 中の cancel/timeout/background/disconnect が worker wait を解除し、callback memory の保持や stale 回答がないこと
 - 保存 fingerprint 一致/変更、host/port 違い、今回のみ信頼
