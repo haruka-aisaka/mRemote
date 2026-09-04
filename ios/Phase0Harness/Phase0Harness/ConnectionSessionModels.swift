@@ -208,13 +208,71 @@ struct HarnessSessionStatus: Equatable, Sendable, CustomStringConvertible {
     let generation: UInt64
     let phase: HarnessSessionPhase
     let statusCode: Int32?
+    /// The backend's own failure detail, which distinguishes causes that all
+    /// arrive as a single bridge status. Zero means the backend reported none.
+    var nativeCode: Int32 = 0
 
     var description: String {
-        if let statusCode {
-            return "session g=\(generation) \(phase.rawValue) status=\(statusCode)"
+        guard let statusCode else {
+            return "session g=\(generation) \(phase.rawValue)"
         }
-        return "session g=\(generation) \(phase.rawValue)"
+        let detail = nativeCode == 0
+            ? ""
+            : " native=\(FreeRDPErrorCode.describe(nativeCode))"
+        return "session g=\(generation) \(phase.rawValue) status=\(statusCode)\(detail)"
     }
+}
+
+/// Decodes `freerdp_get_last_error` values, which pack a class in the high 16
+/// bits and a type in the low 16. Names follow the pinned FreeRDP 3.31.1
+/// `freerdp/error.h`; the connect class is the one a failed `freerdp_connect`
+/// reports, so it is the only class named here.
+enum FreeRDPErrorCode {
+    static func describe(_ code: Int32) -> String {
+        let raw = UInt32(bitPattern: code)
+        let errorClass = (raw >> 16) & 0xFFFF
+        let type = raw & 0xFFFF
+        let hex = String(format: "0x%08X", raw)
+        guard errorClass == connectClass, let name = connectTypeNames[type] else {
+            return String(format: "%@ class=0x%04X type=0x%04X", hex, errorClass, type)
+        }
+        return "\(hex) CONNECT/\(name)"
+    }
+
+    private static let connectClass: UInt32 = 2
+
+    private static let connectTypeNames: [UInt32: String] = [
+        0x01: "PRE_CONNECT_FAILED",
+        0x02: "CONNECT_UNDEFINED",
+        0x03: "POST_CONNECT_FAILED",
+        0x04: "DNS_ERROR",
+        0x05: "DNS_NAME_NOT_FOUND",
+        0x06: "CONNECT_FAILED",
+        0x07: "MCS_CONNECT_INITIAL_ERROR",
+        0x08: "TLS_CONNECT_FAILED",
+        0x09: "AUTHENTICATION_FAILED",
+        0x0A: "INSUFFICIENT_PRIVILEGES",
+        0x0B: "CONNECT_CANCELLED",
+        0x0C: "SECURITY_NEGO_CONNECT_FAILED",
+        0x0D: "CONNECT_TRANSPORT_FAILED",
+        0x0E: "PASSWORD_EXPIRED",
+        0x0F: "PASSWORD_CERTAINLY_EXPIRED",
+        0x10: "CLIENT_REVOKED",
+        0x11: "KDC_UNREACHABLE",
+        0x12: "ACCOUNT_DISABLED",
+        0x13: "PASSWORD_MUST_CHANGE",
+        0x14: "LOGON_FAILURE",
+        0x15: "WRONG_PASSWORD",
+        0x16: "ACCESS_DENIED",
+        0x17: "ACCOUNT_RESTRICTION",
+        0x18: "ACCOUNT_LOCKED_OUT",
+        0x19: "ACCOUNT_EXPIRED",
+        0x1A: "LOGON_TYPE_NOT_GRANTED",
+        0x1B: "NO_OR_MISSING_CREDENTIALS",
+        0x1C: "ACTIVATION_TIMEOUT",
+        0x1D: "TARGET_BOOTING",
+        0x1E: "HYBRID_REQUIRED_BY_SERVER",
+    ]
 }
 
 enum Phase0RDPChannel: Int, CaseIterable, Equatable, Hashable, Sendable {

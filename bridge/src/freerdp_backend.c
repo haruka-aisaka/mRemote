@@ -1280,12 +1280,17 @@ static mr_rdp_status mr_freerdp_run(mr_rdp_backend *base)
     mr_rdp_status status = MR_RDP_STATUS_OK;
     BOOL connected;
 
+    base->last_native_error = 0;
     if (mr_freerdp_is_stopped(backend)) {
         return MR_RDP_ERROR_STOPPED;
     }
     connected = freerdp_connect(backend->instance);
     if (!connected) {
         status = mr_freerdp_current_status(backend);
+        /* Without this the app only sees MR_RDP_ERROR_BACKEND and cannot tell
+         * a refused socket from a logon failure. FreeRDP's own connect error
+         * survives freerdp_connect returning FALSE. */
+        base->last_native_error = (int32_t)freerdp_get_last_error(backend->context);
         if (mr_freerdp_is_stopped(backend)) {
             status = MR_RDP_ERROR_STOPPED;
         } else if (status == MR_RDP_STATUS_OK) {
@@ -1346,6 +1351,9 @@ static mr_rdp_status mr_freerdp_run(mr_rdp_backend *base)
 
     if (status == MR_RDP_STATUS_OK) {
         status = mr_freerdp_current_status(backend);
+    }
+    if (status != MR_RDP_STATUS_OK) {
+        base->last_native_error = (int32_t)freerdp_get_last_error(backend->context);
     }
     if (mr_freerdp_is_stopped(backend)) {
         status = MR_RDP_ERROR_STOPPED;

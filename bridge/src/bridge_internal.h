@@ -79,6 +79,11 @@ typedef struct mr_rdp_backend_vtable {
 
 struct mr_rdp_backend {
     const mr_rdp_backend_vtable *vtable;
+    /* Backend-specific failure detail for the last run, reported as the error
+     * event's native_code. Zero means "no detail". Only run writes it, and the
+     * session reads it on that same thread after run returns, so it needs no
+     * lock of its own. */
+    int32_t last_native_error;
 };
 
 typedef mr_rdp_status (*mr_rdp_backend_factory)(

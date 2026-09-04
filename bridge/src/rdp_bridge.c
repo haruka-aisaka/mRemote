@@ -1077,7 +1077,10 @@ mr_rdp_status mr_rdp_session_run(mr_rdp_session *session)
         mr_emit_state(session, MR_RDP_SESSION_STOPPED);
     } else {
         mr_emit_state(session, MR_RDP_SESSION_FAILED);
-        mr_emit_error(session, status, 0);
+        mr_emit_error(
+            session,
+            status,
+            session->backend != NULL ? session->backend->last_native_error : 0);
     }
 
     (void)pthread_mutex_lock(&session->mutex);

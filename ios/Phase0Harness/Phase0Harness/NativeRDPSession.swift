@@ -433,11 +433,12 @@ private final class NativeRDPCallbackContext: @unchecked Sendable {
         ))
     }
 
-    func receiveError(generation: UInt64, status: mr_rdp_status) {
+    func receiveError(generation: UInt64, status: mr_rdp_status, nativeCode: Int32) {
         emitStatus(HarnessSessionStatus(
             generation: generation,
             phase: .failed,
-            statusCode: status
+            statusCode: status,
+            nativeCode: nativeCode
         ))
     }
 
@@ -589,7 +590,11 @@ private func nativeRDPErrorCallback(
     let context = Unmanaged<NativeRDPCallbackContext>
         .fromOpaque(opaqueContext)
         .takeUnretainedValue()
-    context.receiveError(generation: event.generation, status: event.status)
+    context.receiveError(
+        generation: event.generation,
+        status: event.status,
+        nativeCode: event.native_code
+    )
 }
 
 private func nativeRDPCertificateCallback(
