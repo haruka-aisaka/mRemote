@@ -1,0 +1,53 @@
+import Foundation
+import SessionCore
+
+enum Formatting {
+    static func endpoint(_ endpoint: RemoteEndpoint) -> String {
+        endpoint.port == 3389 ? endpoint.host : "\(endpoint.host):\(endpoint.port)"
+    }
+
+    static func subtitle(for profile: ConnectionProfile) -> String {
+        guard let username = profile.account.username, !username.isEmpty else {
+            return endpoint(profile.endpoint)
+        }
+        if let domain = profile.account.domain, !domain.isEmpty {
+            return "\(domain)\\\(username) @ \(endpoint(profile.endpoint))"
+        }
+        return "\(username) @ \(endpoint(profile.endpoint))"
+    }
+
+    static func lastConnected(_ date: Date?) -> String? {
+        guard let date else { return nil }
+        return date.formatted(.relative(presentation: .named))
+    }
+
+    static func stateLabel(_ state: SessionState) -> String {
+        switch state {
+        case .idle: return "待機中"
+        case .connecting: return "接続中"
+        case .awaitingUser: return "確認待ち"
+        case .connected: return "接続済み"
+        case .reconnecting: return "再接続中"
+        case .disconnecting: return "切断中"
+        case .disconnected: return "切断済み"
+        case .failed: return "エラー"
+        }
+    }
+
+    static func errorLabel(_ error: RemoteSessionError) -> String {
+        switch error {
+        case .nameResolutionFailed: return "ホスト名を解決できません。"
+        case .networkUnreachable: return "ネットワークに到達できません。"
+        case .connectionRefused: return "接続を拒否されました。ポートとリモートデスクトップの設定を確認してください。"
+        case .connectionTimedOut: return "接続がタイムアウトしました。"
+        case .tlsHandshakeFailed: return "TLS ハンドシェイクに失敗しました。"
+        case .authenticationFailed: return "認証に失敗しました。ユーザー名とパスワードを確認してください。"
+        case .accountRestricted: return "このアカウントはリモート接続を許可されていません。"
+        case .certificateRejected: return "サーバー証明書を信頼しませんでした。"
+        case .userCancelled: return "接続を中止しました。"
+        case .protocolFailure(let detail): return "プロトコルエラー: \(detail)"
+        case .resourceUnavailable: return "接続に必要なリソースを確保できません。"
+        case .internalFailure(let detail): return "内部エラー: \(detail)"
+        }
+    }
+}

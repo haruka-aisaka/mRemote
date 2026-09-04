@@ -26,7 +26,7 @@ public actor FakeRemoteSession: RemoteSession {
     private let script: Script
     private var machine = SessionStateMachine()
     private var continuations: [UUID: AsyncStream<SessionControlEvent>.Continuation] = [:]
-    private var pendingChallenge: SessionChallenge?
+    public private(set) var pendingChallenge: SessionChallenge?
     private var visibility: SessionVisibility = .focused
 
     public init(
@@ -42,7 +42,6 @@ public actor FakeRemoteSession: RemoteSession {
 
     public var state: SessionState { machine.state }
     public var generation: SessionGeneration { machine.generation }
-    public var currentChallenge: SessionChallenge? { pendingChallenge }
     public var currentVisibility: SessionVisibility { visibility }
 
     public func controlEvents() -> AsyncStream<SessionControlEvent> {

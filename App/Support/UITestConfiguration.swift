@@ -1,0 +1,33 @@
+import Foundation
+import AppleAdapters
+import Persistence
+import SessionCore
+
+/// Lets the UI test drive the real screens without a Windows host, a Keychain
+/// entitlement or a file store that would leak between runs.
+///
+/// It is keyed off a launch argument rather than a build configuration so the
+/// same binary is exercised, and it only ever substitutes the outermost
+/// dependencies - the views and models under test are the shipping ones.
+enum UITestConfiguration {
+    static let launchArgument = "-mremote-ui-testing"
+
+    static var isActive: Bool {
+        ProcessInfo.processInfo.arguments.contains(launchArgument)
+    }
+
+    @MainActor
+    static func makeEnvironment() -> AppEnvironment {
+        let seeded = ConnectionProfile(
+            displayName: "テスト接続先",
+            endpoint: RemoteEndpoint(host: "desk.example", port: 3389),
+            account: RemoteAccount(username: "tester", domain: nil)
+        )
+        return AppEnvironment(
+            store: InMemoryProfileStore(document: ProfileDocument(profiles: [seeded])),
+            credentials: InMemoryCredentialRepository(),
+            trust: InMemoryTrustRepository(),
+            factories: SessionFactoryRegistry(factories: [FakeSessionFactory()])
+        )
+    }
+}

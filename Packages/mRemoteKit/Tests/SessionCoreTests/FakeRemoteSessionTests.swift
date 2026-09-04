@@ -29,7 +29,7 @@ final class FakeRemoteSessionTests: XCTestCase {
 
         let state = await session.state
         XCTAssertEqual(state, .awaitingUser)
-        guard let challenge = await session.currentChallenge else {
+        guard let challenge = await session.pendingChallenge else {
             return XCTFail("expected a pending challenge")
         }
 
@@ -44,7 +44,7 @@ final class FakeRemoteSessionTests: XCTestCase {
     func testAnsweringAChallengeTwiceIsRefused() async throws {
         let session = FakeRemoteSession(configuration: configuration, script: .requiresCredential)
         try await session.connect()
-        guard let challenge = await session.currentChallenge else {
+        guard let challenge = await session.pendingChallenge else {
             return XCTFail("expected a pending challenge")
         }
         try await session.respond(to: challenge.id, with: .trustOnce)
@@ -63,7 +63,7 @@ final class FakeRemoteSessionTests: XCTestCase {
             script: .requiresCertificateReview(.untrustedRoot)
         )
         try await session.connect()
-        guard let challenge = await session.currentChallenge else {
+        guard let challenge = await session.pendingChallenge else {
             return XCTFail("expected a pending challenge")
         }
         try await session.respond(to: challenge.id, with: .cancel)

@@ -53,12 +53,18 @@
 - `RemoteSession` interface、SessionManager actor、FakeRemoteSession
 - Settings と dependency licenses 画面
 
-### Exit criteria
+### Exit criteria（2026-09-05: 達成）
 
-- fake session で一覧→接続→全画面→一覧復帰→切断の UI test が通る。
-- password が profile store/log へ保存されない。
-- schema v1 と migration test の土台がある。
-- SSH session factory を将来登録できる依存方向になっている。
+- fake session で一覧→接続→全画面→一覧復帰→切断の UI test が通る。→ `AppUITests/ConnectionFlowUITests`
+- password が profile store/log へ保存されない。→ Keychain 保存と、document へ混入しないことの test
+- schema v1 と migration test の土台がある。→ `SchemaMigrator` と `SchemaMigratorTests`
+- SSH session factory を将来登録できる依存方向になっている。→ `SessionFactoryRegistry`
+
+### この phase で意図的に残したもの
+
+- ライセンス画面は静的リスト。`ThirdParty/` の notice からの生成は Phase 7
+- String Catalog への文言分離、VoiceOver/Dynamic Type の確認は Phase 7
+- session workspace のリモート描画は placeholder。実描画は Phase 2
 
 ## 4. Phase 2 — 単一 RDP セッション
 

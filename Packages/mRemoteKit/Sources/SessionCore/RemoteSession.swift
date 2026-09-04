@@ -29,6 +29,11 @@ public protocol RemoteSession: Actor {
 
     var state: SessionState { get }
     var generation: SessionGeneration { get }
+    /// The unanswered challenge, if any. State and the pending challenge are
+    /// authoritative on the session and re-readable at any time, so a consumer
+    /// that started late or dropped an event recovers by reading rather than
+    /// by reconstructing what it missed.
+    var pendingChallenge: SessionChallenge? { get }
 
     func connect() async throws
     func disconnect(reason: DisconnectReason) async

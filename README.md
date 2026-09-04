@@ -16,7 +16,7 @@ platform.
 
 | Path | Contents |
 |---|---|
-| `App/`, `mRemote.xcodeproj` | The app itself. Not created yet -- Phase 1 is still building the layers below. |
+| `mRemote.xcodeproj`, `App/` | The app: the connection list, the profile editor, settings and the full-screen session workspace. `AppTests/` and `AppUITests/` sit beside it. |
 | `Packages/mRemoteKit/` | The app layers that need no UIKit, so they build and test on the development host: `SessionCore`, `Persistence`, `AppleAdapters`. |
 | `bridge/` | The C ABI over FreeRDP. Opaque handles only; no FreeRDP type reaches Swift. |
 | `scripts/`, `config/`, `ThirdParty/`, `artifacts/` | Reproducible builds of the pinned native dependencies, their lock file, notices and SBOM, and the generated XCFrameworks. |
@@ -32,12 +32,21 @@ device, a real NLA/TLS session renders a desktop, and Eisu/Kana reach Windows
 as Muhenkan/Henkan without iPadOS consuming them. See
 [`phase0/README.md`](phase0/README.md).
 
-Phase 1 is in progress: the foundation modules exist and are tested; the app
-shell and its screens are not built yet.
+Phase 1 meets its exit criteria: the app runs end to end against
+`FakeRemoteSession`, passwords never reach the profile document, the schema is
+versioned with a tested migration chain, and a second protocol would be added
+by registering a factory rather than by changing a call site.
+
+Phase 2 is next: the real RDP session behind the same `RemoteSession`
+interface, and the Metal surface behind the workspace's placeholder.
 
 ## Build and test
 
 ```sh
+# The app, its unit tests and the end-to-end UI test
+xcodebuild test -project mRemote.xcodeproj -scheme mRemote \
+  -destination 'platform=iOS Simulator,name=iPad mini (A17 Pro)'
+
 # Host-testable app layers
 swift test --package-path Packages/mRemoteKit
 
