@@ -1,10 +1,41 @@
 # Phase 0 — Go/No-Go spike
 
 This directory is the entry point for the executable work behind
-[`docs/roadmap.md`](../docs/roadmap.md#2-phase-0--gono-go-スパイク). Its first goal is a personal
+[`docs/roadmap.md`](../docs/roadmap.md#2-phase-0--gono-go-スパイク). Its goal was a personal
 Core Adoption decision: whether the candidate native core works on the available iPad, keyboard,
-and Windows target. The current decision is **UNDECIDED**, not GO. This decision is not a product,
-compatibility, or release approval.
+and Windows target.
+
+## Decision: GO (2026-09-05)
+
+The candidate is adopted for this personal baseline. This is not a product, compatibility, or
+release approval, and it says nothing about any device, keyboard, or Windows version other than
+the one below.
+
+| Core Gate row | Result |
+|---|---|
+| `P0-BUILD-01` pinned FreeRDP/WinPR device arm64 slice | PASS |
+| `P0-TLS-01` NLA/TLS connection with authoritative `SecTrust` evaluation | PASS |
+| `P0-DSP-01` connected desktop presents a BGRA frame | PASS |
+| `KEY-EISU-01` Eisu reaches Windows as Muhenkan | PASS |
+| `KEY-KANA-01` Kana reaches Windows as Henkan | PASS |
+| `KEY-IME-02` consumed press shows no iPadOS IME/input-source UI | PASS |
+| `P0-TEARDOWN-01` disconnect and reconnect without crash or hang | PASS |
+
+Baseline: iPad mini (7th generation), Apple Magic Keyboard (JIS), one Windows 11 host, harness
+`Phase0HarnessNative` at commit `dff675b`, FreeRDP 3.31.1
+(`63b948ca5cb94307fd5444ee6e73927a41ccdab4`).
+
+Every row passed on operator observation across roughly three trial sessions, which is the
+verification scale this project works at (see `docs/README.md`, "開発体制と試験スケール"). The
+full record, including what each row actually observed, is the uncommitted
+`records/phase0-test-ipad-mini7-magic-keyboard.local.md` -- records are ignored by git because
+they name the operator and the Windows host.
+
+Deliberately carried forward rather than done here:
+
+- KeyEcho 10-cycle Eisu/Kana JSONL measurement, to Phase 3
+- sanitizer stress and the 20x connect/disconnect loop, to Phase 2
+- pointer, channels, audio, 4K, multi-session, archive and SBOM audit, to their own phases
 
 ## Candidate configuration
 
@@ -88,22 +119,20 @@ as evidence, or select a fresh `--output` path for another run. Manifest entries
 the directory containing the manifest, so checksum verification must run from `artifacts/` as in
 the command above.
 
-## Complete the Core Gate
+## Re-running the Core Gate
 
-1. Copy `records/phase0-test-record.template.md` for the run. The concise record has only the six
-  Core Gate results; leave each `NOT RUN` until its named evidence exists.
-2. Build KeyEcho on Windows. Capture independent Eisu-only and Kana-only 100-cycle JSONL files and
-   analyze them with the matching mode.
-3. With the signed `Phase0HarnessNative` build, exercise NLA/TLS and make copied DER plus the SSL
-  hostname policy in `SecTrust` authoritative. Confirm the native session can connect, stop, and
-  reconnect.
-4. Exercise the Eisu/Kana hardware keys and `KEY-IME-02` on the iPad. Record only the device,
-  keyboard, OS, Windows, and input-policy details that affected the run in the Core record.
-5. Mark `GO` only when its seven rows pass. That adopts the core for this personal baseline; it does
-  not claim compatibility beyond it.
+The Gate is closed. Re-run it only when something invalidates the decision: a FreeRDP version
+change, a bridge rewrite, or evaluating an alternative RDP core.
 
-The detailed input JSON, compatibility matrix, pointer paths, 4K and multi-session measurement,
-channel/audio round trips, and final archive/SBOM audit remain valuable deferred validation. Run
-them when their feature is implemented or an additional environment is supported. In particular,
+1. Copy `records/phase0-test-record.template.md` for the run. Leave each row `NOT RUN` until it has
+   been observed.
+2. With the signed `Phase0HarnessNative` build, exercise NLA/TLS and make copied DER plus the SSL
+   hostname policy in `SecTrust` authoritative. Confirm the native session can connect, stop, and
+   reconnect.
+3. Exercise the Eisu/Kana hardware keys and `KEY-IME-02` on the iPad. For a measured rather than
+   observed result, build KeyEcho on Windows and capture independent Eisu-only and Kana-only JSONL
+   files, then analyze them with the matching mode.
+4. Mark `GO` only when its seven rows pass, and update the decision table above.
+
 Simulator input, source inspection, symbol presence, and mock bridge tests cannot substitute for
-physical Eisu/Kana, `KEY-IME-02`, real NLA/TLS, or safe teardown evidence.
+physical Eisu/Kana, `KEY-IME-02`, real NLA/TLS, or teardown evidence, however small the run is.

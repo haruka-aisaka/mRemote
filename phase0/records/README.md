@@ -4,6 +4,12 @@ The first physical-device run needs only a Core Adoption test record. Do not fil
 JSON baseline or create a compatibility matrix before that run. Those records become useful only
 after choosing to support more than the personal iPad, keyboard, and Windows configuration.
 
+That run happened on 2026-09-05 and the decision is `GO`. Completed records match `*.local.*` and
+are deliberately not committed, because they name the operator and the Windows host; the decision
+itself and its redacted summary live in `phase0/README.md`, which is committed. The unfilled
+`*.local.*` copies of the detailed JSON baseline and the compatibility matrix are placeholders
+only -- fill them from the templates if another device or keyboard ever needs to be supported.
+
 Before a run:
 
 ```bash

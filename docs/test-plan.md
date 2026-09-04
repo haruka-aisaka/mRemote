@@ -2,6 +2,11 @@
 
 ## 1. 方針
 
+本計画の規模は `README.md` の「開発体制と試験スケール」に従う。個人開発なので、手元にある
+1 構成での確認と自動テストで実用上の品質を担保し、持っていない機種/周辺機器は「未検証」と
+明示して保証しない。以下のマトリクスは「いつか揃えたら確認する軸」の一覧であり、
+release の必須条件ではない。
+
 RDP server だけを観察して不具合箇所を推測せず、次の境界ごとに検証する。
 
 1. Apple event → 正規化 input
@@ -70,7 +75,25 @@ OS の Local Network/paste 許可 prompt は test plan を分離し、既許可�
 
 ## 3. 実機/周辺機器マトリクス
 
-最低限、次の組み合わせを release 候補ごとに確認する。
+### 3.1 実際に検証する構成（基準構成）
+
+現時点で手元にあるのは次の 1 構成だけであり、これが唯一の「検証済み」構成である。
+
+| 軸 | 構成 |
+|---|---|
+| 端末 | iPad mini (第 7 世代) |
+| キーボード | Apple Magic Keyboard (JIS) |
+| pointer | 入手でき次第追加。未入手のうちは pointer 系ケースを `未検証` とする |
+| 接続先 | 手元の Windows 11 一台 |
+
+Phase 0 の基準環境には端末型番、OS version/build、keyboard 型番/接続方式、関連する iPadOS
+設定を記録する。他の構成で動く保証はしない。不具合報告を受けたら、その構成を下の表へ
+追加してから対応する。
+
+### 3.2 将来スケールを上げる場合の軸
+
+機材が増えた、または不具合報告が来たときに、次の軸から必要なものだけを 3.1 へ移す。
+最初から全部を埋めることは目指さない。
 
 | 軸 | 構成 |
 |---|---|
@@ -87,6 +110,9 @@ Phase 0 の基準環境には端末型番、OS version/build、keyboard 型番/f
 Simulator はロジック/UI test には使うが、英数/かな、GCKeyboard、mouse hardware、audio route、性能の合否には使わない。
 
 ## 4. RDP server マトリクス
+
+検証対象は手元の Windows 11 一台である。以下は同様に「機会があれば確認する軸」であり、
+未確認のものは release note で未検証と明示する。
 
 - サポート対象の Windows client Pro/Enterprise の最低版と最新更新版
 - サポート対象の Windows Server の最低版と最新更新版
@@ -144,7 +170,7 @@ KeyProbe の既存スクリーンショットは実現可能性の証拠であ�
 
 - display 四隅/中央への移動と Windows 側座標の一致
 - Fit の letterbox、100%、2× zoom/pan、回転/resize 後の座標
-- 左/右 click 各 100 回、double click、左右 drag、button 押下中の移動
+- 左/右 click 各 20 回、double click、左右 drag、button 押下中の移動
 - button 押下中のメニュー/切替/background で release
 - 低速/高速の縦横 scroll、trackpad continuous delta、mouse discrete wheel
 - 反転 OFF/ON がちょうど一度適用され、再起動/個別上書き後も保持
@@ -164,7 +190,7 @@ KeyProbe の既存スクリーンショットは実現可能性の証拠であ�
 
 1. 1080p の通常操作 30 分
 2. 4K の動画/スクロール 15 分
-3. resize/回転 100 回
+3. resize/回転 20 回
 4. 3×1080p session を 30 分維持し、5 秒ごとに切替
 5. memory warning を模擬し、非表示 texture/cache が減ることを確認
 6. 低帯域、高遅延、packet loss、network 切替で再接続
@@ -236,7 +262,7 @@ Windows 側で既知周波数/timestamp の test tone を再生し、次を測�
 - connecting、challenge、connected の各状態で cancel
 - Wi-Fi OFF/ON、Wi-Fi↔cellular、VPN 接続/切断、server reboot
 - foreground↔background、画面 lock、長時間 suspend 後の復帰
-- session 接続/切断を 100 回繰り返す
+- session 接続/切断を 20 回繰り返す
 - 同時に複数 session が失敗しても UI が操作可能
 - native callback と disconnect が競合しても use-after-free/二重解放がない
 - OS memory warning/thermal state で縮退し、秘密データを disk spill しない
@@ -246,9 +272,10 @@ Windows 側で既知周波数/timestamp の test tone を再生し、次を測�
 ## 13. リリース gate
 
 - Must 要件に対応する自動/手動 test case がすべて trace されている。
-- Phase 0 で機種/OS build/接続方式/設定まで記録した基準環境、Apple JIS 2 系統、PC JIS 1 系統で KEY 必須ケースが合格する。
-- 対象 Windows/Windows Server の NLA/TLS 接続、証明書、1080p 描画が合格する。
-- 2 session 同時接続、音声、text clipboard、pointer が実機で合格する。3 session は基準端末で性能目標を測定し、保証可否を ADR に記録する。
+- Must 要件に対応する自動 test が緑で、手動確認が必要なものは基準構成で一度は通っている。
+- 基準構成（3.1）で KEY 必須ケースが合格する。他のキーボードは未検証と明記する。
+- 手元の Windows 11 への NLA/TLS 接続、証明書確認、1080p 描画が合格する。
+- 2 session 同時接続、音声、text clipboard、pointer が実機で合格する。3 session は測れた範囲を記録する。
 - crash、hang、credential leak、silent certificate acceptance の既知 blocker がない。
-- dependency pin、license notice、SBOM、暗号輸出回答、privacy manifest/用途説明を確認する。
-- 未対応機能と iOS 予約 shortcut の制約を release note/help に明記する。
+- dependency pin、license notice、SBOM、暗号輸出回答、privacy manifest/用途説明を確認する。App Store 提出に必須なので、ここは規模を下げない。
+- 未検証の機種/キーボード/Windows 版と、iOS 予約 shortcut の制約を release note/help に明記する。

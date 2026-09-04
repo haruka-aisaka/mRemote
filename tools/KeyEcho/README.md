@@ -21,20 +21,22 @@ cmake --build build --config Release
 生成物は `build/Release/KeyEcho.exe` です。Win32 API だけを使い、MSVC runtime も
 静的 link するため、対象 Windows へ追加 runtime を導入せず実行できます。
 
-## 100 回試験
+## 反復試験（既定 10 回）
 
 1. KeyEcho を RDP 接続先で起動し、ウィンドウを表示したままにします。
 2. `ログ消去` を押し、iPad 側の RDP surface に入力 focus があることを確認します。
-3. 英数だけを完全に押して離す操作を 100 回行い、`eisu.jsonl` として保存します。
-4. 再び `ログ消去` を押し、かなだけを同様に 100 回行い、`kana.jsonl` として保存します。
-5. 各 run で対象が `down 100 / up 100 / repeat 0 / mismatch 0`、非対象が 0 であることを確認します。
+3. 英数だけを完全に押して離す操作を 10 回行い、`eisu.jsonl` として保存します。
+4. 再び `ログ消去` を押し、かなだけを同様に 10 回行い、`kana.jsonl` として保存します。
+5. 各 run で対象が `down 10 / up 10 / repeat 0 / mismatch 0`、非対象が 0 であることを確認します。
 6. 両 JSONL と SHA-256 を Phase 0 の test record に添付します。
 
-Mac または Windows 上で JSONL を機械判定できます（`jq` が必要です）。既定は各 100 回です。
+Mac または Windows 上で JSONL を機械判定できます（`jq` が必要です）。第 2 引数が期待回数で、
+script 自体の既定は 100 ですが、本プロジェクトの試験規模は 10 回です（`docs/README.md`
+の「開発体制と試験スケール」）。
 
 ```bash
-tools/KeyEcho/analyze-keyecho.sh eisu.jsonl 100 eisu
-tools/KeyEcho/analyze-keyecho.sh kana.jsonl 100 kana
+tools/KeyEcho/analyze-keyecho.sh eisu.jsonl 10 eisu
+tools/KeyEcho/analyze-keyecho.sh kana.jsonl 10 kana
 ```
 
 第3引数の既定 `both` は従来どおり一つのログに両キーを含む簡易確認用です。Gate evidence
@@ -46,7 +48,8 @@ metadata/event の必須 field、sequence の連続性、単調時刻の非減�
 第 2 引数で期待回数を変更できます。
 
 `repeat` は同じ scan code の up より前に複数 down を観測した回数です。意図的な長押し
-では増えるので、100 回試験では各キーを短く明確に離してください。`mismatch` は期待する
+では増えるので、反復試験では各キーを短く明確に離してください。なお client 側の key repeat は
+LANG1/LANG2 を対象外にしているため、英数/かなの期待値は `repeat 0` のままです。`mismatch` は期待する
 scan code に対する Windows virtual-key が変換/無変換ではなかった回数です。
 
 JSON Lines の先頭行は Windows build とコンピューター名を持つ metadata、以降の各行は

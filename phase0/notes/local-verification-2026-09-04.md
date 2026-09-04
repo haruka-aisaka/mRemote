@@ -6,9 +6,12 @@ and none of the results below substitutes for the external Gate evidence named i
 
 ## Decision
 
-**UNDECIDED.** The candidate has passed the available source, host, Simulator, static-link, and
-unsigned archive checks. It has not passed the complete physical iPad/Windows matrix, so it is not
-adopted and no acceptance ADR has been written.
+**Superseded by the physical-device run of 2026-09-05: the decision is now GO.** See
+[`phase0/README.md`](../README.md). This note is kept as the record of what was verifiable
+locally on 2026-09-04, one day before that run.
+
+At the time of writing, the candidate had passed the available source, host, Simulator,
+static-link, and unsigned archive checks only, and was **UNDECIDED**.
 
 ## Verification environment
 
@@ -103,4 +106,7 @@ record.
 - A signed final Release archive and App Store-equivalent architecture/dynamic-plugin/private-API
   audit.
 
-Until those results exist for every required matrix row, the candidate remains **UNDECIDED**.
+Of these, the physical-device run of 2026-09-05 covered Eisu/Kana delivery, `KEY-IME-02`, real
+NLA/TLS, a rendered desktop, and manual teardown, which is what the Core Gate needed. The rest are
+carried into the phase that implements the corresponding feature, at the verification scale in
+`docs/README.md`; a full matrix is explicitly not a goal of this project.

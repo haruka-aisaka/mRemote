@@ -114,7 +114,7 @@ UIKit と GCKeyboard には共通 event ID がなく、GC event には UIKit と
 | `gameController` | UIKit 不達、GC の down/up が安定すると実機 matrix で確認した静的 allow-list のみ |
 | `unsupported` | どちらにも安定した down/up がなく送信しない。UI 代替を使う |
 
-英数/かなは UIKit down の到達が確認済みなので暫定 `uiKit` 候補とするが、英数を含む各キーの down/up 対称性 100 回試験に合格した後だけ policy を固定する。英数の UIKit up が欠落し GC が安定していれば、その usage 全体を `gameController` に切り替える。二経路を一つの press cycle 内で混ぜない。
+英数/かなは UIKit down の到達が確認済みなので暫定 `uiKit` 候補とするが、英数を含む各キーの down/up 対称性の反復試験（既定 10 回）に合格した後だけ policy を固定する。英数の UIKit up が欠落し GC が安定していれば、その usage 全体を `gameController` に切り替える。二経路を一つの press cycle 内で混ぜない。
 
 source policy は対応 OS と検証済みキーボード種別/接続方式を含む compatibility table に束縛する。機器を識別できない場合は対応 matrix 全体で安全な共通 policy を使い、動的推測しない。変更は全物理キーが neutral の focus epoch 境界でだけ行う。選択外 source は物理状態と診断集計にだけ使う。遅延した GC down、source 切替中の保持キー、旧 focus で始まった orphan up/repeat は remote へ送らない。
 

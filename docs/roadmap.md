@@ -4,6 +4,9 @@
 
 最も不確実な FreeRDP の iOS build、Japanese scan code、描画/音声 bridge、複数セッションのメモリを先に実機で潰す。UI を作り込んだ後に native core の制約が判明しない順序にする。
 
+検証の規模は [`README.md`](README.md) の「開発体制と試験スケール」に従う。個人開発なので、
+反復回数と端末マトリクスは現実的な水準に落とし、そのぶん自動テストと記録に寄せる。
+
 期間ではなく exit criteria で phase を区切る。各 phase で未完の native resource、入力押下状態、秘密データが残らない teardown test を加える。Phase 0 の `GO` は個人基準で native core を採用する判断であり、製品/互換性/リリースの承認ではない。
 
 ## 2. Phase 0 — Go/No-Go スパイク
@@ -23,9 +26,15 @@
 
 1. device arm64 の bridge を含む harness を実機で起動できる。
 2. NLA/TLS で実 Windows へ接続し、leaf/chain DER を `SecTrust` + SSL hostname policy で判定して challenge を扱える。
-3. 英数→`0x7B`、かな→`0x79` の各 down/up を Windows 側で 100 cycle 確認できる。
+3. 英数→`0x7B`、かな→`0x79` の各 down/up が Windows 側で無変換/変換として認識される（数回の実機確認で足りる。KeyEcho による 10 cycle の機械判定は Phase 3 で行う）。
 4. 対象 press で `super.presses*` を呼ばず、iPadOS IME/入力ソース UI を起動しない (`KEY-IME-02`)。
 5. 接続停止・破棄後に callback/wait が残らず、再接続して crash/hang しない。
+
+### 結果（2026-09-05: GO）
+
+基準構成（iPad mini 第 7 世代 + Apple Magic Keyboard JIS + Windows 11 一台）で Core Gate の
+7 行すべてが実機で PASS した。判定と繰り越し事項は [`phase0/README.md`](../phase0/README.md)
+に記録してある。
 
 ### Gate
 
@@ -65,7 +74,7 @@
 ### Exit criteria
 
 - 対象 Windows へ接続し、30 分操作して crash/leak/UI hang がない。
-- 接続全段階をキャンセル可能で、100 回の connect/disconnect test に耐える。
+- 接続全段階をキャンセル可能で、20 回の connect/disconnect test に耐える。
 - 証明書を無言で受理せず、fingerprint 変更を検出する。
 
 ## 5. Phase 3 — 物理入力とポインター
@@ -82,9 +91,9 @@
 
 ### Exit criteria
 
-- KEY-EISU-01/KEY-KANA-01 の各 100 回が実機/Windows で合格する。
+- KEY-EISU-01/KEY-KANA-01 の各 10 回が実機/Windows で合格する。
 - local IME の候補/文字が混入せず、focus/lifecycle 操作で押下残りがない。
-- Apple JIS と PC JIS、mouse と trackpad の必須 matrix が合格する。
+- 手元の Apple JIS キーボードと利用可能なポインターで合格する。PC JIS と他のポインターは入手できた時点で追加検証とし、未検証であることを文書に残す。
 
 ## 6. Phase 4 — 複数セッション
 

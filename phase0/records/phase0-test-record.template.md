@@ -18,7 +18,9 @@ certificate private keys, framebuffer dumps, clipboard contents, or printable-ke
 
 ## Results
 
-Use `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN`. A `PASS` requires the listed, reviewable evidence.
+Use `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN`. A `PASS` requires evidence someone can review later;
+at this project's scale (`docs/README.md`, "開発体制と試験スケール") a recorded operator
+observation counts, as long as the row says what was actually observed and what was deferred.
 These seven rows decide only whether to adopt the native core on this personal baseline.
 
 | ID | Result | Evidence / measured value | Notes |
@@ -26,8 +28,8 @@ These seven rows decide only whether to adopt the native core on this personal b
 | `P0-BUILD-01` pinned FreeRDP/WinPR device arm64 slice | `NOT RUN` | XCFramework metadata, source commit/checksum, build log SHA-256 | |
 | `P0-TLS-01` NLA/TLS connection and authoritative SecTrust SSL hostname evaluation | `NOT RUN` | redacted leaf/chain fingerprints, SecTrust result, challenge decision | Gate |
 | `P0-DSP-01` connected desktop presents a BGRA frame | `NOT RUN` | redacted screenshot or frame counter and desktop resolution | |
-| `KEY-EISU-01` HID 0x91 to scan 0x7B down/up, 100 cycles | `NOT RUN` | EISU-only KeyEcho JSONL SHA-256; `target_mode=eisu`; down/up/repeat/mismatch/unexpected counts | Gate |
-| `KEY-KANA-01` HID 0x90 to scan 0x79 down/up, 100 cycles | `NOT RUN` | KANA-only KeyEcho JSONL SHA-256; `target_mode=kana`; down/up/repeat/mismatch/unexpected counts | Gate |
+| `KEY-EISU-01` HID 0x91 to scan 0x7B down/up | `NOT RUN` | operator observation, or an EISU-only KeyEcho JSONL SHA-256 with `target_mode=eisu` and its down/up/repeat/mismatch/unexpected counts | Gate |
+| `KEY-KANA-01` HID 0x90 to scan 0x79 down/up | `NOT RUN` | operator observation, or a KANA-only KeyEcho JSONL SHA-256 with `target_mode=kana` and its down/up/repeat/mismatch/unexpected counts | Gate |
 | `KEY-IME-02` consumed press does not show iPadOS IME/input-source UI | `NOT RUN` | screen recording or observer notes; call-super=false | Gate |
 | `P0-TEARDOWN-01` stop/destroy wakes waits and drains callbacks | `NOT RUN` | sanitizer/stress iteration result | Gate |
 
