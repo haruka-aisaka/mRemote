@@ -1,6 +1,7 @@
 import MetalKit
 import QuartzCore
 import UIKit
+import InputCore
 import SessionCore
 
 /// The Metal surface the remote desktop is drawn on.
@@ -10,9 +11,14 @@ import SessionCore
 /// coalesced signal, and this view uploads only the damaged region before
 /// presenting. Metal composites and scales; it never decodes.
 ///
-/// Input is not this view's job yet. Phase 3 adds the key and pointer capture;
-/// the gestures here move the viewport, which is what makes a 1920x1080
-/// desktop usable on an iPad before any of that exists.
+/// Two input worlds share this view and they do not overlap. An indirect
+/// pointer - a trackpad or a mouse - drives the *remote* pointer: hover moves
+/// it, a click is a button, a two-finger scroll is a wheel. Direct touches
+/// drive the *local* viewport: one finger pans, pinch zooms, a double tap
+/// switches between fit and 100%. Sharing a gesture between the two is what
+/// makes a tablet RDP client feel unpredictable, so nothing here does.
+///
+/// Keyboard capture is still Phase 3.
 @MainActor
 final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate {
     private static let shaderSource = """
@@ -66,6 +72,15 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     var onTransformChange: ((ViewportTransform) -> Void)?
     var onDiagnostic: ((String) -> Void)?
 
+    /// Where pointer input goes. Set by the surface once the session exists;
+    /// nil means the events are tracked locally but sent nowhere.
+    var inputSink: (any DesktopInputSink)? {
+        didSet {
+            guard inputSink !== oldValue else { return }
+            releaseHeldButtons()
+        }
+    }
+
     private let frameStore: LatestDesktopFrameStore
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
@@ -78,10 +93,19 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     private var panOrigin = ViewportPoint.zero
     private var zoomOrigin: Double = 1
     private var hasPresentedAFrame = false
+    private var pointerRouter: PointerInputRouter
+    /// Buttons the platform reports as held right now. Kept so a touch phase
+    /// that carries no button mask does not read as "everything released".
+    private var indirectButtons: Set<PointerButton> = []
+    private var isInputEnabled = true
 
     private(set) var viewportTransform: ViewportTransform
 
-    init(frameStore: LatestDesktopFrameStore, scaleMode: InitialScale) {
+    init(
+        frameStore: LatestDesktopFrameStore,
+        scaleMode: InitialScale,
+        scrollDirection: ScrollDirection
+    ) {
         guard let device = MTLCreateSystemDefaultDevice(),
               let commandQueue = device.makeCommandQueue(),
               let library = try? device.makeLibrary(source: Self.shaderSource, options: nil)
@@ -103,11 +127,16 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         self.commandQueue = commandQueue
         self.pipeline = pipeline
         self.scaleMode = scaleMode
-        viewportTransform = ViewportTransform(
+        let transform = ViewportTransform(
             desktopWidth: 1,
             desktopHeight: 1,
             viewport: .zero,
             scaleMode: scaleMode
+        )
+        viewportTransform = transform
+        pointerRouter = PointerInputRouter(
+            transform: transform,
+            scrollDirection: scrollDirection
         )
         super.init(frame: .zero, device: device)
 
@@ -130,7 +159,10 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         pinch.delegate = self
         addGestureRecognizer(pinch)
 
+        // Direct touches only: a trackpad drag is the remote pointer's, not
+        // the viewport's.
         let drag = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        drag.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         drag.delegate = self
         addGestureRecognizer(drag)
 
@@ -139,7 +171,21 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             action: #selector(handleDoubleTap(_:))
         )
         doubleTap.numberOfTapsRequired = 2
+        doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         addGestureRecognizer(doubleTap)
+
+        // The mirror image: no touch types at all, so this recogniser only ever
+        // sees indirect scroll events from a trackpad or a wheel.
+        let scroll = UIPanGestureRecognizer(target: self, action: #selector(handleScroll(_:)))
+        scroll.allowedScrollTypesMask = .all
+        scroll.allowedTouchTypes = []
+        scroll.cancelsTouchesInView = false
+        scroll.delegate = self
+        addGestureRecognizer(scroll)
+
+        let hover = UIHoverGestureRecognizer(target: self, action: #selector(handleHover(_:)))
+        hover.delegate = self
+        addGestureRecognizer(hover)
 
         attachToFrameStore()
     }
@@ -286,6 +332,13 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // back rather than keeping a copy that disagrees with what is drawn.
         pan = viewportTransform.pan
         zoom = viewportTransform.zoom
+        pointerRouter.transform = viewportTransform
+        if desktopChanged {
+            // The remembered pixel was measured against a surface that no
+            // longer exists, so the next move must be sent even if it lands on
+            // the same number.
+            pointerRouter.forgetPosition()
+        }
         onTransformChange?(viewportTransform)
     }
 
@@ -332,6 +385,142 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // view; recognising them one at a time makes zooming feel like it
         // fights the pan.
         true
+    }
+
+    // MARK: - Remote pointer
+
+    func setScrollDirection(_ direction: ScrollDirection) {
+        pointerRouter.setScrollDirection(direction)
+    }
+
+    /// Disabling releases whatever is held. docs/architecture.md section 10
+    /// requires it on focus loss and scene deactivation: a click that begins
+    /// here and ends somewhere the app never sees would otherwise leave the
+    /// button down on Windows, turning the next move into a drag across the
+    /// desktop.
+    func setInputEnabled(_ enabled: Bool) {
+        guard enabled != isInputEnabled else { return }
+        isInputEnabled = enabled
+        if !enabled { releaseHeldButtons() }
+    }
+
+    func releaseHeldButtons() {
+        indirectButtons = []
+        deliver(pointerRouter.releaseAll())
+    }
+
+    private func deliver(_ events: [PointerInput]) {
+        guard let inputSink, isInputEnabled else { return }
+        for event in events {
+            inputSink.send(event)
+        }
+    }
+
+    private func viewportPoint(_ point: CGPoint) -> ViewportPoint {
+        ViewportPoint(x: Double(point.x), y: Double(point.y))
+    }
+
+    @objc private func handleHover(_ recognizer: UIHoverGestureRecognizer) {
+        switch recognizer.state {
+        case .began, .changed:
+            deliver(pointerRouter.moved(to: viewportPoint(recognizer.location(in: self))))
+        case .ended, .cancelled:
+            // The pointer left the surface. Nothing is sent - the remote
+            // pointer simply stays where it was - but a button held on the way
+            // out has to be released.
+            releaseHeldButtons()
+        default:
+            break
+        }
+    }
+
+    @objc private func handleScroll(_ recognizer: UIPanGestureRecognizer) {
+        switch recognizer.state {
+        case .began, .changed:
+            let delta = recognizer.translation(in: self)
+            guard delta != .zero else { return }
+            recognizer.setTranslation(.zero, in: self)
+            deliver(pointerRouter.scrolled(
+                horizontal: Double(delta.x),
+                vertical: Double(delta.y)
+            ))
+        case .ended, .cancelled, .failed:
+            recognizer.setTranslation(.zero, in: self)
+        default:
+            break
+        }
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard handleIndirectPointer(touches, event: event, ending: false) else {
+            super.touchesBegan(touches, with: event)
+            return
+        }
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard handleIndirectPointer(touches, event: event, ending: false) else {
+            super.touchesMoved(touches, with: event)
+            return
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard handleIndirectPointer(touches, event: event, ending: true) else {
+            super.touchesEnded(touches, with: event)
+            return
+        }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard handleIndirectPointer(touches, event: event, ending: true) else {
+            super.touchesCancelled(touches, with: event)
+            return
+        }
+    }
+
+    /// Returns true when the touch belonged to a trackpad or mouse and has
+    /// been turned into remote pointer input; false leaves it to the viewport
+    /// gestures.
+    ///
+    /// The button *set* is read from the event rather than inferred from the
+    /// phase. UIKit reports what is held now, which is the only way a chord
+    /// change or a release the app never saw can be handled correctly.
+    private func handleIndirectPointer(
+        _ touches: Set<UITouch>,
+        event: UIEvent?,
+        ending: Bool
+    ) -> Bool {
+        guard touches.contains(where: { $0.type == .indirectPointer }) else { return false }
+        let location = touches.first { $0.type == .indirectPointer }?.location(in: self)
+        // An ending touch releases everything rather than trusting the mask,
+        // which may still name the button that is lifting. On a two-button
+        // chord that releases one button, this releases both and the next
+        // event presses the survivor again - a visible flicker, but the
+        // alternative is a button left down on the server. The baseline device
+        // is a Magic Keyboard trackpad, which has one button.
+        let buttons = ending ? [] : Self.pointerButtons(in: event?.buttonMask ?? [])
+        indirectButtons = buttons
+        deliver(pointerRouter.buttonsChanged(
+            to: buttons,
+            at: location.map(viewportPoint)
+        ))
+        return true
+    }
+
+    private static func pointerButtons(in mask: UIEvent.ButtonMask) -> Set<PointerButton> {
+        var buttons: Set<PointerButton> = []
+        if mask.contains(.primary) { buttons.insert(.left) }
+        if mask.contains(.secondary) { buttons.insert(.right) }
+        // Button 3 is the middle button on a mouse; a trackpad never reports
+        // it, so this is only reached with real hardware attached.
+        if mask.contains(.button(3)) { buttons.insert(.middle) }
+        return buttons
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { releaseHeldButtons() }
     }
 
     // MARK: - MTKViewDelegate

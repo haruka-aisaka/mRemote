@@ -77,6 +77,11 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// workspace shows its status rather than a black rectangle.
     var frameStore: LatestDesktopFrameStore? { desktop?.frameStore }
 
+    /// Where the surface sends pointer input. Nil for a session that has no
+    /// desktop, which is how a future terminal session gets a workspace
+    /// without pretending to have a mouse.
+    var inputSink: (any DesktopInputSink)? { desktop?.inputSink }
+
     var showsDesktop: Bool { desktop != nil && (state == .connected || desktopSize != nil) }
 
     func start() async {
@@ -130,6 +135,12 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     func setScaleMode(_ mode: InitialScale) {
         runtime.scale = mode
+    }
+
+    /// Live, per-session, and never written back to the profile unless the
+    /// user saves it as that connection's default.
+    func setScrollDirection(_ direction: ScrollDirection) {
+        runtime.scrollDirection = direction
     }
 
     /// The surface reports its drawable size in pixels. A server that

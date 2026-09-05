@@ -11,6 +11,10 @@ public protocol DesktopSession: RemoteSession {
     /// `SessionManager`.
     nonisolated var frameStore: LatestDesktopFrameStore { get }
 
+    /// The other half of the data plane. Written directly by the surface, for
+    /// the same reason frames are not routed through the actor.
+    nonisolated var inputSink: any DesktopInputSink { get }
+
     /// The size the connection was negotiated at, before any dynamic resize.
     nonisolated var initialDesktopSize: (width: Int, height: Int) { get }
 

@@ -217,3 +217,29 @@ private final class ErrorRecorder: @unchecked Sendable {
         return storage
     }
 }
+
+/// The pointer path never reaches a real server here, so what these cover is
+/// the gate in front of it: input is only delivered while a session can
+/// actually carry it, and `send` is safe on every other path.
+final class RDPInputSinkTests: XCTestCase {
+    func testInputIsRefusedUntilAnAttemptIsRunning() {
+        let sink = RDPInputSink()
+        XCTAssertFalse(sink.acceptsInput)
+        // Safe, and a no-op: the surface is allowed to send without checking.
+        sink.send(.move(PixelPoint(x: 10, y: 10)))
+        sink.send(.button(.left, .down, at: PixelPoint(x: 10, y: 10)))
+        sink.send(.scroll(horizontal: 0, vertical: 120))
+
+        // Accepting alone is not enough; there has to be a worker to send to.
+        sink.setAccepting(true)
+        XCTAssertFalse(sink.acceptsInput)
+    }
+
+    func testDetachingAWorkerAlsoStopsAcceptingInput() {
+        let sink = RDPInputSink()
+        sink.setAccepting(true)
+        sink.attach(nil)
+        XCTAssertFalse(sink.acceptsInput)
+        sink.send(.move(PixelPoint(x: 1, y: 1)))
+    }
+}

@@ -20,7 +20,11 @@ actor RDPRemoteSession: DesktopSession {
     nonisolated let id: SessionID
     nonisolated let profileID: ProfileID?
     nonisolated let frameStore = LatestDesktopFrameStore()
+    nonisolated let inputSink: any DesktopInputSink
     nonisolated let initialDesktopSize: (width: Int, height: Int)
+    /// The concrete sink, kept separately so the actor can retarget it without
+    /// casting back out of the protocol.
+    private nonisolated let pointerSink: RDPInputSink
 
     private let configuration: EffectiveConnectionConfiguration
     private let credentials: any CredentialRepository
@@ -61,6 +65,9 @@ actor RDPRemoteSession: DesktopSession {
         trust: any TrustRepository,
         desktopSize: (width: Int, height: Int)
     ) {
+        let pointerSink = RDPInputSink()
+        self.pointerSink = pointerSink
+        self.inputSink = pointerSink
         self.id = id
         self.profileID = configuration.profileID
         self.configuration = configuration
@@ -126,6 +133,7 @@ actor RDPRemoteSession: DesktopSession {
         if case .failed(let error) = reason {
             terminationCause = .failed(error)
         }
+        pointerSink.setAccepting(false)
         if machine.transition(to: .disconnecting) != nil {
             emit(.stateChanged(machine.state, generation: machine.generation))
         }
@@ -263,6 +271,7 @@ actor RDPRemoteSession: DesktopSession {
             frameStore: frameStore
         )
         native = session
+        pointerSink.attach(session)
         terminationCause = nil
         negotiatedChannels = []
         currentDesktopSize = initialDesktopSize
@@ -335,6 +344,10 @@ actor RDPRemoteSession: DesktopSession {
             guard generation == machine.generation.rawValue else { return }
             guard let target = phase.sessionState else { return }
             if machine.transition(to: target) != nil {
+                // Input is gated on the state machine rather than on the
+                // backend's phase, so a press cannot be delivered during a
+                // handshake or while the session is tearing down.
+                pointerSink.setAccepting(machine.state.acceptsInput)
                 emit(.stateChanged(machine.state, generation: machine.generation))
             }
 
@@ -383,6 +396,7 @@ actor RDPRemoteSession: DesktopSession {
     /// allowed to publish a terminal state.
     private func finishAttempt(cause: RDPTerminationCause) {
         native = nil
+        pointerSink.attach(nil)
         pumpTask = nil
         pendingChallenge = nil
         pendingCertificate = nil

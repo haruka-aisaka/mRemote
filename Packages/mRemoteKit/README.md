@@ -11,6 +11,7 @@ point downwards only.
 | `Persistence` | the versioned profile document, its migration chain, the profile store and repository | `SessionCore` |
 | `AppleAdapters` | Keychain credential and trust repositories, OSLog categories, log redaction | `SessionCore`, Security |
 | `RDPProtocol` | the C bridge's status/phase/channel vocabulary, FreeRDP error mapping, staged certificate trust evaluation and the review policy | `SessionCore`, Security |
+| `InputCore` | pointer normalisation: pressed-button state, scroll quantisation, and the local-to-remote mapping. No protocol mapping, so no scan code appears here | `SessionCore` |
 
 Nothing here imports FreeRDP. `RDPProtocol` is the RDP-specific half that does
 not need it - error categories, certificate evaluation, the review policy -

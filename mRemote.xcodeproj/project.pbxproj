@@ -10,15 +10,36 @@
 		A10000000000000000000051 /* FreeRDP.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000053 /* FreeRDP.xcframework */; };
 		A10000000000000000000052 /* mRemoteRDPBridge.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000054 /* mRemoteRDPBridge.xcframework */; };
 		A10000000000000000000055 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000056 /* AudioToolbox.framework */; };
+		F1AAF87D304BFF50009AAF11 /* SessionCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000041 /* SessionCore */; };
+		F1AAF87E304BFF50009AAF11 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000042 /* Persistence */; };
+		F1AAF87F304BFF50009AAF11 /* AppleAdapters in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000043 /* AppleAdapters */; };
+		F1AAF880304BFF50009AAF11 /* RDPProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000044 /* RDPProtocol */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000017 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000005;
+			remoteInfo = mRemote;
+		};
+		A10000000000000000000027 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000005;
+			remoteInfo = mRemote;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		A10000000000000000000053 /* FreeRDP.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = FreeRDP.xcframework; path = artifacts/FreeRDP.xcframework; sourceTree = SOURCE_ROOT; };
-		A10000000000000000000054 /* mRemoteRDPBridge.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = mRemoteRDPBridge.xcframework; path = artifacts/mRemoteRDPBridge.xcframework; sourceTree = SOURCE_ROOT; };
-		A10000000000000000000056 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		A10000000000000000000004 /* mRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = mRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000010 /* mRemoteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = mRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000020 /* mRemoteUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = mRemoteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000053 /* FreeRDP.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = FreeRDP.xcframework; path = artifacts/FreeRDP.xcframework; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000054 /* mRemoteRDPBridge.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = mRemoteRDPBridge.xcframework; path = artifacts/mRemoteRDPBridge.xcframework; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000056 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -44,6 +65,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F1AAF880304BFF50009AAF11 /* RDPProtocol in Frameworks */,
+				F1AAF87F304BFF50009AAF11 /* AppleAdapters in Frameworks */,
+				F1AAF87E304BFF50009AAF11 /* Persistence in Frameworks */,
+				F1AAF87D304BFF50009AAF11 /* SessionCore in Frameworks */,
 				A10000000000000000000052 /* mRemoteRDPBridge.xcframework in Frameworks */,
 				A10000000000000000000051 /* FreeRDP.xcframework in Frameworks */,
 				A10000000000000000000055 /* AudioToolbox.framework in Frameworks */,
@@ -79,16 +104,6 @@
 			);
 			sourceTree = "<group>";
 		};
-		A10000000000000000000050 /* Native Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				A10000000000000000000053 /* FreeRDP.xcframework */,
-				A10000000000000000000054 /* mRemoteRDPBridge.xcframework */,
-				A10000000000000000000056 /* AudioToolbox.framework */,
-			);
-			name = "Native Frameworks";
-			sourceTree = "<group>";
-		};
 		A10000000000000000000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -104,6 +119,16 @@
 			children = (
 			);
 			name = Packages;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000050 /* Native Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000053 /* FreeRDP.xcframework */,
+				A10000000000000000000054 /* mRemoteRDPBridge.xcframework */,
+				A10000000000000000000056 /* AudioToolbox.framework */,
+			);
+			name = "Native Frameworks";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -130,6 +155,7 @@
 				A10000000000000000000042 /* Persistence */,
 				A10000000000000000000043 /* AppleAdapters */,
 				A10000000000000000000044 /* RDPProtocol */,
+				A10000000000000000000045 /* InputCore */,
 			);
 			productName = mRemote;
 			productReference = A10000000000000000000004 /* mRemote.app */;
@@ -289,23 +315,6 @@
 			targetProxy = A10000000000000000000027 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
-
-/* Begin PBXContainerItemProxy section */
-		A10000000000000000000017 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A10000000000000000000001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = A10000000000000000000005;
-			remoteInfo = mRemote;
-		};
-		A10000000000000000000027 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A10000000000000000000001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = A10000000000000000000005;
-			remoteInfo = mRemote;
-		};
-/* End PBXContainerItemProxy section */
 
 /* Begin XCBuildConfiguration section */
 		A1000000000000000000000C /* Debug */ = {
@@ -538,6 +547,10 @@
 		A10000000000000000000044 /* RDPProtocol */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RDPProtocol;
+		};
+		A10000000000000000000045 /* InputCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = InputCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

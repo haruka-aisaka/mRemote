@@ -17,6 +17,7 @@ let package = Package(
         .library(name: "Persistence", targets: ["Persistence"]),
         .library(name: "AppleAdapters", targets: ["AppleAdapters"]),
         .library(name: "RDPProtocol", targets: ["RDPProtocol"]),
+        .library(name: "InputCore", targets: ["InputCore"]),
     ],
     targets: [
         .target(name: "SessionCore"),
@@ -38,9 +39,14 @@ let package = Package(
             dependencies: ["SessionCore"],
             linkerSettings: [.linkedFramework("Security")]
         ),
+        // Pointer and, in Phase 3, keyboard normalisation: pressed state,
+        // scroll quantisation and the local-to-remote mapping. It holds no
+        // protocol mapping, so a scan code never appears here.
+        .target(name: "InputCore", dependencies: ["SessionCore"]),
         .testTarget(name: "SessionCoreTests", dependencies: ["SessionCore"]),
         .testTarget(name: "PersistenceTests", dependencies: ["Persistence"]),
         .testTarget(name: "AppleAdaptersTests", dependencies: ["AppleAdapters"]),
         .testTarget(name: "RDPProtocolTests", dependencies: ["RDPProtocol"]),
+        .testTarget(name: "InputCoreTests", dependencies: ["InputCore"]),
     ]
 )

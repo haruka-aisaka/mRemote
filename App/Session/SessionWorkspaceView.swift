@@ -64,7 +64,13 @@ struct SessionWorkspaceView: View {
         if let frameStore = model.frameStore {
             RemoteDesktopSurface(
                 frameStore: frameStore,
+                inputSink: model.inputSink,
                 scaleMode: model.runtime.scale,
+                scrollDirection: model.runtime.scrollDirection,
+                // Input is gated on both halves of docs/architecture.md
+                // section 10: the session must be able to deliver it, and the
+                // scene must be the one the user is looking at.
+                isInputEnabled: model.state.acceptsInput && scenePhase == .active,
                 onRenderSizeChange: { width, height in
                     model.renderSizeChanged(width: width, height: height)
                 },
@@ -144,6 +150,12 @@ struct SessionWorkspaceView: View {
                     }
                     .accessibilityIdentifier("session-scale-picker")
 
+                    Picker("スクロール方向", selection: scrollBinding) {
+                        Text("標準").tag(ScrollDirection.normal)
+                        Text("反転").tag(ScrollDirection.reversed)
+                    }
+                    .accessibilityIdentifier("session-scroll-picker")
+
                     if let size = model.desktopSizeText {
                         Section("リモート解像度") {
                             Text(model.supportsDynamicResolution ? "\(size)（可変）" : size)
@@ -179,6 +191,16 @@ struct SessionWorkspaceView: View {
         Binding(
             get: { model.runtime.scale },
             set: { model.setScaleMode($0) }
+        )
+    }
+
+    /// Live rather than a profile edit: which way a trackpad should scroll a
+    /// remote desktop is the kind of thing a user settles by trying it, and
+    /// making them leave the session to change it would be absurd.
+    private var scrollBinding: Binding<ScrollDirection> {
+        Binding(
+            get: { model.runtime.scrollDirection },
+            set: { model.setScrollDirection($0) }
         )
     }
 
