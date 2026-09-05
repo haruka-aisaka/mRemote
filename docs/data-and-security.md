@@ -141,7 +141,8 @@ notBefore, notAfter, createdAt
 
 - fingerprint 一致だけで host/port の違う接続へ信頼を流用しない。
 - 有効期限切れ、hostname mismatch、fingerprint 変更を別々に表示する。前二者は既定で承認 action を出さない。IP literal 接続の name 未検証は mismatch とは別に扱い、承認 action を出したうえで警告文を必ず添える。
-- 保存済み fingerprint が変わった場合は MITM/再発行の可能性として強い警告を出し、自動置換しない。
+- 保存済み fingerprint が変わった場合は MITM/再発行の可能性として強い警告を出し、自動置換しない。承認 action は出すが、初回承認とは別の文言・別のボタン（「変更を承知のうえで今回のみ接続」「新しい証明書に置き換えて保存」）とし、以前の fingerprint を併記する。承認 action を出さないと、正当な証明書更新でその接続先がアプリ内から永久に使えなくなり、警告を読む代わりに trust record を消す習慣を作ってしまう。
+- 保存済み fingerprint が変わった場合の警告は、新しい証明書が system trust を満たしていても出す。公的 CA の署名は「以前ユーザーが承認したのと同じサーバーである」ことの証明にはならない。
 - `今回のみ信頼` は永続化しない。
 - trust callback 待ちの間も接続キャンセル可能にし、タイムアウト時は拒否扱いとする。DER callback memory は判定完了後に破棄する。
 - 設定画面から trust record を確認/削除できる。

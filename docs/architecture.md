@@ -73,8 +73,9 @@ flowchart TB
 |---|---|
 | `mRemoteApp`、各 Feature | `App/` と `mRemote.xcodeproj`（Phase 1 の UI 着手時に作成） |
 | `SessionCore`、`Persistence`、`AppleAdapters` | `Packages/mRemoteKit/` |
-| `InputCore`、`RDPProtocol` | Phase 3 で `Packages/mRemoteKit/` へ追加。現在は `tools/Phase0Harness/` 内にある |
-| `RemoteSurface` | Phase 2 で追加。現在は harness の `RemoteSurfaceView` |
+| `RDPProtocol` | `Packages/mRemoteKit/`（Phase 2 で追加）。FreeRDP を要しない部分だけを置き、host で test できる状態を保つ。C ABI を叩く session adapter は bridging header が要るため `App/RDP/` にある |
+| `InputCore` | Phase 3 で `Packages/mRemoteKit/` へ追加。現在は `tools/Phase0Harness/` 内にある |
+| `RemoteSurface` | `App/Session/`（Phase 2 で追加）。frame store と viewport 変換は `SessionCore` にあり、UIKit/Metal 面だけがアプリ側にある |
 | `FreeRDPBridge` | `bridge/`（C）と `artifacts/` の生成 XCFramework |
 
 将来は `SSHProtocol` と `TerminalSurface` を追加する。`ConnectionFeature` は protocol discriminator に応じた設定セクションを差し込み、`SessionFeature` は session が提供する surface kind (`desktop`/`terminal`) を表示する。

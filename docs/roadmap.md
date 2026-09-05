@@ -74,20 +74,46 @@
 - NLA/TLS、credential challenge、certificate UI
 - software framebuffer→Metal dirty-region 描画
 - Fit/100%、pinch、pan、回転。DISP 対応時の動的解像度、非対応時の local scaling/再接続
-- remote cursor、connection status/retry
+- connection status/retry
 - scene inactive privacy cover と lifecycle 処理
+- Phase 0 harness の `ServerTrustEvaluator` を `RDPProtocol` へ移設
 
 ### Exit criteria
 
 - 対象 Windows へ接続し、30 分操作して crash/leak/UI hang がない。
 - 接続全段階をキャンセル可能で、20 回の connect/disconnect test に耐える。
 - 証明書を無言で受理せず、fingerprint 変更を検出する。
+- （Phase 0 からの繰り越し）bridge の sanitizer stress を実施する。
+
+### 実装状況
+
+| 項目 | 状態 |
+|---|---|
+| bridge connect/cancel/disconnect、error mapping | 実装済み。`RDPErrorMapper` が bridge status と FreeRDP error code を `RemoteSessionError` へ写像する |
+| NLA/TLS、credential challenge、certificate UI | 実装済み。`SessionChallengeSheet` |
+| software framebuffer→Metal dirty-region 描画 | 実装済み。`LatestDesktopFrameStore` と `RemoteDesktopView` |
+| Fit/100%、pinch、pan、回転、DISP 動的解像度 | 実装済み。`ViewportTransform` |
+| scene inactive privacy cover と lifecycle | 実装済み |
+| 接続全段階のキャンセル、20 回 connect/disconnect | 自動試験済み。`AppTests/RDPRemoteSessionTests` |
+| 証明書の無言受理なし、fingerprint 変更検出 | 自動試験済み。`CertificateReviewPolicyTests` |
+| 実 Windows への 30 分操作 | **未実施**。実機試験が必要 |
+| bridge の sanitizer stress | **未実施**。開発ホストに CMake が無く実行できていない |
+
+### この phase で意図的に残したもの
+
+- **remote cursor の形状**は送れない。C ABI に pointer/cursor callback が無く、追加には
+  ABI 変更と XCFramework の再生成が要る。ポインター自体が Phase 3 の担当なので、cursor
+  shape の transport はそこで ABI 追加として設計する。現状はサーバー側描画に依存する。
+- 自動再接続 (`ReconnectPolicy.automatic`) は設定値としては存在するが、再接続の実行は
+  Phase 4 の scene restoration と同じ policy で扱う。
+- 入力（キー/ポインター）は送らない。Phase 3。
 
 ## 5. Phase 3 — 物理入力とポインター
 
 ### 実装
 
-- Phase 0 harness の `InputRouter`/`RDPScanCodeMapper`/`ServerTrustEvaluator`/`ScrollWheelAccumulator` を `InputCore`/`RDPProtocol` へ移設（harness は入力回帰の治具として残す）
+- Phase 0 harness の `InputRouter`/`RDPScanCodeMapper`/`ScrollWheelAccumulator` を `InputCore`/`RDPProtocol` へ移設（harness は入力回帰の治具として残す。`ServerTrustEvaluator` は証明書 UI に必要なため Phase 2 で移設済み）
+- remote cursor shape の C ABI 追加（pointer callback）と描画
 - `RemoteInputView` first responder と UIKit keyboard capture
 - GCKeyboard lifecycle、usage ごとの静的 source policy、`KeyboardEventArbiter`
 - HID-to-RDP mapping、Japanese layout/type negotiation

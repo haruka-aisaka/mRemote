@@ -17,7 +17,7 @@ platform.
 | Path | Contents |
 |---|---|
 | `mRemote.xcodeproj`, `App/` | The app: the connection list, the profile editor, settings and the full-screen session workspace. `AppTests/` and `AppUITests/` sit beside it. |
-| `Packages/mRemoteKit/` | The app layers that need no UIKit, so they build and test on the development host: `SessionCore`, `Persistence`, `AppleAdapters`. |
+| `Packages/mRemoteKit/` | The app layers that need no UIKit, so they build and test on the development host: `SessionCore`, `Persistence`, `AppleAdapters`, `RDPProtocol`. |
 | `bridge/` | The C ABI over FreeRDP. Opaque handles only; no FreeRDP type reaches Swift. |
 | `scripts/`, `config/`, `ThirdParty/`, `artifacts/` | Reproducible builds of the pinned native dependencies, their lock file, notices and SBOM, and the generated XCFrameworks. |
 | `tools/KeyEcho/` | A Win32 recorder that logs what scancodes actually arrived at Windows. |
@@ -37,10 +37,24 @@ Phase 1 meets its exit criteria: the app runs end to end against
 versioned with a tested migration chain, and a second protocol would be added
 by registering a factory rather than by changing a call site.
 
-Phase 2 is next: the real RDP session behind the same `RemoteSession`
-interface, and the Metal surface behind the workspace's placeholder.
+Phase 2 connects the real thing: `RDPRemoteSession` runs FreeRDP behind the
+same `RemoteSession` interface, the workspace draws the desktop on a Metal
+surface fed by dirty regions, and a server certificate is reviewed with its
+fingerprint rather than accepted quietly. Its remaining exit criteria are the
+ones that need a machine rather than a test: thirty minutes against the
+Windows host, and the bridge sanitizer stress carried over from Phase 0. See
+[`docs/roadmap.md`](docs/roadmap.md).
+
+Keyboard and pointer input is Phase 3, so the session presents the desktop but
+does not yet send anything to it.
 
 ## Build and test
+
+The app target links the generated `artifacts/FreeRDP.xcframework` and
+`artifacts/mRemoteRDPBridge.xcframework`, which are ignored by git and have to
+be built once before the app will link. `Packages/mRemoteKit` deliberately
+does not declare them, so `swift test` works in a fresh clone with no native
+build; the app does not.
 
 ```sh
 # The app, its unit tests and the end-to-end UI test
@@ -64,7 +78,12 @@ otherwise the Swift test targets cannot resolve XCTest. Prefix with
 `xcode-select -p` points at `/Library/Developer/CommandLineTools`.
 
 Building the native dependencies from source is documented in
-[`phase0/README.md`](phase0/README.md).
+[`phase0/README.md`](phase0/README.md). In short:
+
+```sh
+scripts/build-freerdp-xcframework.sh
+scripts/build-rdp-bridge-xcframework.sh
+```
 
 ## License
 
