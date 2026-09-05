@@ -44,9 +44,9 @@ final class AppEnvironment {
         self.sessions = SessionManager()
     }
 
-    /// The shipping graph. The RDP factory is registered here in Phase 2; until
-    /// then the app runs against the fake session, which is why the list and
-    /// the workspace can already be used.
+    /// The shipping graph. The only place that knows RDP exists: everything
+    /// above asks the registry for a session by protocol kind, so Phase 8's
+    /// SSH session is one more registration here.
     static func live() -> AppEnvironment {
         if UITestConfiguration.isActive {
             return UITestConfiguration.makeEnvironment()
@@ -60,11 +60,15 @@ final class AppEnvironment {
             // user's profiles had vanished.
             store = FailingProfileStore(reason: String(describing: error))
         }
+        let credentials = KeychainCredentialRepository()
+        let trust = KeychainTrustRepository()
         return AppEnvironment(
             store: store,
-            credentials: KeychainCredentialRepository(),
-            trust: KeychainTrustRepository(),
-            factories: SessionFactoryRegistry(factories: [FakeSessionFactory()])
+            credentials: credentials,
+            trust: trust,
+            factories: SessionFactoryRegistry(factories: [
+                RDPSessionFactory(credentials: credentials, trust: trust)
+            ])
         )
     }
 

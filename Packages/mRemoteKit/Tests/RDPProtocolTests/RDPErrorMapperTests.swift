@@ -221,6 +221,22 @@ final class RDPBridgeStatusABITests: XCTestCase {
         }
     }
 
+    func testChannelKindsStillMatchTheHeader() throws {
+        let text = try headerText()
+        let expected: [String: RDPBridgeChannel] = [
+            "MR_RDP_CHANNEL_CLIPRDR": .cliprdr,
+            "MR_RDP_CHANNEL_RDPSND": .rdpsnd,
+            "MR_RDP_CHANNEL_DRDYNVC": .drdynvc,
+            "MR_RDP_CHANNEL_DISP": .disp,
+            "MR_RDP_CHANNEL_RDPGFX": .rdpgfx,
+        ]
+        let parsed = constants(in: text, names: Array(expected.keys))
+        XCTAssertEqual(parsed.count, expected.count, "the header no longer declares every channel")
+        for (name, channel) in expected {
+            XCTAssertEqual(parsed[name], Int64(channel.rawValue), name)
+        }
+    }
+
     func testFrameLimitsStillMatchTheHeader() throws {
         let text = try headerText()
         // The limits `DesktopFrameValidator` re-checks are the header's, so a

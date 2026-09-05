@@ -1,0 +1,493 @@
+import Foundation
+import AppleAdapters
+import RDPProtocol
+import SessionCore
+
+/// One RDP connection, behind the protocol-independent `DesktopSession`.
+///
+/// The actor is the control plane and nothing else: state, challenges and
+/// lifecycle. Frames go from the native callback straight into `frameStore`
+/// without touching it, because routing a framebuffer through an actor would
+/// serialise the renderer behind every state change.
+///
+/// Two invariants are worth stating because most of the code exists to keep
+/// them. First, this object never holds the C handle: `RDPNativeCallGate`
+/// does, and it is the only thing allowed to hand it to the bridge. Second,
+/// the session is authoritative for its own state and pending challenge -
+/// docs/architecture.md requires the event stream to be a "read me again"
+/// signal rather than a log a consumer rebuilds state from.
+actor RDPRemoteSession: DesktopSession {
+    nonisolated let id: SessionID
+    nonisolated let profileID: ProfileID?
+    nonisolated let frameStore = LatestDesktopFrameStore()
+    nonisolated let initialDesktopSize: (width: Int, height: Int)
+
+    private let configuration: EffectiveConnectionConfiguration
+    private let credentials: any CredentialRepository
+    private let trust: any TrustRepository
+    private let logger: RDPSessionLogger
+
+    private var machine = SessionStateMachine()
+    private var continuations: [UUID: AsyncStream<SessionControlEvent>.Continuation] = [:]
+    private(set) var pendingChallenge: SessionChallenge?
+    /// The bridge identity behind `pendingChallenge` when it is a certificate.
+    private var pendingCertificate: RDPCertificateReview?
+
+    private var native: RDPNativeSession?
+    private var pumpTask: Task<Void, Never>?
+    private var workerFinished: [CheckedContinuation<Void, Never>] = []
+
+    /// Set when the stored password was rejected, so the next attempt asks
+    /// instead of replaying a password the server has already refused. An
+    /// automatic replay is how an account ends up locked out.
+    private var storedCredentialWasRejected = false
+    private var suppliedCredential: SuppliedCredential?
+    private var terminationCause: RDPTerminationCause?
+    private var visibility: SessionVisibility = .focused
+    private var negotiatedChannels: Set<RDPBridgeChannel> = []
+    private var currentDesktopSize: (width: Int, height: Int)
+    private var nextResizeRequestID: UInt64 = 0
+
+    private struct SuppliedCredential: Sendable {
+        let username: String
+        let domain: String?
+        let password: String
+    }
+
+    init(
+        id: SessionID = SessionID(),
+        configuration: EffectiveConnectionConfiguration,
+        credentials: any CredentialRepository,
+        trust: any TrustRepository,
+        desktopSize: (width: Int, height: Int)
+    ) {
+        self.id = id
+        self.profileID = configuration.profileID
+        self.configuration = configuration
+        self.credentials = credentials
+        self.trust = trust
+        self.initialDesktopSize = desktopSize
+        self.currentDesktopSize = desktopSize
+        self.logger = RDPSessionLogger(sessionID: id, endpoint: configuration.endpoint)
+    }
+
+    deinit {
+        // Ownership can be lost without a disconnect - a scene torn down while
+        // a connect is in flight, say. `requestStop` is thread-safe and
+        // idempotent, and without it the worker would sit in a blocking wait
+        // with nothing left to wake it.
+        native?.requestStop()
+        pumpTask?.cancel()
+    }
+
+    // MARK: - RemoteSession
+
+    var state: SessionState { machine.state }
+    var generation: SessionGeneration { machine.generation }
+    var currentVisibility: SessionVisibility { visibility }
+
+    func controlEvents() -> AsyncStream<SessionControlEvent> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(32)) { continuation in
+            let key = UUID()
+            continuations[key] = continuation
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeContinuation(key) }
+            }
+        }
+    }
+
+    private func removeContinuation(_ key: UUID) {
+        continuations[key] = nil
+    }
+
+    func connect() async throws {
+        guard machine.transition(to: .connecting) != nil else { return }
+        emit(.stateChanged(machine.state, generation: machine.generation))
+        await beginAttempt()
+    }
+
+    func disconnect(reason: DisconnectReason) async {
+        // Idempotent on every exit path, including one that runs after the
+        // session already stopped.
+        guard machine.state != .disconnected, machine.state != .idle else { return }
+        logger.session("disconnect requested (\(reason))")
+
+        if let pendingCertificate {
+            // A worker blocked on a certificate wait has to be woken, or the
+            // stop below would have nothing to interrupt.
+            native?.cancelCertificate(
+                generation: pendingCertificate.bridgeGeneration,
+                challengeID: pendingCertificate.bridgeChallengeID
+            )
+        }
+        pendingChallenge = nil
+        pendingCertificate = nil
+
+        if case .failed(let error) = reason {
+            terminationCause = .failed(error)
+        }
+        if machine.transition(to: .disconnecting) != nil {
+            emit(.stateChanged(machine.state, generation: machine.generation))
+        }
+
+        guard native != nil else {
+            finishTeardown()
+            return
+        }
+        native?.requestStop()
+        // Waiting rather than assuming: `disconnected` means the worker joined
+        // and the handle was destroyed, and nothing above may see that state
+        // while native memory is still being released.
+        await withCheckedContinuation { continuation in
+            workerFinished.append(continuation)
+        }
+    }
+
+    func respond(to challengeID: ChallengeID, with response: ChallengeResponse) async throws {
+        guard let pending = pendingChallenge, pending.id == challengeID else {
+            throw StaleChallengeError(challengeID: challengeID)
+        }
+        pendingChallenge = nil
+
+        switch response {
+        case .cancel:
+            terminationCause = .failed(.userCancelled)
+            emit(.error(.userCancelled))
+            await disconnect(reason: .userRequested)
+
+        case let .credential(username, domain, password, save):
+            pendingCertificate = nil
+            suppliedCredential = SuppliedCredential(
+                username: username,
+                domain: domain,
+                password: password
+            )
+            if save, !password.isEmpty, let reference = configuration.account.credentialReference {
+                try? credentials.store(password: password, for: reference)
+            }
+            resumeConnecting()
+            await beginAttempt()
+
+        case .trustOnce, .trustPersistently:
+            guard let review = pendingCertificate else {
+                throw StaleChallengeError(challengeID: challengeID)
+            }
+            pendingCertificate = nil
+            if response == .trustPersistently {
+                storeApproval(for: review.challenge)
+            }
+            native?.respondToCertificate(
+                generation: review.bridgeGeneration,
+                challengeID: review.bridgeChallengeID,
+                decision: mr_rdp_certificate_decision(
+                    response == .trustPersistently
+                        ? MR_RDP_CERTIFICATE_ACCEPT_PIN
+                        : MR_RDP_CERTIFICATE_ACCEPT_USER_ONCE
+                )
+            )
+            logger.certificate(
+                "user approved \(Redaction.fingerprint(review.challenge.leafSHA256)) "
+                + (response == .trustPersistently ? "persistently" : "once")
+            )
+            resumeConnecting()
+        }
+    }
+
+    func setVisibility(_ visibility: SessionVisibility) {
+        // The connection and its channels keep running off screen: SES-02
+        // keeps a foreground session alive until the user disconnects. Only
+        // presentation degrades, and the frame store already holds at most one
+        // surface, so there is nothing to release here in Phase 2.
+        self.visibility = visibility
+    }
+
+    // MARK: - DesktopSession
+
+    var supportsDynamicResolution: Bool { negotiatedChannels.contains(.disp) }
+
+    var desktopSize: (width: Int, height: Int) { currentDesktopSize }
+
+    func requestDesktopSize(width: Int, height: Int) async {
+        guard machine.state == .connected, supportsDynamicResolution else { return }
+        // The bridge refuses an odd width because FreeRDP 3.31.1 would round
+        // it silently and then disagree with us about the surface size.
+        let clampedWidth = Self.clampDimension(width, roundToEven: true)
+        let clampedHeight = Self.clampDimension(height, roundToEven: false)
+        guard clampedWidth != currentDesktopSize.width
+                || clampedHeight != currentDesktopSize.height else { return }
+
+        nextResizeRequestID &+= 1
+        if nextResizeRequestID == 0 { nextResizeRequestID = 1 }
+        let accepted = native?.requestDisplayResize(
+            requestID: nextResizeRequestID,
+            width: UInt32(clampedWidth),
+            height: UInt32(clampedHeight)
+        ) ?? false
+        logger.session("disp resize \(clampedWidth)x\(clampedHeight) accepted=\(accepted)")
+    }
+
+    static func clampDimension(_ value: Int, roundToEven: Bool) -> Int {
+        var clamped = min(max(value, 200), 8_192)
+        if roundToEven, !clamped.isMultiple(of: 2) { clamped -= 1 }
+        return clamped
+    }
+
+    // MARK: - Connect
+
+    private func beginAttempt() async {
+        // A retry can arrive while the previous worker is still unwinding.
+        // Starting a second native session on top of it is exactly the race
+        // the teardown order exists to prevent.
+        if native != nil {
+            native?.requestStop()
+            await withCheckedContinuation { workerFinished.append($0) }
+        }
+        guard machine.state == .connecting else { return }
+
+        guard let credential = resolveCredential() else {
+            raise(.credential(CredentialChallenge(
+                generation: machine.generation,
+                host: configuration.endpoint.host,
+                username: configuration.account.username,
+                domain: configuration.account.domain,
+                storedCredentialWasRejected: storedCredentialWasRejected
+            )))
+            return
+        }
+
+        let session = RDPNativeSession(
+            generation: machine.generation.rawValue,
+            endpoint: configuration.endpoint,
+            trust: trust,
+            logger: logger,
+            frameStore: frameStore
+        )
+        native = session
+        terminationCause = nil
+        negotiatedChannels = []
+        currentDesktopSize = initialDesktopSize
+
+        let events = session.events
+        pumpTask = Task { [weak self] in
+            for await event in events {
+                await self?.apply(event)
+            }
+        }
+        logger.session("connecting g=\(machine.generation.rawValue)")
+        session.start(RDPNativeConnection(
+            host: configuration.endpoint.host,
+            port: configuration.endpoint.port,
+            username: credential.username,
+            domain: credential.domain ?? "",
+            password: SecureBytes(credential.password),
+            desktopWidth: UInt32(initialDesktopSize.width),
+            desktopHeight: UInt32(initialDesktopSize.height)
+        ))
+    }
+
+    /// The credential this attempt runs with, or nil when the user has to be
+    /// asked. The bridge refuses an empty user name or password, so an
+    /// incomplete profile becomes a prompt rather than a create failure.
+    private func resolveCredential() -> SuppliedCredential? {
+        if let suppliedCredential, !suppliedCredential.username.isEmpty,
+           !suppliedCredential.password.isEmpty {
+            return suppliedCredential
+        }
+        guard !storedCredentialWasRejected,
+              let username = configuration.account.username, !username.isEmpty,
+              let reference = configuration.account.credentialReference,
+              let password = try? credentials.password(for: reference),
+              !password.isEmpty else {
+            return nil
+        }
+        return SuppliedCredential(
+            username: username,
+            domain: configuration.account.domain,
+            password: password
+        )
+    }
+
+    private func storeApproval(for challenge: CertificateChallenge) {
+        let record = TrustRecord(
+            host: challenge.host,
+            port: challenge.port,
+            leafSHA256: challenge.leafSHA256,
+            subject: challenge.subject,
+            issuer: challenge.issuer,
+            notBefore: challenge.notBefore,
+            notAfter: challenge.notAfter,
+            hostnameUnverified: challenge.disposition == .hostnameUnverifiable
+        )
+        do {
+            try trust.store(record)
+        } catch {
+            // The connection still proceeds on the user's approval; only the
+            // convenience of not being asked again is lost.
+            logger.certificate("storing the approval failed: \(error)")
+        }
+    }
+
+    // MARK: - Native events
+
+    private func apply(_ event: RDPNativeEvent) {
+        switch event {
+        case let .phase(phase, generation):
+            guard generation == machine.generation.rawValue else { return }
+            guard let target = phase.sessionState else { return }
+            if machine.transition(to: target) != nil {
+                emit(.stateChanged(machine.state, generation: machine.generation))
+            }
+
+        case let .failure(status, nativeCode, generation):
+            guard generation == machine.generation.rawValue else { return }
+            let cause = RDPErrorMapper.classify(status: status, nativeCode: nativeCode)
+            terminationCause = cause
+            logger.sessionError("native failure \(status.name) code=\(nativeCode) -> \(cause)")
+            if case .failed(let error) = cause {
+                if error == .authenticationFailed {
+                    // The next attempt must ask rather than replay.
+                    storedCredentialWasRejected = true
+                    suppliedCredential = nil
+                }
+                emit(.error(error))
+            }
+
+        case let .channel(channel, isConnected):
+            if isConnected {
+                negotiatedChannels.insert(channel)
+            } else {
+                negotiatedChannels.remove(channel)
+            }
+            logger.session("channel \(channel.name) connected=\(isConnected)")
+
+        case let .certificateChallenge(review):
+            guard review.bridgeGeneration == machine.generation.rawValue else { return }
+            pendingCertificate = review
+            raise(.certificate(review.challenge))
+
+        case let .certificateSettled(accepted, detail):
+            logger.certificate("settled accepted=\(accepted) \(detail)")
+
+        case let .displayResized(width, height):
+            currentDesktopSize = (Int(width), Int(height))
+            logger.session("desktop resized to \(width)x\(height)")
+
+        case let .finished(run, destroy):
+            logger.session("worker finished run=\(run.name) destroy=\(destroy?.name ?? "n/a")")
+            let cause = terminationCause ?? RDPErrorMapper.classify(status: run)
+            finishAttempt(cause: cause)
+        }
+    }
+
+    /// The worker has joined and the handle is gone, so this is the only place
+    /// allowed to publish a terminal state.
+    private func finishAttempt(cause: RDPTerminationCause) {
+        native = nil
+        pumpTask = nil
+        pendingChallenge = nil
+        pendingCertificate = nil
+
+        switch cause {
+        case .failed(let error) where machine.state != .disconnecting:
+            if machine.state != .failed, machine.transition(to: .failed) != nil {
+                emit(.error(error))
+                emit(.stateChanged(machine.state, generation: machine.generation))
+            }
+            resumeWorkerWaiters()
+
+        case .remoteInitiated(let detail) where machine.state != .disconnecting:
+            logger.session("remote ended the session: \(detail)")
+            if machine.transition(to: .disconnecting) != nil {
+                emit(.stateChanged(machine.state, generation: machine.generation))
+            }
+            finishTeardown()
+
+        case .stoppedLocally where machine.state != .disconnecting:
+            // The backend stopped without anybody here asking. Treat it as a
+            // clean end rather than inventing an error for it.
+            if machine.transition(to: .disconnecting) != nil {
+                emit(.stateChanged(machine.state, generation: machine.generation))
+            }
+            finishTeardown()
+
+        default:
+            finishTeardown()
+        }
+    }
+
+    private func finishTeardown() {
+        if machine.state == .disconnecting {
+            machine.transition(to: .disconnected)
+            emit(.stateChanged(machine.state, generation: machine.generation))
+        }
+        frameStore.discardPending()
+        for continuation in continuations.values {
+            continuation.finish()
+        }
+        continuations.removeAll()
+        resumeWorkerWaiters()
+    }
+
+    private func resumeWorkerWaiters() {
+        let waiters = workerFinished
+        workerFinished.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+
+    private func resumeConnecting() {
+        if machine.transition(to: .connecting) != nil {
+            emit(.stateChanged(machine.state, generation: machine.generation))
+        }
+    }
+
+    private func raise(_ challenge: SessionChallenge) {
+        pendingChallenge = challenge
+        if machine.transition(to: .awaitingUser) != nil {
+            emit(.stateChanged(machine.state, generation: machine.generation))
+        }
+        emit(.userActionRequired(challenge))
+    }
+
+    private func emit(_ event: SessionControlEvent) {
+        for continuation in continuations.values {
+            continuation.yield(event)
+        }
+    }
+}
+
+/// Registers the RDP session with the factory registry. This is the whole of
+/// the app's dependency on RDP: the list and the workspace ask for a session
+/// by protocol kind, so Phase 8's SSH session is another registration rather
+/// than a change at any call site.
+struct RDPSessionFactory: RemoteSessionFactory {
+    let protocolKind: ProtocolKind = .rdp
+    let credentials: any CredentialRepository
+    let trust: any TrustRepository
+
+    /// What an `adaptive` profile connects at before the display channel is
+    /// known. The real adaptive path is the DISP request the workspace makes
+    /// once it knows its own size; this only has to be a desktop the device
+    /// can present sensibly if the server never negotiates that channel.
+    static let adaptiveDefaultSize = (width: 1_920, height: 1_080)
+
+    func makeSession(
+        configuration: EffectiveConnectionConfiguration
+    ) async throws -> any RemoteSession {
+        let size: (width: Int, height: Int)
+        switch configuration.resolutionPolicy {
+        case .adaptive:
+            size = Self.adaptiveDefaultSize
+        case let .fixed(width, height):
+            size = (
+                RDPRemoteSession.clampDimension(width, roundToEven: true),
+                RDPRemoteSession.clampDimension(height, roundToEven: false)
+            )
+        }
+        return RDPRemoteSession(
+            configuration: configuration,
+            credentials: credentials,
+            trust: trust,
+            desktopSize: size
+        )
+    }
+}

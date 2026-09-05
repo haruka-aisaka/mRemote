@@ -6,7 +6,16 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A10000000000000000000051 /* FreeRDP.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000053 /* FreeRDP.xcframework */; };
+		A10000000000000000000052 /* mRemoteRDPBridge.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000054 /* mRemoteRDPBridge.xcframework */; };
+		A10000000000000000000055 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10000000000000000000056 /* AudioToolbox.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
+		A10000000000000000000053 /* FreeRDP.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = FreeRDP.xcframework; path = artifacts/FreeRDP.xcframework; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000054 /* mRemoteRDPBridge.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = mRemoteRDPBridge.xcframework; path = artifacts/mRemoteRDPBridge.xcframework; sourceTree = SOURCE_ROOT; };
+		A10000000000000000000056 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		A10000000000000000000004 /* mRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = mRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000010 /* mRemoteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = mRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000020 /* mRemoteUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = mRemoteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -35,6 +44,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A10000000000000000000052 /* mRemoteRDPBridge.xcframework in Frameworks */,
+				A10000000000000000000051 /* FreeRDP.xcframework in Frameworks */,
+				A10000000000000000000055 /* AudioToolbox.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -62,8 +74,19 @@
 				A10000000000000000000016 /* AppTests */,
 				A10000000000000000000026 /* AppUITests */,
 				A10000000000000000000030 /* Packages */,
+				A10000000000000000000050 /* Native Frameworks */,
 				A10000000000000000000003 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000050 /* Native Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000053 /* FreeRDP.xcframework */,
+				A10000000000000000000054 /* mRemoteRDPBridge.xcframework */,
+				A10000000000000000000056 /* AudioToolbox.framework */,
+			);
+			name = "Native Frameworks";
 			sourceTree = "<group>";
 		};
 		A10000000000000000000003 /* Products */ = {
@@ -106,6 +129,7 @@
 				A10000000000000000000041 /* SessionCore */,
 				A10000000000000000000042 /* Persistence */,
 				A10000000000000000000043 /* AppleAdapters */,
+				A10000000000000000000044 /* RDPProtocol */,
 			);
 			productName = mRemote;
 			productReference = A10000000000000000000004 /* mRemote.app */;
@@ -337,7 +361,9 @@
 				DEVELOPMENT_TEAM = 3R8LX96WPK;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to the Windows computers you choose on your local network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -346,9 +372,14 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-all_load",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mikuta0407.mRemote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "App/RDP/mRemote-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -362,7 +393,9 @@
 				DEVELOPMENT_TEAM = 3R8LX96WPK;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to the Windows computers you choose on your local network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -371,9 +404,14 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-all_load",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mikuta0407.mRemote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "App/RDP/mRemote-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -496,6 +534,10 @@
 		A10000000000000000000043 /* AppleAdapters */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AppleAdapters;
+		};
+		A10000000000000000000044 /* RDPProtocol */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RDPProtocol;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

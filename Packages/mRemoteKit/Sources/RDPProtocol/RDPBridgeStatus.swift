@@ -70,6 +70,28 @@ public enum RDPBridgePhase: UInt32, Hashable, Sendable, CaseIterable {
     }
 }
 
+/// The C bridge's `mr_rdp_channel_kind`. Only `disp` changes app behaviour in
+/// Phase 2 - it is what makes a dynamic resolution request meaningful - but
+/// the others are carried so a channel that fails to negotiate is visible in
+/// a diagnostic rather than silently absent.
+public enum RDPBridgeChannel: UInt8, Hashable, Sendable, CaseIterable {
+    case cliprdr = 1
+    case rdpsnd = 2
+    case drdynvc = 3
+    case disp = 4
+    case rdpgfx = 5
+
+    public var name: String {
+        switch self {
+        case .cliprdr: return "cliprdr"
+        case .rdpsnd: return "rdpsnd"
+        case .drdynvc: return "drdynvc"
+        case .disp: return "disp"
+        case .rdpgfx: return "rdpgfx"
+        }
+    }
+}
+
 /// How a connection attempt ended.
 ///
 /// A server that logs the user off is not a failure, and showing it as one
