@@ -1,31 +1,83 @@
 import SwiftUI
 import SessionCore
 
-/// Full screen, with one floating button. The remote desktop will fill this
-/// space in Phase 2; until then the placeholder reports the session state so
-/// the flow itself can be exercised.
+/// Full screen, with one floating button. docs/ui-flow.md keeps the remote
+/// desktop uncontested: no navigation bar, no persistent chrome, and the
+/// status text only while there is no desktop to look at.
 struct SessionWorkspaceView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.scenePhase) private var scenePhase
     @Bindable var model: SessionWorkspaceModel
-    @State private var showsMenu = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            desktopPlaceholder
+            desktop
+            if !model.showsDesktop {
+                status
+            }
             floatingMenu
+            privacyCover
         }
         // Naming the container must not hide what is inside it: the status
         // text and the floating menu have to stay individually reachable.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("session-workspace")
         .statusBarHidden()
-        .alert(item: challengeBinding) { challenge in
-            alert(for: challenge)
+        .persistentSystemOverlays(.hidden)
+        .sheet(item: challengeBinding) { identified in
+            SessionChallengeSheet(
+                challenge: identified.challenge,
+                defaultUsername: model.configuration.account.username,
+                defaultDomain: model.configuration.account.domain,
+                onCredential: { username, domain, password, save in
+                    Task {
+                        await model.answerCredential(
+                            username: username,
+                            domain: domain,
+                            password: password,
+                            save: save
+                        )
+                    }
+                },
+                onTrust: { persist in
+                    Task { await model.answer(persist ? .trustPersistently : .trustOnce) }
+                },
+                onCancel: {
+                    Task { await model.answer(.cancel) }
+                }
+            )
+        }
+        .onChange(of: scenePhase, initial: false) { _, phase in
+            Task {
+                if phase == .active {
+                    await model.sceneBecameActive()
+                } else {
+                    await model.sceneBecameInactive()
+                }
+            }
         }
     }
 
-    private var desktopPlaceholder: some View {
+    @ViewBuilder
+    private var desktop: some View {
+        if let frameStore = model.frameStore {
+            RemoteDesktopSurface(
+                frameStore: frameStore,
+                scaleMode: model.runtime.scale,
+                onRenderSizeChange: { width, height in
+                    model.renderSizeChanged(width: width, height: height)
+                },
+                onDesktopSizeChange: { width, height in
+                    model.desktopSizeChanged(width: width, height: height)
+                }
+            )
+            .ignoresSafeArea()
+            .opacity(model.showsDesktop ? 1 : 0)
+        }
+    }
+
+    private var status: some View {
         VStack(spacing: 12) {
             Text(model.displayName)
                 .font(.title2)
@@ -49,10 +101,34 @@ struct SessionWorkspaceView: View {
                     Task { await model.retry() }
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("session-retry")
             }
-            Text("リモート描画は Phase 2 で接続されます。")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.4))
+        }
+    }
+
+    /// docs/architecture.md section 10: the remote screen must not be what the
+    /// app switcher snapshots. The cover is part of the view hierarchy rather
+    /// than something applied on the way out, so there is no window in which
+    /// the snapshot could be taken before it appears.
+    @ViewBuilder
+    private var privacyCover: some View {
+        if scenePhase != .active {
+            ZStack {
+                Rectangle()
+                    .fill(.ultraThickMaterial)
+                    .ignoresSafeArea()
+                VStack(spacing: 8) {
+                    Image(systemName: "lock.display")
+                        .font(.system(size: 44))
+                    Text(model.displayName)
+                        .font(.headline)
+                    Text("接続は維持されています")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .transition(.opacity)
+            .accessibilityIdentifier("session-privacy-cover")
         }
     }
 
@@ -62,12 +138,25 @@ struct SessionWorkspaceView: View {
             HStack {
                 Spacer()
                 Menu {
+                    Picker("表示倍率", selection: scaleBinding) {
+                        Text("画面に合わせる").tag(InitialScale.fit)
+                        Text("100%").tag(InitialScale.oneToOne)
+                    }
+                    .accessibilityIdentifier("session-scale-picker")
+
+                    if let size = model.desktopSizeText {
+                        Section("リモート解像度") {
+                            Text(model.supportsDynamicResolution ? "\(size)（可変）" : size)
+                        }
+                    }
+
                     Button {
                         model.returnToList()
                     } label: {
                         Label("接続先一覧へ戻る", systemImage: "list.bullet")
                     }
                     .accessibilityIdentifier("session-return-to-list")
+
                     Button(role: .destructive) {
                         Task { await model.disconnect() }
                     } label: {
@@ -86,80 +175,24 @@ struct SessionWorkspaceView: View {
         }
     }
 
-    private var challengeBinding: Binding<IdentifiedChallenge?> {
+    private var scaleBinding: Binding<InitialScale> {
         Binding(
-            get: { model.pendingChallenge.map(IdentifiedChallenge.init) },
-            set: { _ in }
+            get: { model.runtime.scale },
+            set: { model.setScaleMode($0) }
         )
     }
 
-    private func alert(for identified: IdentifiedChallenge) -> Alert {
-        switch identified.challenge {
-        case .credential(let challenge):
-            return Alert(
-                title: Text("資格情報が必要です"),
-                message: Text("\(challenge.host) に接続するユーザー名とパスワードを入力してください。"),
-                primaryButton: .default(Text("キャンセル")) {
-                    Task { await model.answer(.cancel) }
-                },
-                secondaryButton: .default(Text("保存済みを使用")) {
-                    Task {
-                        await model.answer(.credential(
-                            username: challenge.username ?? "",
-                            domain: challenge.domain,
-                            password: "",
-                            save: false
-                        ))
-                    }
-                }
-            )
-        case .certificate(let challenge):
-            guard challenge.disposition.allowsUserApproval else {
-                return Alert(
-                    title: Text("サーバー証明書を信頼できません"),
-                    message: Text(certificateDetail(challenge)),
-                    dismissButton: .cancel(Text("接続を中止")) {
-                        Task { await model.answer(.cancel) }
-                    }
-                )
-            }
-            return Alert(
-                title: Text("サーバー証明書の確認"),
-                message: Text(certificateDetail(challenge)),
-                primaryButton: .cancel(Text("キャンセル")) {
-                    Task { await model.answer(.cancel) }
-                },
-                secondaryButton: .default(Text("今回のみ信頼")) {
-                    Task { await model.answer(.trustOnce) }
-                }
-            )
-        }
-    }
-
-    private func certificateDetail(_ challenge: CertificateChallenge) -> String {
-        var lines = [
-            "\(challenge.host):\(challenge.port)",
-            "発行先: \(challenge.subject)",
-            "発行者: \(challenge.issuer)",
-            "SHA-256: \(challenge.leafSHA256)",
-        ]
-        switch challenge.disposition {
-        case .untrustedRoot:
-            lines.append("システムが信頼していない CA（自己署名または private CA）です。")
-        case .serverPurposeUnmet:
-            lines.append("iOS がサーバー証明書に求める要件を満たしていません。fingerprint だけがこのサーバーの識別根拠です。")
-        case .hostnameUnverifiable:
-            lines.append("接続先が IP アドレスのため、証明書のホスト名は検証されていません。fingerprint だけがこのサーバーの識別根拠です。")
-        case .rejected(let reason):
-            lines.append("拒否: \(reason)")
-        case .fingerprintChanged(let previous):
-            lines.append("以前信頼した証明書と異なります。以前: \(previous)")
-        }
-        return lines.joined(separator: "\n")
+    private var challengeBinding: Binding<IdentifiedChallenge?> {
+        Binding(
+            get: { model.pendingChallenge.map(IdentifiedChallenge.init) },
+            // The sheet cannot be dismissed interactively, and every button on
+            // it answers the challenge, so there is nothing to write back.
+            set: { _ in }
+        )
     }
 }
 
-/// `Alert(item:)` needs an Identifiable; the challenge ID already is the
+/// `sheet(item:)` needs an Identifiable; the challenge ID already is the
 /// identity, so this only adapts the shape.
 struct IdentifiedChallenge: Identifiable {
     let challenge: SessionChallenge

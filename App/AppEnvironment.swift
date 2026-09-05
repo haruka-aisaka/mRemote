@@ -138,6 +138,33 @@ final class AppEnvironment {
         }
     }
 
+    /// Saves a password that was typed into a connection prompt rather than
+    /// into the editor. A profile that never had one has no Keychain
+    /// reference, so one is created and written back with the user name the
+    /// connection actually succeeded with.
+    func persistCredential(
+        profileID: ProfileID,
+        username: String,
+        domain: String?,
+        password: String
+    ) async {
+        guard let repository, var profile = profiles.first(where: { $0.id == profileID }) else {
+            return
+        }
+        do {
+            let reference = profile.account.credentialReference ?? CredentialReference()
+            try credentials.store(password: password, for: reference)
+            profile.account.credentialReference = reference
+            profile.account.username = username
+            profile.account.domain = domain
+            try await repository.upsert(profile)
+            await refresh()
+        } catch {
+            loadFailure = String(describing: error)
+            logger.error("saving a connection credential failed")
+        }
+    }
+
     func storedPassword(for profile: ConnectionProfile) -> String? {
         guard let reference = profile.account.credentialReference else { return nil }
         return try? credentials.password(for: reference)

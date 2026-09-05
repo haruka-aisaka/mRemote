@@ -19,6 +19,36 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
     public let reconnectPolicy: ReconnectPolicy
     public let securityPolicy: SecurityPolicy
 
+    public init(
+        profileID: ProfileID?,
+        displayName: String,
+        endpoint: RemoteEndpoint,
+        account: RemoteAccount,
+        resolutionPolicy: ResolutionPolicy,
+        initialScale: InitialScale,
+        displayQuality: DisplayQuality,
+        keyboardLayout: KeyboardLayoutPreference,
+        audioPlayback: Bool,
+        clipboardPolicy: ClipboardPolicy,
+        scrollDirection: ScrollDirection,
+        reconnectPolicy: ReconnectPolicy,
+        securityPolicy: SecurityPolicy
+    ) {
+        self.profileID = profileID
+        self.displayName = displayName
+        self.endpoint = endpoint
+        self.account = account
+        self.resolutionPolicy = resolutionPolicy
+        self.initialScale = initialScale
+        self.displayQuality = displayQuality
+        self.keyboardLayout = keyboardLayout
+        self.audioPlayback = audioPlayback
+        self.clipboardPolicy = clipboardPolicy
+        self.scrollDirection = scrollDirection
+        self.reconnectPolicy = reconnectPolicy
+        self.securityPolicy = securityPolicy
+    }
+
     /// Eisu/Kana to Muhenkan/Henkan is only promised for the Japanese layout,
     /// so the UI can warn where a profile has opted out of it.
     public var guaranteesJapaneseImeKeys: Bool { keyboardLayout == .japanese }
