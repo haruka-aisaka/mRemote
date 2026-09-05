@@ -6,7 +6,9 @@ public enum PointerButton: String, Hashable, Sendable, CaseIterable {
     case middle
 }
 
-public enum ButtonTransition: Hashable, Sendable {
+/// A key and a pointer button have exactly the same two states, so they share
+/// one type rather than two identical ones.
+public enum InputTransition: Hashable, Sendable {
     case down
     case up
 }
@@ -19,8 +21,29 @@ public enum ButtonTransition: Hashable, Sendable {
 /// need no further interpretation.
 public enum PointerInput: Hashable, Sendable {
     case move(PixelPoint)
-    case button(PointerButton, ButtonTransition, at: PixelPoint)
+    case button(PointerButton, InputTransition, at: PixelPoint)
     case scroll(horizontal: Int32, vertical: Int32)
+}
+
+/// One physical key transition, as the platform reported it.
+///
+/// The usage is a USB HID keyboard-page usage, which is protocol-independent
+/// on purpose: turning it into a scan code is the RDP layer's job, and a
+/// future SSH terminal would want the same event mapped a different way
+/// entirely. docs/architecture.md section 4 puts the boundary exactly here.
+public struct KeyboardInput: Hashable, Sendable {
+    public let usage: UInt16
+    public let transition: InputTransition
+    /// True for a client-generated typematic repeat rather than a physical
+    /// press. Only ever `.down`: the single up stays bound to the physical
+    /// release so the remote never sees a transition to unwind.
+    public let isRepeat: Bool
+
+    public init(usage: UInt16, transition: InputTransition, isRepeat: Bool = false) {
+        self.usage = usage
+        self.transition = transition
+        self.isRepeat = isRepeat
+    }
 }
 
 /// Where input goes on its way to the remote host.
@@ -44,4 +67,9 @@ public protocol DesktopInputSink: AnyObject, Sendable {
     var acceptsInput: Bool { get }
 
     func send(_ input: PointerInput)
+
+    /// A key that this build cannot map is dropped here rather than refused
+    /// upstream: which usages an RDP session can carry is the RDP layer's
+    /// knowledge, not the surface's.
+    func send(_ input: KeyboardInput)
 }

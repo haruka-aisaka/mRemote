@@ -193,11 +193,15 @@ final class RDPNativeSession: @unchecked Sendable {
         context.cancelChallenge(generation: generation, challengeID: challengeID)
     }
 
-    /// Enqueues one pointer event. Non-blocking: the bridge's own bounded
-    /// queue absorbs the burst and its worker drains it, so this is safe to
-    /// call straight from a UIKit event handler.
+    /// Enqueues one input event. Non-blocking: the bridge's own bounded queue
+    /// absorbs the burst and its worker drains it, so these are safe to call
+    /// straight from a UIKit event handler.
     func sendPointer(_ event: inout mr_rdp_pointer_event) {
         context.sendPointer(&event)
+    }
+
+    func sendKey(_ event: inout mr_rdp_key_event) {
+        context.sendKey(&event)
     }
 
     func requestDisplayResize(requestID: UInt64, width: UInt32, height: UInt32) -> Bool {
@@ -312,6 +316,10 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
 
     func sendPointer(_ event: inout mr_rdp_pointer_event) {
         _ = calls.sendPointer(&event)
+    }
+
+    func sendKey(_ event: inout mr_rdp_key_event) {
+        _ = calls.sendKey(&event)
     }
 
     func requestDisplayResize(requestID: UInt64, width: UInt32, height: UInt32) -> Bool {

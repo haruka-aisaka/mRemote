@@ -45,8 +45,10 @@ ones that need a machine rather than a test: thirty minutes against the
 Windows host, and the bridge sanitizer stress carried over from Phase 0. See
 [`docs/roadmap.md`](docs/roadmap.md).
 
-Keyboard and pointer input is Phase 3, so the session presents the desktop but
-does not yet send anything to it.
+Pointer and keyboard input were pulled forward out of Phase 3, because none of
+Phase 2 can be tried on a real machine without them: the session sends physical
+scan codes, and 英数/かな reach Windows as 無変換/変換. `GCKeyboard`, the
+per-usage source arbitration and the KeyEcho measurement stay in Phase 3.
 
 ## Build and test
 

@@ -95,6 +95,7 @@
 | Fit/100%、pinch、pan、回転、DISP 動的解像度 | 実装済み。`ViewportTransform` |
 | scene inactive privacy cover と lifecycle | 実装済み |
 | ポインター入力（hover/左右 button/drag/wheel） | 実装済み。Phase 3 から前倒し。`InputCore` の `PointerInputRouter` |
+| キーボード入力（UIKit `presses*`、英数/かな、client 側 key repeat） | 実装済み。Phase 3 から前倒し。`InputCore` の `KeyboardInputRouter` と `RDPProtocol` の `RDPScanCodeMapper` |
 | 接続全段階のキャンセル、20 回 connect/disconnect | 自動試験済み。`AppTests/RDPRemoteSessionTests` |
 | 証明書の無言受理なし、fingerprint 変更検出 | 自動試験済み。`CertificateReviewPolicyTests` |
 | 実 Windows への 30 分操作 | **未実施**。実機試験が必要 |
@@ -124,9 +125,12 @@ Address+UndefinedBehavior と Thread の両 sanitizer で実行し、いずれ�
 
 ### この phase で意図的に残したもの
 
-- ポインター入力は Phase 3 の範囲だったが、**キーボードの実機確認にマウス操作が要る**ため
-  前倒しした。`InputCore` と `PointerInputRouter`/`ScrollWheelAccumulator` はここで入る。
-  キーボード入力、`GCKeyboard`、HID-to-scan-code は Phase 3 のまま。
+- ポインターとキーボードの**送信経路**は Phase 3 の範囲だったが、実機で何も試せなく
+  なるため前倒しした。`InputCore`（`PointerInputRouter`/`KeyboardInputRouter`/
+  `ScrollWheelAccumulator`/key repeat）と `RDPProtocol` の `RDPScanCodeMapper` が
+  ここで入る。source は UIKit の `presses*` と indirect pointer だけで、`GCKeyboard`、
+  `GCMouse`、usage ごとの source policy、`KeyboardEventArbiter` は Phase 3 のまま。
+  KeyEcho による英数/かな 10 cycle の機械判定も Phase 3 のままである。
 - **remote cursor の形状**は送れない。C ABI に pointer/cursor callback が無く、追加には
   ABI 変更と XCFramework の再生成が要る。ポインター自体が Phase 3 の担当なので、cursor
   shape の transport はそこで ABI 追加として設計する。現状はサーバー側描画に依存する。
@@ -138,16 +142,18 @@ Address+UndefinedBehavior と Thread の両 sanitizer で実行し、いずれ�
 
 ### 実装
 
-- Phase 0 harness の `InputRouter`/`RDPScanCodeMapper` を `InputCore`/`RDPProtocol` へ移設（harness は入力回帰の治具として残す。`ServerTrustEvaluator` は証明書 UI に必要なため Phase 2 で、`ScrollWheelAccumulator` とポインター経路は実機のキーボード確認に必要なため Phase 2 で移設済み）
-- remote cursor shape の C ABI 追加（pointer callback）と描画
-- `RemoteInputView` first responder と UIKit keyboard capture
-- GCKeyboard lifecycle、usage ごとの静的 source policy、`KeyboardEventArbiter`
-- HID-to-RDP mapping、Japanese layout/type negotiation
-- focused-session input gate、`releaseAll`
-- ~~hover、左右 button/drag、縦横 wheel、ViewportTransform~~（Phase 2 で実装済み）
-- GCMouse 経路と source policy（Phase 2 は UIKit の indirect pointer のみ）
+- GCKeyboard/GCMouse 経路、usage ごとの静的 source policy、`KeyboardEventArbiter`
+- Phase 0 harness の `InputRouter` を `InputCore` へ移設（harness は入力回帰の治具として残す）
+- `releaseAll` の source 横断 quarantine（Phase 2 は UIKit 単一 source ぶんのみ）
+- Japanese layout/type negotiation（Phase 2 は scan code 送信のみ）
+- focused-session input gate（Phase 2 は単一セッションの scene/state gate のみ）
 - scroll 反転の global override（Phase 2 はセッション中の切り替えのみ）
+- remote cursor shape の C ABI 追加（pointer callback）と描画
 - redacted input diagnostics
+
+Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyboard capture、
+`RDPScanCodeMapper`（HID-to-Set-1）、`ScrollWheelAccumulator`、hover/左右 button/drag/
+縦横 wheel、`ViewportTransform`、client 側 key repeat。
 
 ### Exit criteria
 

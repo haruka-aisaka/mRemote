@@ -74,7 +74,7 @@ flowchart TB
 | `mRemoteApp`、各 Feature | `App/` と `mRemote.xcodeproj`（Phase 1 の UI 着手時に作成） |
 | `SessionCore`、`Persistence`、`AppleAdapters` | `Packages/mRemoteKit/` |
 | `RDPProtocol` | `Packages/mRemoteKit/`（Phase 2 で追加）。FreeRDP を要しない部分だけを置き、host で test できる状態を保つ。C ABI を叩く session adapter は bridging header が要るため `App/RDP/` にある |
-| `InputCore` | `Packages/mRemoteKit/`（Phase 2 でポインター部分を追加）。キーボード側は Phase 3 で追加する。harness の `InputRouter`/`RDPScanCodeMapper` はそれまで治具側に残る |
+| `InputCore` | `Packages/mRemoteKit/`（Phase 2 で追加）。UIKit 単一 source ぶんのポインター/キーボード正規化と key repeat。GCKeyboard/GCMouse の調停は Phase 3 で足す。harness の `InputRouter` はそれまで治具側に残る |
 | `RemoteSurface` | `App/Session/`（Phase 2 で追加）。frame store と viewport 変換は `SessionCore` にあり、UIKit/Metal 面だけがアプリ側にある |
 | `FreeRDPBridge` | `bridge/`（C）と `artifacts/` の生成 XCFramework |
 

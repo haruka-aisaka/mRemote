@@ -10,8 +10,8 @@ point downwards only.
 | `SessionCore` | profiles, global settings, the resolver, session state, the `RemoteSession`/`DesktopSession` protocols, `SessionManager`, `FakeRemoteSession`, the desktop frame store and `ViewportTransform` | Foundation |
 | `Persistence` | the versioned profile document, its migration chain, the profile store and repository | `SessionCore` |
 | `AppleAdapters` | Keychain credential and trust repositories, OSLog categories, log redaction | `SessionCore`, Security |
-| `RDPProtocol` | the C bridge's status/phase/channel vocabulary, FreeRDP error mapping, staged certificate trust evaluation and the review policy | `SessionCore`, Security |
-| `InputCore` | pointer normalisation: pressed-button state, scroll quantisation, and the local-to-remote mapping. No protocol mapping, so no scan code appears here | `SessionCore` |
+| `RDPProtocol` | the C bridge's status/phase/channel vocabulary, FreeRDP error mapping, staged certificate trust evaluation and the review policy, HID-to-Set-1 scan codes | `SessionCore`, Security |
+| `InputCore` | input normalisation: pressed button and key state, scroll quantisation, client-generated key repeat, and the local-to-remote mapping. No protocol mapping, so no scan code appears here | `SessionCore` |
 
 Nothing here imports FreeRDP. `RDPProtocol` is the RDP-specific half that does
 not need it - error categories, certificate evaluation, the review policy -

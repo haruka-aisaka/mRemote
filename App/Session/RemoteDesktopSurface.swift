@@ -44,9 +44,12 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     static func dismantleUIView(_ view: RemoteDesktopView, coordinator: Coordinator) {
         // The store belongs to the session and outlives this view, so the
         // signal has to be dropped explicitly rather than left pointing at a
-        // surface that is going away. Held buttons go with it: the surface is
-        // gone, but the session may still be connected.
+        // surface that is going away. Held buttons and keys go with it: the
+        // surface is gone, but the session may still be connected, and a
+        // modifier left down would turn every later keystroke into a
+        // shortcut.
         view.releaseHeldButtons()
+        view.releaseHeldKeys()
         view.detachFromFrameStore()
     }
 }

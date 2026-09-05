@@ -88,6 +88,32 @@ final class RDPInputSink: DesktopInputSink, @unchecked Sendable {
         target.sendPointer(&event)
     }
 
+    /// A usage this build cannot map is dropped here, which is the only place
+    /// that knows RDP's scan code table. `RDPScanCodeMapper` refuses rather
+    /// than guesses, because a wrong scan code types the wrong character on
+    /// someone's machine while an unmapped key merely does nothing.
+    func send(_ input: KeyboardInput) {
+        guard let scanCode = try? RDPScanCodeMapper.set1ScanCode(forHIDUsage: input.usage) else {
+            return
+        }
+        lock.lock()
+        guard isAccepting, let target = native else {
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+
+        var event = mr_rdp_key_event()
+        mr_rdp_key_event_init(&event)
+        event.code = UInt16(scanCode.value)
+        event.extended = scanCode.isExtended ? 1 : 0
+        event.extended1 = 0
+        event.action = mr_rdp_key_action(
+            input.transition == .down ? MR_RDP_KEY_DOWN : MR_RDP_KEY_UP
+        )
+        target.sendKey(&event)
+    }
+
     /// The bridge caps each axis and splits a larger delta across PDUs, but it
     /// rejects an out-of-range value outright, so the clamp happens here too.
     private static func clampWheel(_ value: Int32) -> Int32 {

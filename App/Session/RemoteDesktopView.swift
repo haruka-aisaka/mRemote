@@ -18,7 +18,13 @@ import SessionCore
 /// switches between fit and 100%. Sharing a gesture between the two is what
 /// makes a tablet RDP client feel unpredictable, so nothing here does.
 ///
-/// Keyboard capture is still Phase 3.
+/// Keyboard capture is here too, and it is the reason this project exists:
+/// the view is a plain `UIView` responder that never conforms to `UIKeyInput`
+/// or `UITextInput`, and it does not forward a press it handled to `super`.
+/// That combination is what keeps iPadOS from consuming 英数/かな for its own
+/// input-source switcher (`KEY-IME-02`), so they can reach Windows as
+/// 無変換/変換 instead. `GCKeyboard` and the per-usage source arbitration
+/// remain Phase 3; this is UIKit only.
 @MainActor
 final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate {
     private static let shaderSource = """
@@ -77,7 +83,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     var inputSink: (any DesktopInputSink)? {
         didSet {
             guard inputSink !== oldValue else { return }
+            // Whatever was held belonged to the previous session; releasing it
+            // through the new sink would press nothing and unpress something
+            // that is not there, so this only clears local state.
             releaseHeldButtons()
+            releaseHeldKeys()
         }
     }
 
@@ -94,10 +104,14 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     private var zoomOrigin: Double = 1
     private var hasPresentedAFrame = false
     private var pointerRouter: PointerInputRouter
+    private var keyboardRouter = KeyboardInputRouter()
+    private var keyRepeatTimer: Timer?
     /// Buttons the platform reports as held right now. Kept so a touch phase
     /// that carries no button mask does not read as "everything released".
     private var indirectButtons: Set<PointerButton> = []
-    private var isInputEnabled = true
+    /// False until the surface is configured, so nothing is delivered before
+    /// the workspace has said whether the session can carry it.
+    private var isInputEnabled = false
 
     private(set) var viewportTransform: ViewportTransform
 
@@ -209,7 +223,9 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     deinit {
         // `deinit` is nonisolated, so the store's signal is cleared here
-        // through the store itself rather than by touching the view.
+        // through the store itself rather than by touching the view. The
+        // repeat timer needs nothing: it never repeats, it holds only a weak
+        // reference back here, and it is re-armed rather than reused.
         frameStore.setSignal(nil)
     }
 
@@ -399,14 +415,27 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// button down on Windows, turning the next move into a drag across the
     /// desktop.
     func setInputEnabled(_ enabled: Bool) {
-        guard enabled != isInputEnabled else { return }
+        guard enabled != isInputEnabled else {
+            if enabled { captureKeyboardIfPossible() }
+            return
+        }
         isInputEnabled = enabled
-        if !enabled { releaseHeldButtons() }
+        if enabled {
+            captureKeyboardIfPossible()
+        } else {
+            releaseHeldButtons()
+            releaseHeldKeys()
+            _ = resignFirstResponder()
+        }
     }
 
     func releaseHeldButtons() {
         indirectButtons = []
         deliver(pointerRouter.releaseAll())
+    }
+
+    func setKeyRepeat(_ settings: KeyRepeatSettings) {
+        apply(keyboardRouter.setRepeatSettings(settings))
     }
 
     private func deliver(_ events: [PointerInput]) {
@@ -452,6 +481,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // Click or tap to take the keyboard back. SwiftUI can move the first
+        // responder for reasons of its own - a menu, a sheet that has been
+        // dismissed - and without this the user would have no way to recover
+        // it short of leaving the session.
+        captureKeyboardIfPossible()
         guard handleIndirectPointer(touches, event: event, ending: false) else {
             super.touchesBegan(touches, with: event)
             return
@@ -518,9 +552,122 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         return buttons
     }
 
+    // MARK: - Remote keyboard
+
+    /// Required for `pressesBegan` to arrive at all: presses go to the first
+    /// responder chain, and this view is a leaf rather than an ancestor of
+    /// whatever SwiftUI would otherwise focus.
+    override var canBecomeFirstResponder: Bool { true }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        forward(presses, transition: .down, to: super.pressesBegan, with: event)
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        forward(presses, transition: .up, to: super.pressesEnded, with: event)
+    }
+
+    override func pressesChanged(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        // Analog force on a key that is already down. There is no transition
+        // to send, but the press is still consumed rather than passed up,
+        // because passing it up is what shows the input-source HUD.
+        let unhandled = presses.filter { $0.key == nil }
+        if !unhandled.isEmpty { super.pressesChanged(unhandled, with: event) }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        // A cancelled press has no reliable up of its own, so everything held
+        // is released rather than only what this event names.
+        releaseHeldKeys()
+        let unhandled = presses.filter { $0.key == nil }
+        if !unhandled.isEmpty { super.pressesCancelled(unhandled, with: event) }
+    }
+
+    /// Handled presses are deliberately not passed to `super`: that is the
+    /// whole of `KEY-IME-02`. Presses without a key - a remote, a game
+    /// controller button - are passed on untouched.
+    private func forward(
+        _ presses: Set<UIPress>,
+        transition: InputTransition,
+        to superImplementation: (Set<UIPress>, UIPressesEvent?) -> Void,
+        with event: UIPressesEvent?
+    ) {
+        for press in presses {
+            guard let key = press.key else { continue }
+            apply(keyboardRouter.receive(
+                usage: UInt16(truncatingIfNeeded: key.keyCode.rawValue),
+                transition: transition
+            ))
+        }
+        let unhandled = presses.filter { $0.key == nil }
+        if !unhandled.isEmpty { superImplementation(unhandled, event) }
+    }
+
+    private func apply(_ output: KeyboardRouterOutput) {
+        for key in output.events {
+            inputSink?.send(key)
+        }
+        guard output.restartsRepeat else { return }
+        armKeyRepeat(after: keyboardRouter.repeatSettings.initialDelay)
+    }
+
+    /// One pending fire at a time, replaced rather than stacked. `.common` so
+    /// a held key keeps repeating while a gesture is tracking.
+    private func armKeyRepeat(after delay: TimeInterval) {
+        keyRepeatTimer?.invalidate()
+        keyRepeatTimer = nil
+        guard isInputEnabled, keyboardRouter.repeatTarget != nil else { return }
+        let timer = Timer(timeInterval: delay, repeats: false) { _ in
+            MainActor.assumeIsolated { [weak self] in self?.fireKeyRepeat() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        keyRepeatTimer = timer
+    }
+
+    private func fireKeyRepeat() {
+        // Re-checked at every fire rather than trusted from arming time: a
+        // release or a scene change can happen underneath a pending timer, and
+        // a repeat must never outlive the down it extends.
+        guard isInputEnabled, let key = keyboardRouter.repeatDown() else {
+            keyRepeatTimer?.invalidate()
+            keyRepeatTimer = nil
+            return
+        }
+        inputSink?.send(key)
+        armKeyRepeat(after: keyboardRouter.repeatSettings.interval)
+    }
+
+    func releaseHeldKeys() {
+        keyRepeatTimer?.invalidate()
+        keyRepeatTimer = nil
+        let output = keyboardRouter.releaseAll()
+        for key in output.events {
+            inputSink?.send(key)
+        }
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let wasFirstResponder = isFirstResponder
+        let result = super.resignFirstResponder()
+        // Losing the responder means no more `pressesEnded`, so anything held
+        // has to be released now or it stays down on the server.
+        if wasFirstResponder, result { releaseHeldKeys() }
+        return result
+    }
+
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window == nil { releaseHeldButtons() }
+        guard window != nil else {
+            releaseHeldButtons()
+            releaseHeldKeys()
+            return
+        }
+        captureKeyboardIfPossible()
+    }
+
+    private func captureKeyboardIfPossible() {
+        guard isInputEnabled, window != nil, !isFirstResponder else { return }
+        _ = becomeFirstResponder()
     }
 
     // MARK: - MTKViewDelegate

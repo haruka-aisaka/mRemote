@@ -242,4 +242,23 @@ final class RDPInputSinkTests: XCTestCase {
         XCTAssertFalse(sink.acceptsInput)
         sink.send(.move(PixelPoint(x: 1, y: 1)))
     }
+
+    func testKeyInputIsGatedTheSameWayPointerInputIs() {
+        let sink = RDPInputSink()
+        XCTAssertFalse(sink.acceptsInput)
+        // Safe on every path, including one that never reaches a worker.
+        sink.send(KeyboardInput(usage: 0x91, transition: .down))
+        sink.send(KeyboardInput(usage: 0x91, transition: .up))
+    }
+
+    func testAnUnmappableUsageIsDroppedRatherThanGuessedAt() {
+        // Pause is an EXTENDED1 two-code sequence the event cannot express,
+        // and 0xFFFF is not a usage at all. Neither may reach the bridge.
+        let sink = RDPInputSink()
+        sink.setAccepting(true)
+        sink.send(KeyboardInput(usage: 0x48, transition: .down))
+        sink.send(KeyboardInput(usage: 0xFFFF, transition: .down))
+        XCTAssertThrowsError(try RDPScanCodeMapper.set1ScanCode(forHIDUsage: 0x48))
+        XCTAssertThrowsError(try RDPScanCodeMapper.set1ScanCode(forHIDUsage: 0xFFFF))
+    }
 }
