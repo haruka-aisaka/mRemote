@@ -97,7 +97,29 @@
 | 接続全段階のキャンセル、20 回 connect/disconnect | 自動試験済み。`AppTests/RDPRemoteSessionTests` |
 | 証明書の無言受理なし、fingerprint 変更検出 | 自動試験済み。`CertificateReviewPolicyTests` |
 | 実 Windows への 30 分操作 | **未実施**。実機試験が必要 |
-| bridge の sanitizer stress | **未実施**。開発ホストに CMake が無く実行できていない |
+| bridge の sanitizer stress | 実施済み（2026-09-05）。下記 |
+
+### bridge sanitizer stress の記録（2026-09-05）
+
+Phase 0 から繰り越した項目。`unavailable`/mock backend の contract test 一式を
+Address+UndefinedBehavior と Thread の両 sanitizer で実行し、いずれも clean。
+
+| 構成 | 結果 |
+|---|---|
+| `-DMR_BRIDGE_SANITIZER=address` | 5/5 pass |
+| `-DMR_BRIDGE_SANITIZER=thread` | 5/5 pass |
+| `-DMR_BRIDGE_SANITIZER=address -DMR_BRIDGE_CERTIFICATE_TESTS=ON` | 6/6 pass（PEM parser 込み） |
+
+実行環境: macOS 26.0 (arm64)、Apple clang（Xcode 27.0 / 27A5194q）、CMake 4.4.3。
+
+この繰り越しのために `contract_tests.c` へ `concurrent stop and call stress` を追加した。
+既存の drain test は順序を 1 回ずつ確認するもので、sanitizer が探すべき競合
+（challenge wait とその wake の間に入る stop、run が return する最中に届く send、
+既に消えた challenge への response）は再現しない。新テストは run と並行して別 thread から
+25 反復 × 64 回の send/respond/cancel/stop を撃つ。destroy は両 thread の join 後にだけ呼ぶ。
+これは Swift 側 `RDPNativeCallGate` が提供する外部 gate と同じ契約である。
+
+再現手順は [`bridge/README.md`](../bridge/README.md) にある。
 
 ### この phase で意図的に残したもの
 

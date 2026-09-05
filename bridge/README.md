@@ -41,6 +41,8 @@ ctest --test-dir /tmp/mremote-bridge-asan --output-on-failure
 
 Thread Sanitizer は `-DMR_BRIDGE_SANITIZER=thread` で別 build directory に構成します（Address Sanitizer との同時使用はしません）。
 
+`contract_tests.c` の `concurrent stop and call stress` は sanitizer 実行を前提にしたテストです。run と並行して別 thread から send/respond/cancel/stop を繰り返し、challenge wait と wake、run の return、消えた challenge への response が競合する窓を踏みます。個々の呼び出しは stopping 中なら失敗して当然なので、assert しているのは「crash しない」「data race がない」「callback が矛盾した値を観測しない」の三点だけです。`destroy` は両 thread の join 後にだけ呼びます。これは所有側の外部 gate（Swift の `RDPNativeCallGate`）と同じ契約です。
+
 PEM parser の strict whitespace/trailing-data、malformed PEM、16枚/8 MiB 上限テストは host OpenSSL を明示して有効にします。macOS + Homebrew の例:
 
 ```sh

@@ -34,7 +34,10 @@ they name the operator and the Windows host.
 Deliberately carried forward rather than done here:
 
 - KeyEcho 10-cycle Eisu/Kana JSONL measurement, to Phase 3
-- sanitizer stress and the 20x connect/disconnect loop, to Phase 2
+- sanitizer stress and the 20x connect/disconnect loop, to Phase 2 -- **both done**
+  on 2026-09-05: the bridge contract tests run clean under Address/UB and Thread
+  sanitizers with a new concurrent teardown stress test, and the connect/disconnect
+  loop is `AppTests/RDPRemoteSessionTests`. See docs/roadmap.md, Phase 2
 - pointer, channels, audio, 4K, multi-session, archive and SBOM audit, to their own phases
 
 ## Candidate configuration

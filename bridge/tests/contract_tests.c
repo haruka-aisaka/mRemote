@@ -1156,6 +1156,94 @@ static int test_pre_run_stop_stress(void)
     return 1;
 }
 
+/* Hammers the API surface from a second thread while a session is running and
+ * being stopped. The single-shot drain tests above prove the ordering once;
+ * this is the shape a sanitizer needs to find the races they cannot: a stop
+ * that lands between a challenge wait and its wake, a send that arrives as run
+ * is returning, and a response bound to a challenge that no longer exists.
+ *
+ * Every call here may legitimately fail - the session may already be stopping
+ * - so the assertions are on what must never happen: a crash, a data race, or
+ * a callback that observed something inconsistent. Destroy is only called
+ * after both threads join, which is the same external gate the Swift
+ * `RDPNativeCallGate` provides. */
+static void *stress_caller_thread_main(void *opaque)
+{
+    test_context *context = (test_context *)opaque;
+    unsigned int index;
+    for (index = 0u; index < 64u; ++index) {
+        mr_rdp_key_event key;
+        mr_rdp_pointer_event pointer;
+
+        mr_rdp_key_event_init(&key);
+        key.code = 0x7bu;
+        key.action = (index & 1u) ? MR_RDP_KEY_UP : MR_RDP_KEY_DOWN;
+        (void)mr_rdp_session_send_key(context->session, &key);
+
+        mr_rdp_pointer_event_init(&pointer);
+        pointer.kind = MR_RDP_POINTER_MOVE;
+        pointer.x = index;
+        pointer.y = index;
+        (void)mr_rdp_session_send_pointer(context->session, &pointer);
+
+        /* A stale challenge identity: it must be refused rather than applied
+         * to whatever challenge happens to be open. */
+        (void)mr_rdp_session_respond_certificate(
+            context->session,
+            context->expected_generation,
+            (uint64_t)index + 1u,
+            MR_RDP_CERTIFICATE_ACCEPT_USER_ONCE);
+        (void)mr_rdp_session_cancel_challenge(
+            context->session,
+            context->expected_generation,
+            (uint64_t)index + 1u);
+        (void)mr_rdp_session_request_stop(context->session);
+    }
+    return NULL;
+}
+
+static int test_concurrent_stop_and_call_stress(void)
+{
+    unsigned int iteration;
+    uint8_t leaf[] = { 0x30u, 0x03u, 0x02u, 0x01u, 0x01u };
+    const mr_rdp_der_blob chain[] = { { leaf, sizeof(leaf) } };
+
+    for (iteration = 0u; iteration < 25u; ++iteration) {
+        test_context context;
+        mr_rdp_config config;
+        mr_rdp_callbacks callbacks;
+        mr_rdp_mock_script script;
+        pthread_t run_thread;
+        pthread_t caller_thread;
+
+        REQUIRE(test_context_init(&context));
+        context.expected_generation = iteration + 500u;
+        context.expected_hostname = "stress.example.test";
+        context.expected_chain_count = 1u;
+        context.expected_chain_lengths[0] = sizeof(leaf);
+        context.expected_chain_first_bytes[0] = leaf[0];
+
+        initialize_config(&config, context.expected_hostname);
+        config.generation = context.expected_generation;
+        config.certificate_timeout_ms = 1000u;
+        initialize_callbacks(&callbacks);
+        initialize_mock_script(&script, &context, chain, 1u);
+        REQUIRE(mr_rdp_session_create_mock(
+                    &config, &callbacks, &context, &script, &context.session) ==
+                MR_RDP_STATUS_OK);
+
+        REQUIRE(pthread_create(&run_thread, NULL, run_thread_main, &context) == 0);
+        REQUIRE(pthread_create(
+                    &caller_thread, NULL, stress_caller_thread_main, &context) == 0);
+        REQUIRE(pthread_join(caller_thread, NULL) == 0);
+        REQUIRE(pthread_join(run_thread, NULL) == 0);
+        REQUIRE(mr_rdp_session_destroy(context.session) == MR_RDP_STATUS_OK);
+        REQUIRE(atomic_load_explicit(&context.failures, memory_order_relaxed) == 0);
+        test_context_destroy(&context);
+    }
+    return 1;
+}
+
 typedef int (*test_function)(void);
 
 typedef struct test_case {
@@ -1176,7 +1264,8 @@ int main(void)
         { "frame validation", test_frame_validation_rejects_invalid_views },
         { "frame callback view and destroy drain", test_frame_callback_view_and_destroy_drain },
         { "destroy drains callback", test_destroy_waits_for_callback_drain },
-        { "pre-run stop stress", test_pre_run_stop_stress }
+        { "pre-run stop stress", test_pre_run_stop_stress },
+        { "concurrent stop and call stress", test_concurrent_stop_and_call_stress }
     };
     size_t index;
     int passed = 0;
