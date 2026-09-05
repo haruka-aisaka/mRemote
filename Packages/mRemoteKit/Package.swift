@@ -16,6 +16,7 @@ let package = Package(
         .library(name: "SessionCore", targets: ["SessionCore"]),
         .library(name: "Persistence", targets: ["Persistence"]),
         .library(name: "AppleAdapters", targets: ["AppleAdapters"]),
+        .library(name: "RDPProtocol", targets: ["RDPProtocol"]),
     ],
     targets: [
         .target(name: "SessionCore"),
@@ -25,8 +26,21 @@ let package = Package(
             dependencies: ["SessionCore"],
             linkerSettings: [.linkedFramework("Security")]
         ),
+        // Everything about the RDP session that does not need FreeRDP itself:
+        // the status/error vocabulary of the C bridge, certificate evaluation
+        // and the review policy. The XCFramework is linked by the Xcode app
+        // target rather than declared here as a binaryTarget, because
+        // `artifacts/` is generated and ignored, and a binaryTarget would make
+        // the whole package - including `swift test` - unresolvable wherever
+        // it has not been built.
+        .target(
+            name: "RDPProtocol",
+            dependencies: ["SessionCore"],
+            linkerSettings: [.linkedFramework("Security")]
+        ),
         .testTarget(name: "SessionCoreTests", dependencies: ["SessionCore"]),
         .testTarget(name: "PersistenceTests", dependencies: ["Persistence"]),
         .testTarget(name: "AppleAdaptersTests", dependencies: ["AppleAdapters"]),
+        .testTarget(name: "RDPProtocolTests", dependencies: ["RDPProtocol"]),
     ]
 )

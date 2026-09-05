@@ -103,12 +103,21 @@ final class FakeRemoteSessionTests: XCTestCase {
         XCTAssertTrue(RemoteSessionError.connectionTimedOut.isRetriable)
     }
 
-    func testOnlySoundCertificatesOfferApproval() {
+    func testABrokenCertificateOffersNoApproval() {
         XCTAssertTrue(CertificateDisposition.untrustedRoot.allowsUserApproval)
         XCTAssertTrue(CertificateDisposition.hostnameUnverifiable.allowsUserApproval)
+        XCTAssertTrue(CertificateDisposition.serverPurposeUnmet.allowsUserApproval)
         XCTAssertFalse(CertificateDisposition.rejected(reason: "expired").allowsUserApproval)
-        XCTAssertFalse(
-            CertificateDisposition.fingerprintChanged(previousLeafSHA256: "aa").allowsUserApproval
-        )
+    }
+
+    func testAChangedFingerprintIsApprovableButNeverAsAFirstApproval() {
+        // docs/data-and-security.md wants a strong warning and no silent
+        // replacement, not a dead end: a reissued certificate has to be
+        // approvable, or an ordinary renewal makes the profile unusable and
+        // teaches the user to delete trust records instead of reading them.
+        let changed = CertificateDisposition.fingerprintChanged(previousLeafSHA256: "aa")
+        XCTAssertTrue(changed.allowsUserApproval)
+        XCTAssertTrue(changed.isIdentityChange)
+        XCTAssertFalse(CertificateDisposition.untrustedRoot.isIdentityChange)
     }
 }

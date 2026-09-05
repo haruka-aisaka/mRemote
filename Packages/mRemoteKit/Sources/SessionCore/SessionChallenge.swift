@@ -100,16 +100,35 @@ public enum CertificateDisposition: Hashable, Sendable {
     /// Expired, mismatched hostname, or a broken chain. No override offered.
     case rejected(reason: String)
     /// A previously pinned fingerprint changed. Never approve this the way a
-    /// first-time self-signed certificate is approved.
+    /// first-time self-signed certificate is approved: docs/data-and-security.md
+    /// requires a strong warning and refuses to replace the stored approval
+    /// silently, so this is its own presentation with its own wording.
     case fingerprintChanged(previousLeafSHA256: String)
 
     public var allowsUserApproval: Bool {
         switch self {
         case .untrustedRoot, .serverPurposeUnmet, .hostnameUnverifiable:
             return true
-        case .rejected, .fingerprintChanged:
+        case .fingerprintChanged:
+            // An approval action is offered, but not the same one: a
+            // certificate that is merely unknown and one that replaced a
+            // certificate the user already approved are different questions.
+            // Without a path forward here, an ordinary certificate renewal
+            // would leave the profile permanently unusable inside the app,
+            // which teaches the user to delete trust records rather than to
+            // read the warning.
+            return true
+        case .rejected:
             return false
         }
+    }
+
+    /// True where the user is being told that something they already approved
+    /// has changed. The review UI must not present this like a first-time
+    /// approval.
+    public var isIdentityChange: Bool {
+        if case .fingerprintChanged = self { return true }
+        return false
     }
 }
 

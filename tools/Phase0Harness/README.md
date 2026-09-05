@@ -32,6 +32,28 @@ The Metal shaders are compiled from source at runtime so this standalone
 harness remains buildable without a repository-generated `.metallib`. This is
 a harness tradeoff, not the intended production shader packaging strategy.
 
+## Relationship to the shipping app
+
+This directory is the Phase 0 spike, kept as a fixture. From Phase 2 onwards
+the shipping code lives elsewhere and this copy is frozen:
+
+| Harness file | Shipping counterpart |
+|---|---|
+| `ServerTrustEvaluator.swift` | `Packages/mRemoteKit/Sources/RDPProtocol/ServerTrustEvaluator.swift` |
+| `BGRADesktopUpdateValidator.swift` | `Packages/mRemoteKit/Sources/SessionCore/DesktopFrame.swift` |
+| `RemoteSurfaceView.swift` | `App/Session/RemoteDesktopView.swift` |
+| `NativeRDPSession.swift` | `App/RDP/` |
+
+The harness keeps its own copies on purpose. It is the physical-input fixture
+that Phase 0 was signed off with, and rewiring it onto the shipping modules
+would mean the thing used to reproduce an input regression is no longer the
+thing that was measured. Behaviour changes belong in the shipping copy; a
+change here is only worth making when the fixture itself is wrong.
+
+`InputRouter.swift`, `RDPScanCodeMapper.swift` and `ScrollWheelAccumulator.swift`
+have no shipping counterpart yet - they move in Phase 3, which is when this
+harness stops being the only place the input path is exercised.
+
 ## Open and run
 
 1. Open `Phase0Harness.xcodeproj` in Xcode.
