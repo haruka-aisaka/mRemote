@@ -283,7 +283,7 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 
 - iOS 27.1 の `UIHingeInteraction` / SwiftUI `onHingeChange` は状態（closed / partiallyOpen / fullyOpen）と角度だけを返し、**ヒンジの画面上の位置は取れない**。
 - Duo の内側ディスプレイは 669×951pt、カバーは 466×678pt で内側の半分に相当する。縦持ちで長辺を横切って中央で折れるため、「縦長 + partiallyOpen」をラップトップ姿勢とし、中央で分割する。
-- シミュレータのヒンジ操作は DeviceHub.app の UI のみ。`simctl` / `devicectl` には無い。
+- シミュレータのヒンジ操作は DeviceHub.app の UI のみ（端末表示の横にある Closed / Partially Open / Open ボタン）。`simctl` / `devicectl` には無い。シミュレータの初期向きは横（ヒンジが縦に入る本の向き）なので、ラップトップ姿勢は Controls > Rotate Left で縦にしてから試す。
 - `UIHingeInteraction` は Xcode 27.0 の SDK に無いため `#if canImport(UIKit, _version: 9127.0.85)` で分岐。27.0 でもビルドは通り、ヒンジは常に「なし」になる。
 
 | 項目 | 状態 |
@@ -294,7 +294,7 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 | 解放 | 実装済み。gate が閉じたとき、デッキが消えたときにキーとボタンをすべて解放 |
 | メニューの表示切替 | 実装済み。折り曲げたとき / 常に表示 / 表示しない（セッション単位、保存しない） |
 | テスト | 単体テスト（配列幅、scan code の有無、合成、相対移動）と UI テスト（常に表示でデッキが出る）が通過 |
-| 実際に折り曲げたときの自動切替 | **未確認**。DeviceHub での操作が必要 |
+| 実際に折り曲げたときの自動切替 | 確認済み（2026-10-07、シミュレータ）。縦向き + Partially Open で自動表示、Open で全画面に戻り、横向き + Partially Open では出ない |
 | 実ホストでのキー・ポインター | **未実施**。Windows が必要（fake session には surface が無い） |
 
 次にやること:
