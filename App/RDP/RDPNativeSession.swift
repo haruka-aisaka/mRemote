@@ -75,9 +75,19 @@ enum RDPNativeEvent: Sendable {
     /// the session can record an approval it did not have to raise.
     case certificateSettled(accepted: Bool, detail: String)
     case displayResized(width: UInt32, height: UInt32)
+    case clipboardRemoteFormats(hasText: Bool)
+    case clipboardOffer(id: UInt64, stage: RDPClipboardOfferStage, succeeded: Bool)
+    /// The remote text, already decoded; nil when the request failed.
+    case clipboardText(requestID: UInt64, text: String?, status: RDPBridgeStatus)
     /// `mr_rdp_session_run` returned and the handle has been destroyed. This,
     /// not a backend phase, is when the session may call itself disconnected.
     case finished(run: RDPBridgeStatus, destroy: RDPBridgeStatus?)
+}
+
+enum RDPClipboardOfferStage: Sendable {
+    case accepted
+    case delivered
+    case failed
 }
 
 /// A certificate the user has to look at, plus the identity the bridge needs
@@ -112,7 +122,8 @@ final class RDPNativeSession: @unchecked Sendable {
         trust: any TrustRepository,
         logger: RDPSessionLogger,
         frameStore: LatestDesktopFrameStore,
-        cursorStore: RemoteCursorStore
+        cursorStore: RemoteCursorStore,
+        audioStream: PCMAudioStream
     ) {
         self.generation = generation
         worker = DispatchQueue(
@@ -131,6 +142,7 @@ final class RDPNativeSession: @unchecked Sendable {
             logger: logger,
             frameStore: frameStore,
             cursorStore: cursorStore,
+            audioStream: audioStream,
             continuation: continuation
         )
     }
@@ -212,6 +224,24 @@ final class RDPNativeSession: @unchecked Sendable {
         context.requestDisplayResize(requestID: requestID, width: width, height: height)
     }
 
+    /// Remembered and replayed once the handle exists, so a session focused
+    /// before its worker created the C session still starts audible.
+    func setAudioFocused(_ focused: Bool) {
+        context.setAudioFocused(focused)
+    }
+
+    func sendUnicode(_ codeUnit: UInt16) {
+        context.sendUnicode(codeUnit)
+    }
+
+    func offerClipboardText(offerID: UInt64, utf16le: Data) -> RDPBridgeStatus {
+        context.offerClipboardText(offerID: offerID, utf16le: utf16le)
+    }
+
+    func requestClipboardText(requestID: UInt64) -> RDPBridgeStatus {
+        context.requestClipboardText(requestID: requestID)
+    }
+
     private static func create(
         connection: RDPNativeConnection,
         generation: UInt64,
@@ -227,6 +257,10 @@ final class RDPNativeSession: @unchecked Sendable {
         callbacks.on_clipboard_probe_event = nil
         callbacks.on_display_resize_event = rdpDisplayResizeCallback
         callbacks.on_cursor = rdpCursorCallback
+        callbacks.on_audio = rdpAudioCallback
+        callbacks.on_clipboard_remote_formats = rdpClipboardRemoteFormatsCallback
+        callbacks.on_clipboard_offer = rdpClipboardOfferCallback
+        callbacks.on_clipboard_text = rdpClipboardTextCallback
 
         var config = mr_rdp_config()
         mr_rdp_config_init(&config)
@@ -282,6 +316,9 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
     /// connection comes back.
     private let frameStore: LatestDesktopFrameStore
     private let cursorStore: RemoteCursorStore
+    let audioStream: PCMAudioStream
+    private let audioFocusLock = NSLock()
+    private var audioFocused = false
 
     init(
         endpoint: RemoteEndpoint,
@@ -289,6 +326,7 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
         logger: RDPSessionLogger,
         frameStore: LatestDesktopFrameStore,
         cursorStore: RemoteCursorStore,
+        audioStream: PCMAudioStream,
         continuation: AsyncStream<RDPNativeEvent>.Continuation
     ) {
         self.endpoint = endpoint
@@ -296,10 +334,61 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
         self.logger = logger
         self.frameStore = frameStore
         self.cursorStore = cursorStore
+        self.audioStream = audioStream
         self.continuation = continuation
     }
 
-    func install(_ session: OpaquePointer) { calls.install(session) }
+    func install(_ session: OpaquePointer) {
+        calls.install(session)
+        audioFocusLock.lock()
+        let focused = audioFocused
+        audioFocusLock.unlock()
+        _ = calls.setAudioFocused(focused)
+    }
+
+    func setAudioFocused(_ focused: Bool) {
+        audioFocusLock.lock()
+        audioFocused = focused
+        audioFocusLock.unlock()
+        _ = calls.setAudioFocused(focused)
+    }
+
+    func sendUnicode(_ codeUnit: UInt16) {
+        guard codeUnit != 0 else { return }
+        var event = mr_rdp_unicode_event()
+        mr_rdp_unicode_event_init(&event)
+        event.code_unit = codeUnit
+        _ = calls.sendUnicode(&event)
+    }
+
+    func offerClipboardText(offerID: UInt64, utf16le: Data) -> RDPBridgeStatus {
+        utf16le.withUnsafeBytes { bytes in
+            var offer = mr_rdp_clipboard_offer()
+            mr_rdp_clipboard_offer_init(&offer)
+            offer.offer_id = offerID
+            offer.utf16le_bytes = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            offer.utf16le_byte_count = bytes.count
+            return calls.offerClipboardText(&offer).flatMap(RDPBridgeStatus.init(rawValue:))
+                ?? .invalidState
+        }
+    }
+
+    func requestClipboardText(requestID: UInt64) -> RDPBridgeStatus {
+        calls.requestClipboardText(requestID: requestID).flatMap(RDPBridgeStatus.init(rawValue:))
+            ?? .invalidState
+    }
+
+    func receiveClipboardRemoteFormats(hasText: Bool) {
+        continuation.yield(.clipboardRemoteFormats(hasText: hasText))
+    }
+
+    func receiveClipboardOffer(id: UInt64, stage: RDPClipboardOfferStage, succeeded: Bool) {
+        continuation.yield(.clipboardOffer(id: id, stage: stage, succeeded: succeeded))
+    }
+
+    func receiveClipboardText(requestID: UInt64, text: String?, status: RDPBridgeStatus) {
+        continuation.yield(.clipboardText(requestID: requestID, text: text, status: status))
+    }
     func requestStop() { calls.requestStop() }
     func destroy() -> mr_rdp_status? { calls.destroy() }
 
@@ -716,4 +805,79 @@ private func rdpCursorCallback(
     } else {
         context.receiveCursor(.systemDefault)
     }
+}
+
+private func rdpAudioCallback(
+    _ opaque: UnsafeMutableRawPointer?,
+    _ packetPointer: UnsafePointer<mr_rdp_audio_packet>?
+) {
+    guard let context = callbackContext(opaque), let packetPointer,
+          packetPointer.pointee.struct_size >= UInt32(MemoryLayout<mr_rdp_audio_packet>.size)
+    else { return }
+    let packet = packetPointer.pointee
+    guard let bytes = packet.bytes, packet.bits_per_sample == 16,
+          (1...2).contains(packet.channels) else { return }
+    // Straight into the ring: audio, like frames, never touches the actor.
+    context.audioStream.push(
+        UnsafeRawBufferPointer(start: bytes, count: packet.length),
+        sampleRate: Double(packet.samples_per_second),
+        channels: Int(packet.channels)
+    )
+}
+
+private func rdpClipboardRemoteFormatsCallback(
+    _ opaque: UnsafeMutableRawPointer?,
+    _ eventPointer: UnsafePointer<mr_rdp_clipboard_remote_formats_event>?
+) {
+    guard let context = callbackContext(opaque), let eventPointer,
+          eventPointer.pointee.struct_size >= UInt32(
+              MemoryLayout<mr_rdp_clipboard_remote_formats_event>.size
+          )
+    else { return }
+    context.receiveClipboardRemoteFormats(hasText: eventPointer.pointee.has_text != 0)
+}
+
+private func rdpClipboardOfferCallback(
+    _ opaque: UnsafeMutableRawPointer?,
+    _ eventPointer: UnsafePointer<mr_rdp_clipboard_offer_event>?
+) {
+    guard let context = callbackContext(opaque), let eventPointer,
+          eventPointer.pointee.struct_size >= UInt32(MemoryLayout<mr_rdp_clipboard_offer_event>.size)
+    else { return }
+    let event = eventPointer.pointee
+    let stage: RDPClipboardOfferStage
+    if event.stage == mr_rdp_clipboard_offer_stage(MR_RDP_CLIPBOARD_OFFER_ACCEPTED) {
+        stage = .accepted
+    } else if event.stage == mr_rdp_clipboard_offer_stage(MR_RDP_CLIPBOARD_OFFER_DELIVERED) {
+        stage = .delivered
+    } else {
+        stage = .failed
+    }
+    context.receiveClipboardOffer(
+        id: event.offer_id,
+        stage: stage,
+        succeeded: event.status == mr_rdp_status(MR_RDP_STATUS_OK)
+    )
+}
+
+private func rdpClipboardTextCallback(
+    _ opaque: UnsafeMutableRawPointer?,
+    _ eventPointer: UnsafePointer<mr_rdp_clipboard_text_event>?
+) {
+    guard let context = callbackContext(opaque), let eventPointer,
+          eventPointer.pointee.struct_size >= UInt32(MemoryLayout<mr_rdp_clipboard_text_event>.size)
+    else { return }
+    let event = eventPointer.pointee
+    let status = RDPBridgeStatus(rawValue: event.status) ?? .backend
+    guard status == .ok else {
+        context.receiveClipboardText(requestID: event.request_id, text: nil, status: status)
+        return
+    }
+    // Copied and decoded here: the bridge's span ends with the callback.
+    let data = event.utf16le_bytes.map { Data(bytes: $0, count: event.utf16le_byte_count) } ?? Data()
+    context.receiveClipboardText(
+        requestID: event.request_id,
+        text: ClipboardTextCodec.decode(data),
+        status: .ok
+    )
 }

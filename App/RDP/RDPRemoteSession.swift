@@ -16,11 +16,13 @@ import SessionCore
 /// the session is authoritative for its own state and pending challenge -
 /// docs/architecture.md requires the event stream to be a "read me again"
 /// signal rather than a log a consumer rebuilds state from.
-actor RDPRemoteSession: DesktopSession {
+actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSession {
     nonisolated let id: SessionID
     nonisolated let profileID: ProfileID?
     nonisolated let frameStore = LatestDesktopFrameStore()
     nonisolated let cursorStore = RemoteCursorStore()
+    nonisolated let audioStream = PCMAudioStream()
+    nonisolated var audioSource: any RemoteAudioSource { audioStream }
     nonisolated let inputSink: any DesktopInputSink
     nonisolated let initialDesktopSize: (width: Int, height: Int)
     /// The concrete sink, kept separately so the actor can retarget it without
@@ -52,6 +54,13 @@ actor RDPRemoteSession: DesktopSession {
     private var negotiatedChannels: Set<RDPBridgeChannel> = []
     private var currentDesktopSize: (width: Int, height: Int)
     private var nextResizeRequestID: UInt64 = 0
+
+    private(set) var remoteHasText = false
+    private var nextClipboardID: UInt64 = 0
+    private var pendingOffers: [UInt64: CheckedContinuation<Void, Error>] = [:]
+    private var pendingFetch: (id: UInt64, continuation: CheckedContinuation<String, Error>)?
+    /// Mirrors MR_RDP_CLIPBOARD_REQUEST_TIMEOUT_MS.
+    private static let clipboardTimeout = Duration.seconds(10)
 
     private struct SuppliedCredential: Sendable {
         let username: String
@@ -208,6 +217,9 @@ actor RDPRemoteSession: DesktopSession {
         // presentation degrades, and the frame store already holds at most one
         // surface, so there is nothing to release here in Phase 2.
         self.visibility = visibility
+        // docs/architecture.md section 8: only the focused session is
+        // audible. The bridge drops the rest before it reaches the app.
+        native?.setAudioFocused(visibility == .focused)
     }
 
     // MARK: - DesktopSession
@@ -233,6 +245,78 @@ actor RDPRemoteSession: DesktopSession {
             height: UInt32(clampedHeight)
         ) ?? false
         logger.session("disp resize \(clampedWidth)x\(clampedHeight) accepted=\(accepted)")
+    }
+
+    // MARK: - ClipboardCapableSession
+
+    func offerClipboardText(_ text: String) async throws {
+        guard configuration.clipboardPolicy.allowsSend else { throw ClipboardTransferError.unavailable }
+        guard machine.state == .connected, let native else { throw ClipboardTransferError.unavailable }
+        let bytes: Data
+        do {
+            bytes = try ClipboardTextCodec.encode(text)
+        } catch {
+            throw ClipboardTransferError.unsupportedContent
+        }
+        let id = nextClipboardRequestID()
+        let status = native.offerClipboardText(offerID: id, utf16le: bytes)
+        guard status == .ok else {
+            logger.session("clipboard offer refused: \(status.name)")
+            throw ClipboardTransferError.unavailable
+        }
+        try await withCheckedThrowingContinuation { continuation in
+            pendingOffers[id] = continuation
+            Task { [weak self] in
+                try? await Task.sleep(for: Self.clipboardTimeout)
+                await self?.expireOffer(id)
+            }
+        }
+    }
+
+    func fetchRemoteClipboardText() async throws -> String {
+        guard configuration.clipboardPolicy.allowsReceive else { throw ClipboardTransferError.unavailable }
+        guard machine.state == .connected, let native else { throw ClipboardTransferError.unavailable }
+        guard remoteHasText else { throw ClipboardTransferError.nothingToCopy }
+        guard pendingFetch == nil else { throw ClipboardTransferError.failed }
+        let id = nextClipboardRequestID()
+        let status = native.requestClipboardText(requestID: id)
+        guard status == .ok else {
+            logger.session("clipboard request refused: \(status.name)")
+            throw ClipboardTransferError.unavailable
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingFetch = (id, continuation)
+            Task { [weak self] in
+                try? await Task.sleep(for: Self.clipboardTimeout)
+                await self?.expireFetch(id)
+            }
+        }
+    }
+
+    private func nextClipboardRequestID() -> UInt64 {
+        nextClipboardID &+= 1
+        if nextClipboardID == 0 { nextClipboardID = 1 }
+        return nextClipboardID
+    }
+
+    private func expireOffer(_ id: UInt64) {
+        pendingOffers.removeValue(forKey: id)?.resume(throwing: ClipboardTransferError.timedOut)
+    }
+
+    private func expireFetch(_ id: UInt64) {
+        guard let pending = pendingFetch, pending.id == id else { return }
+        pendingFetch = nil
+        pending.continuation.resume(throwing: ClipboardTransferError.timedOut)
+    }
+
+    /// A connection that ends answers nobody, so every waiter is released.
+    private func failClipboardWaiters() {
+        for continuation in pendingOffers.values {
+            continuation.resume(throwing: ClipboardTransferError.unavailable)
+        }
+        pendingOffers.removeAll()
+        pendingFetch?.continuation.resume(throwing: ClipboardTransferError.unavailable)
+        pendingFetch = nil
     }
 
     static func keyboardProfile(for layout: KeyboardLayoutPreference) -> mr_rdp_keyboard_profile {
@@ -291,9 +375,11 @@ actor RDPRemoteSession: DesktopSession {
             trust: trust,
             logger: logger,
             frameStore: frameStore,
-            cursorStore: cursorStore
+            cursorStore: cursorStore,
+            audioStream: audioStream
         )
         native = session
+        session.setAudioFocused(visibility == .focused)
         pointerSink.attach(session)
         terminationCause = nil
         negotiatedChannels = []
@@ -410,6 +496,31 @@ actor RDPRemoteSession: DesktopSession {
             currentDesktopSize = (Int(width), Int(height))
             logger.session("desktop resized to \(width)x\(height)")
 
+        case let .clipboardRemoteFormats(hasText):
+            remoteHasText = hasText
+            emit(.clipboardChanged(hasRemoteText: hasText))
+
+        case let .clipboardOffer(id, stage, _):
+            switch stage {
+            case .accepted:
+                pendingOffers.removeValue(forKey: id)?.resume()
+            case .delivered:
+                break
+            case .failed:
+                pendingOffers.removeValue(forKey: id)?.resume(throwing: ClipboardTransferError.failed)
+            }
+
+        case let .clipboardText(requestID, text, status):
+            guard let pending = pendingFetch, pending.id == requestID else { return }
+            pendingFetch = nil
+            if let text {
+                pending.continuation.resume(returning: text)
+            } else {
+                pending.continuation.resume(throwing: status == .timeout
+                    ? ClipboardTransferError.timedOut
+                    : ClipboardTransferError.failed)
+            }
+
         case let .finished(run, destroy):
             logger.session("worker finished run=\(run.name) destroy=\(destroy?.name ?? "n/a")")
             let cause = terminationCause ?? RDPErrorMapper.classify(status: run)
@@ -420,6 +531,8 @@ actor RDPRemoteSession: DesktopSession {
     /// The worker has joined and the handle is gone, so this is the only place
     /// allowed to publish a terminal state.
     private func finishAttempt(cause: RDPTerminationCause) {
+        failClipboardWaiters()
+        remoteHasText = false
         native = nil
         pointerSink.attach(nil)
         pumpTask = nil

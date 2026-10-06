@@ -206,6 +206,7 @@ final class AppEnvironment {
             )
             runningSessions.append(model)
             presentedSession = model
+            refreshAudioFocus()
             await model.start()
         } catch let error as SessionBudgetExceededError {
             loadFailure = "同時接続はあと \(error.limit) セッションまでです。"
@@ -222,6 +223,7 @@ final class AppEnvironment {
         await sessions.applyVisibilityPolicy()
         runningSessions.removeAll { $0.id == id }
         presentedSession = nil
+        refreshAudioFocus()
     }
 
     func present(_ model: SessionWorkspaceModel) {
@@ -266,6 +268,16 @@ final class AppEnvironment {
         _ = await sessions.setFocus(to: id)
         focusedSessionID = await sessions.focusedSessionID
         await sessions.applyVisibilityPolicy()
+        refreshAudioFocus()
+    }
+
+    /// Points the audio engine at the focused session, or at nothing.
+    func refreshAudioFocus() {
+        let focused = runningSessions.first { $0.id == focusedSessionID }
+        AudioCoordinator.shared.setFocused(
+            focused?.audioStream,
+            muted: focused?.isAudioMuted ?? true
+        )
     }
 }
 

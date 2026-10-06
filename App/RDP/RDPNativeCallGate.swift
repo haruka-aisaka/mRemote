@@ -67,6 +67,22 @@ final class RDPNativeCallGate: @unchecked Sendable {
         call { mr_rdp_session_request_display_resize($0, &request) }
     }
 
+    func sendUnicode(_ event: inout mr_rdp_unicode_event) -> mr_rdp_status? {
+        call { mr_rdp_session_send_unicode($0, &event) }
+    }
+
+    func setAudioFocused(_ focused: Bool) -> mr_rdp_status? {
+        call { mr_rdp_session_set_audio_focused($0, focused ? 1 : 0) }
+    }
+
+    func offerClipboardText(_ offer: inout mr_rdp_clipboard_offer) -> mr_rdp_status? {
+        call { mr_rdp_session_offer_clipboard_text($0, &offer) }
+    }
+
+    func requestClipboardText(requestID: UInt64) -> mr_rdp_status? {
+        call { mr_rdp_session_request_clipboard_text($0, requestID) }
+    }
+
     /// Closes the gate to new calls, waits for the ones already through it,
     /// then frees. Must not be called from the run or callback thread; the
     /// worker calls it only after `mr_rdp_session_run` has returned.

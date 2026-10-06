@@ -3,12 +3,21 @@ import SwiftUI
 @main
 struct mRemoteApp: App {
     @State private var environment = AppEnvironment.live()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(environment)
                 .task { await environment.start() }
+        }
+        // docs/architecture.md section 10: no audio from the background.
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background: AudioCoordinator.shared.suspend()
+            case .active: AudioCoordinator.shared.resume()
+            default: break
+            }
         }
     }
 }

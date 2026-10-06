@@ -4,6 +4,9 @@ public enum SessionControlEvent: Sendable {
     case stateChanged(SessionState, generation: SessionGeneration)
     case userActionRequired(SessionChallenge)
     case error(RemoteSessionError)
+    /// The remote clipboard changed. Carries whether it now holds text; the
+    /// text itself is never part of an event.
+    case clipboardChanged(hasRemoteText: Bool)
 }
 
 public enum SessionVisibility: Hashable, Sendable {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import SessionCore
 
 /// The floating button's menu (docs/ui-flow.md section 6.1).
@@ -23,6 +24,31 @@ struct SessionMenuSheet: View {
                     }
                 }
 
+                Section {
+                    Button {
+                        model.returnToList()
+                    } label: {
+                        Label("接続先一覧へ戻る（接続を維持）", systemImage: "list.bullet")
+                    }
+                    .accessibilityIdentifier("session-return-to-list")
+
+                    if model.canRetry || model.state == .disconnected {
+                        Button {
+                            dismiss()
+                            Task { await model.retry() }
+                        } label: {
+                            Label("再接続", systemImage: "arrow.clockwise")
+                        }
+                        .accessibilityIdentifier("session-reconnect")
+                    }
+
+                    Button(role: .destructive) {
+                        confirmingDisconnect = true
+                    } label: {
+                        Label("このセッションを切断", systemImage: "xmark.circle")
+                    }
+                    .accessibilityIdentifier("session-disconnect")
+                }
                 if environment.runningSessions.count > 1 {
                     Section("セッションを切り替える") {
                         ForEach(environment.runningSessions) { session in
@@ -75,31 +101,24 @@ struct SessionMenuSheet: View {
                     .accessibilityIdentifier("session-scroll-picker")
                 }
 
-                Section {
-                    Button {
-                        model.returnToList()
-                    } label: {
-                        Label("接続先一覧へ戻る（接続を維持）", systemImage: "list.bullet")
-                    }
-                    .accessibilityIdentifier("session-return-to-list")
-
-                    if model.canRetry || model.state == .disconnected {
-                        Button {
-                            dismiss()
-                            Task { await model.retry() }
-                        } label: {
-                            Label("再接続", systemImage: "arrow.clockwise")
-                        }
-                        .accessibilityIdentifier("session-reconnect")
-                    }
-
-                    Button(role: .destructive) {
-                        confirmingDisconnect = true
-                    } label: {
-                        Label("このセッションを切断", systemImage: "xmark.circle")
-                    }
-                    .accessibilityIdentifier("session-disconnect")
+                if model.clipboardPolicy != .disabled {
+                    clipboardSection
                 }
+
+                Section("音声") {
+                    Toggle("この端末で再生", isOn: Binding(
+                        get: { !model.isAudioMuted },
+                        set: { model.setLocallyMuted(!$0) }
+                    ))
+                    .disabled(!model.configuration.audioPlayback)
+                    .accessibilityIdentifier("session-audio-toggle")
+                    if !model.configuration.audioPlayback {
+                        Text("この接続では音声が無効です（接続設定で変更できます）")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
             }
             .navigationTitle("セッション")
             .navigationBarTitleDisplayMode(.inline)
@@ -121,6 +140,47 @@ struct SessionMenuSheet: View {
             }
         }
         .accessibilityIdentifier("session-menu")
+    }
+}
+
+extension SessionMenuSheet {
+    /// docs/ui-flow.md section 6.2. Both directions start from a tap here;
+    /// nothing reads or writes the pasteboard on its own.
+    @ViewBuilder
+    var clipboardSection: some View {
+        Section {
+            if model.clipboardPolicy.allowsSend {
+                // PasteButton hands over the pasteboard without the system
+                // "allow paste" prompt, because the tap itself is the consent.
+                PasteButton(payloadType: String.self) { strings in
+                    let text = strings.joined(separator: "\n")
+                    Task { @MainActor in await model.pasteToRemote(text) }
+                }
+                .disabled(!model.canSendClipboard)
+                .accessibilityIdentifier("clipboard-paste-to-remote")
+            }
+            if model.clipboardPolicy.allowsReceive {
+                Button {
+                    Task {
+                        if let text = await model.copyRemoteToDevice() {
+                            UIPasteboard.general.string = text
+                        }
+                    }
+                } label: {
+                    Label("リモートのテキストを端末へコピー", systemImage: "doc.on.clipboard")
+                }
+                .disabled(!model.canReceiveClipboard)
+                .accessibilityIdentifier("clipboard-copy-to-device")
+            }
+        } header: {
+            Text("クリップボード")
+        } footer: {
+            if model.remoteHasText {
+                Text("リモートにテキストがあります")
+            } else if model.clipboardPolicy.allowsReceive {
+                Text("リモートでテキストをコピーすると、ここから端末へコピーできます")
+            }
+        }
     }
 }
 

@@ -225,6 +225,21 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 - ASCII/日本語/絵文字を双方向に copy でき、許可 UI を過剰に出さない。
 - clipboard/audio 本文が log/disk に残らない。
 
+### 実装状況（2026-10-07、シミュレータ確認まで）
+
+| 項目 | 状態 |
+|---|---|
+| iOS `RDPSND_DEVICE_PLUGIN`、PCM-only negotiation | 実装済み。bridge 独自の `mremote` サブシステム（addin provider で登録）が 16-bit PCM 1〜2ch だけを受け、`mr_rdpsnd` の focus gate を通す。Wave Confirm は FreeRDP core が送る |
+| session 別 SPSC ring、共通 AVAudioEngine | 実装済み。`mr_pcm_ring`（C、lock-free）をセッションごとに持ち、`AudioCoordinator` が focus 中のセッションの ring だけを `AVAudioSourceNode` で再生する。render callback は lock・確保・actor hop をしない |
+| route/interruption | 実装済み。interruption 終了と `AVAudioEngineConfigurationChange` で再構築。background で停止 |
+| focused session だけを再生 | 実装済み。bridge 側で非 focus の PCM を捨て、切替時は新 ring の backlog を破棄 |
+| `cliprdr` の format-list/request/response | 実装済み（bridge ABI 2）。ローカル→リモートは offer、リモート→ローカルは request。MS-RDPECLIP どおり capability の後に空の format list を送るようにした |
+| NUL 終端 UTF-16LE `CF_UNICODETEXT` | 実装済み。`ClipboardTextCodec`（CRLF 変換、埋め込み NUL 拒否、受信は最初の NUL まで、不正サロゲートは U+FFFD） |
+| clipboard direction、user-initiated paste/copy | 実装済み。メニューの `PasteButton`（OS の貼り付け許可ダイアログを出さない）と「端末へコピー」。貼り付け chord（Ctrl+V）はこの操作のときだけ送る |
+| loop/size protection | 実装済み。4 MiB 上限、10 秒タイムアウト、受信直後の同一テキストは再 offer しない |
+| 44.1/48 kHz test tone、route 変更後の復帰 | **未実施**。Windows からの実音が必要 |
+| ASCII/日本語/絵文字の双方向 copy | codec と fake session での自動試験のみ。**Windows との往復は未実施** |
+
 ## 8. Phase 6 — ソフトウェアキーボード
 
 この phase は後半だが、`InputMode` の経路分離と小さな `UITextInput` 技術検証は Phase 0〜3 で済ませる。

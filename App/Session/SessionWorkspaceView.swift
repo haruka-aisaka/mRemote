@@ -22,6 +22,15 @@ struct SessionWorkspaceView: View {
             privacyCover
         }
         .onAppear { showToast() }
+        .onChange(of: model.clipboardMessage) { _, message in
+            guard let message else { return }
+            withAnimation { toastText = message }
+            model.clipboardMessage = nil
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation { if toastText == message { toastText = nil } }
+            }
+        }
         // Naming the container must not hide what is inside it: the status
         // text and the floating menu have to stay individually reachable.
         .accessibilityElement(children: .contain)

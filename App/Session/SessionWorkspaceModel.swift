@@ -32,6 +32,14 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// attempt number out of `reconnectSchedule.maximumAttempts`.
     private(set) var reconnectAttempt: Int?
     private var hadConnected = false
+    private(set) var remoteHasText = false
+    /// Shown as a toast; never contains clipboard text (docs/ui-flow.md 6.2).
+    var clipboardMessage: String?
+    private(set) var isTransferringClipboard = false
+    /// The last text taken from the remote clipboard, kept only to recognise
+    /// it coming back: pasting it straight back needs no new offer, because
+    /// the remote still holds it (docs/architecture.md section 9).
+    private var lastReceivedText: String?
     private var reconnectTask: Task<Void, Never>?
     private let reconnectSchedule = ReconnectSchedule()
 
@@ -160,7 +168,104 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         case .error(let error):
             lastError = error
             if state == .failed { scheduleReconnectIfNeeded() }
+        case .clipboardChanged(let hasRemoteText):
+            remoteHasText = hasRemoteText
+            // A new remote copy: whatever was received before is no longer
+            // what the remote holds.
+            lastReceivedText = nil
         }
+    }
+
+    // MARK: - Clipboard
+
+    var clipboardPolicy: ClipboardPolicy { configuration.clipboardPolicy }
+
+    var canSendClipboard: Bool {
+        clipboardPolicy.allowsSend && state == .connected
+            && session is any ClipboardCapableSession && !isTransferringClipboard
+    }
+
+    var canReceiveClipboard: Bool {
+        clipboardPolicy.allowsReceive && state == .connected && remoteHasText
+            && session is any ClipboardCapableSession && !isTransferringClipboard
+    }
+
+    /// Local to remote: offer the text, wait for the server to take it, then
+    /// close the menu and send the paste chord into the focused window. The
+    /// chord is sent only here, on this explicit action.
+    func pasteToRemote(_ text: String) async {
+        guard canSendClipboard, let clipboard = session as? any ClipboardCapableSession else { return }
+        isTransferringClipboard = true
+        defer { isTransferringClipboard = false }
+        do {
+            if text != lastReceivedText || !remoteHasText {
+                try await clipboard.offerClipboardText(text)
+            }
+            isMenuPresented = false
+            // The chord needs the gate open again, which happens once the
+            // sheet has gone and the surface has the keyboard back.
+            for _ in 0..<50 where !acceptsInput {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            sendPasteChord()
+            clipboardMessage = "\(displayName) に貼り付けました"
+        } catch {
+            clipboardMessage = Self.clipboardFailureText(error)
+        }
+    }
+
+    /// Remote to local: fetch on request, then write the pasteboard here on
+    /// the main actor.
+    func copyRemoteToDevice() async -> String? {
+        guard canReceiveClipboard, let clipboard = session as? any ClipboardCapableSession else {
+            return nil
+        }
+        isTransferringClipboard = true
+        defer { isTransferringClipboard = false }
+        do {
+            let text = try await clipboard.fetchRemoteClipboardText()
+            lastReceivedText = text
+            clipboardMessage = "\(displayName) からコピーしました"
+            return text
+        } catch {
+            clipboardMessage = Self.clipboardFailureText(error)
+            return nil
+        }
+    }
+
+    private func sendPasteChord() {
+        guard acceptsInput, let inputSink else { return }
+        // Left Control + V as HID usages; the session maps them to its own
+        // protocol. Down/up in order, so nothing is left held.
+        let control: UInt16 = 0xE0
+        let v: UInt16 = 0x19
+        inputSink.send(KeyboardInput(usage: control, transition: .down))
+        inputSink.send(KeyboardInput(usage: v, transition: .down))
+        inputSink.send(KeyboardInput(usage: v, transition: .up))
+        inputSink.send(KeyboardInput(usage: control, transition: .up))
+    }
+
+    private static func clipboardFailureText(_ error: Error) -> String {
+        switch error as? ClipboardTransferError {
+        case .unavailable: return "クリップボードを利用できません"
+        case .timedOut: return "リモートが応答しませんでした"
+        case .unsupportedContent: return "このテキストは送れません（大きすぎるか NUL を含みます）"
+        case .nothingToCopy: return "リモートにテキストがありません"
+        case .failed, .none: return "クリップボードの転送に失敗しました"
+        }
+    }
+
+    // MARK: - Audio
+
+    var audioStream: PCMAudioStream? {
+        (session as? any AudioCapableSession)?.audioSource as? PCMAudioStream
+    }
+
+    var isAudioMuted: Bool { runtime.isLocallyMuted || !configuration.audioPlayback }
+
+    func setLocallyMuted(_ muted: Bool) {
+        runtime.isLocallyMuted = muted
+        environment.refreshAudioFocus()
     }
 
     // MARK: - Reconnect

@@ -7,7 +7,7 @@ import Foundation
 /// FreeRDP session is wired in, and so UI tests do not need a Windows host.
 /// It is deliberately part of the shipping module rather than a test target:
 /// SwiftUI previews and the UI test target both need it.
-public actor FakeRemoteSession: RemoteSession {
+public actor FakeRemoteSession: RemoteSession, ClipboardCapableSession {
     public enum Script: Sendable {
         /// Connects cleanly.
         case succeeds
@@ -142,12 +142,41 @@ public actor FakeRemoteSession: RemoteSession {
         self.visibility = visibility
     }
 
+    // MARK: - Clipboard
+
+    public private(set) var remoteClipboard: String?
+    public private(set) var offeredTexts: [String] = []
+
+    public var remoteHasText: Bool { remoteClipboard != nil }
+
+    /// Stands in for a copy made on the remote desktop.
+    public func simulateRemoteCopy(_ text: String?) {
+        remoteClipboard = text
+        emit(.clipboardChanged(hasRemoteText: text != nil))
+    }
+
     /// Drops a live connection the way a network loss would, so reconnect
     /// handling can be exercised without a server.
     public func simulateConnectionLoss(_ error: RemoteSessionError = .networkUnreachable) {
         guard machine.transition(to: .failed) != nil else { return }
         emit(.error(error))
         emit(.stateChanged(machine.state, generation: machine.generation))
+    }
+
+    public func offerClipboardText(_ text: String) async throws {
+        guard machine.state == .connected, configuration.clipboardPolicy.allowsSend else {
+            throw ClipboardTransferError.unavailable
+        }
+        offeredTexts.append(text)
+        remoteClipboard = text
+    }
+
+    public func fetchRemoteClipboardText() async throws -> String {
+        guard machine.state == .connected, configuration.clipboardPolicy.allowsReceive else {
+            throw ClipboardTransferError.unavailable
+        }
+        guard let remoteClipboard else { throw ClipboardTransferError.nothingToCopy }
+        return remoteClipboard
     }
 
     private func finishConnecting() {
