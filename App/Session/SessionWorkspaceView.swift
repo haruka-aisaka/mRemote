@@ -11,6 +11,8 @@ struct SessionWorkspaceView: View {
     @State private var toastText: String?
     @State private var hingePosture: HingePosture = .unavailable
     @State private var laptopChannel = LaptopDeckChannel()
+    @AppStorage(LaptopDeckArrangement.storageKey)
+    private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
 
     var body: some View {
         ZStack {
@@ -96,7 +98,7 @@ struct SessionWorkspaceView: View {
         )
         VStack(spacing: 0) {
             ZStack {
-                desktop
+                desktop(touchesDriveTrackpad: showsDeck && !deckArrangement.hasTrackpad)
                 if !model.showsDesktop {
                     status
                 }
@@ -108,6 +110,7 @@ struct SessionWorkspaceView: View {
             if showsDeck {
                 LaptopDeck(
                     layout: model.configuration.keyboardLayout,
+                    arrangement: deckArrangement,
                     channel: laptopChannel,
                     isInputEnabled: model.acceptsInput && scenePhase == .active
                 )
@@ -122,7 +125,7 @@ struct SessionWorkspaceView: View {
     }
 
     @ViewBuilder
-    private var desktop: some View {
+    private func desktop(touchesDriveTrackpad: Bool) -> some View {
         if let frameStore = model.frameStore {
             RemoteDesktopSurface(
                 frameStore: frameStore,
@@ -131,6 +134,7 @@ struct SessionWorkspaceView: View {
                 scaleMode: model.runtime.scale,
                 scrollDirection: model.runtime.scrollDirection,
                 laptopChannel: laptopChannel,
+                directTouchesDriveTrackpad: touchesDriveTrackpad,
                 // Input is gated on both halves of docs/architecture.md
                 // section 10: the session must be able to deliver it, and the
                 // scene must be the one the user is looking at.

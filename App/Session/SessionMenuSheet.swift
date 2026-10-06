@@ -12,6 +12,8 @@ struct SessionMenuSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: SessionWorkspaceModel
     @State private var confirmingDisconnect = false
+    @AppStorage(LaptopDeckArrangement.storageKey)
+    private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
 
     var body: some View {
         NavigationStack {
@@ -117,6 +119,15 @@ struct SessionMenuSheet: View {
                         Text("表示しない").tag(LaptopDeckPreference.never)
                     }
                     .accessibilityIdentifier("session-laptop-deck-picker")
+                    // Kept across sessions and launches: how the deck is laid
+                    // out is a matter of the user's hands, not of the host.
+                    Picker("手元側の配置", selection: $deckArrangement) {
+                        Text("キーボード / トラックパッド").tag(LaptopDeckArrangement.keyboardAboveTrackpad)
+                        Text("トラックパッド / キーボード").tag(LaptopDeckArrangement.trackpadAboveKeyboard)
+                        Text("キーボードのみ（画面を触って操作）").tag(LaptopDeckArrangement.keyboardOnly)
+                    }
+                    .disabled(model.laptopDeckPreference == .never)
+                    .accessibilityIdentifier("session-laptop-deck-arrangement")
                 }
 
                 if model.clipboardPolicy != .disabled {

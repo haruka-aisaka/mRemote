@@ -32,7 +32,7 @@ import SessionCore
 /// cannot be given an arbitrary bitmap as its pointer.
 @MainActor
 final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate,
-    UIPointerInteractionDelegate {
+    UIPointerInteractionDelegate, RemotePointerControl {
     private static let shaderSource = """
     #include <metal_stdlib>
     using namespace metal;
@@ -131,6 +131,13 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// the cursor where the pointer is, not where it was on screen.
     private var relativePointerPixel: PixelPoint?
     private var relativeMotion = RelativePointerMotion()
+    /// With the laptop deck showing only its keyboard, a finger on the
+    /// desktop moves the remote pointer as a trackpad would, instead of
+    /// panning the view. Pinch still zooms.
+    private var directTouchesDriveTrackpad = false
+    private lazy var directTrackpad = TrackpadGestureTracker { [weak self] in self }
+    private var viewportPan: UIPanGestureRecognizer?
+    private var viewportDoubleTap: UITapGestureRecognizer?
     /// False until the surface is configured, so nothing is delivered before
     /// the workspace has said whether the session can carry it.
     private var isInputEnabled = false
@@ -205,6 +212,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         drag.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         drag.delegate = self
         addGestureRecognizer(drag)
+        viewportPan = drag
 
         let doubleTap = UITapGestureRecognizer(
             target: self,
@@ -213,6 +221,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         doubleTap.numberOfTapsRequired = 2
         doubleTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         addGestureRecognizer(doubleTap)
+        viewportDoubleTap = doubleTap
 
         // The mirror image: no touch types at all, so this recogniser only ever
         // sees indirect scroll events from a trackpad or a wheel.
@@ -469,6 +478,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             return
         }
         isInputEnabled = enabled
+        directTrackpad.setEnabled(enabled && directTouchesDriveTrackpad)
         if enabled {
             if let held = HardwareKeyboardMonitor.shared.physicallyHeldUsages() {
                 keyboard.reconcile(physicallyHeld: held)
@@ -558,6 +568,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // it short of leaving the session.
         captureKeyboardIfPossible()
         guard handleIndirectPointer(touches, event: event, ending: false) else {
+            if directTouchesDriveTrackpad {
+                for touch in touches where touch.type == .direct {
+                    directTrackpad.began(touch, in: self)
+                }
+            }
             super.touchesBegan(touches, with: event)
             return
         }
@@ -565,6 +580,9 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard handleIndirectPointer(touches, event: event, ending: false) else {
+            if directTouchesDriveTrackpad {
+                directTrackpad.moved(touches.filter { $0.type == .direct }, in: self)
+            }
             super.touchesMoved(touches, with: event)
             return
         }
@@ -572,6 +590,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard handleIndirectPointer(touches, event: event, ending: true) else {
+            if directTouchesDriveTrackpad {
+                for touch in touches where touch.type == .direct {
+                    directTrackpad.ended(touch, cancelled: false)
+                }
+            }
             super.touchesEnded(touches, with: event)
             return
         }
@@ -579,6 +602,13 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard handleIndirectPointer(touches, event: event, ending: true) else {
+            // A pinch taking over cancels the touches, which ends whatever the
+            // trackpad thought was happening without a click.
+            if directTouchesDriveTrackpad {
+                for touch in touches where touch.type == .direct {
+                    directTrackpad.ended(touch, cancelled: true)
+                }
+            }
             super.touchesCancelled(touches, with: event)
             return
         }
@@ -630,6 +660,15 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     // MARK: - Laptop deck
+
+    func setDirectTouchesDriveTrackpad(_ enabled: Bool) {
+        guard enabled != directTouchesDriveTrackpad else { return }
+        directTouchesDriveTrackpad = enabled
+        viewportPan?.isEnabled = !enabled
+        viewportDoubleTap?.isEnabled = !enabled
+        directTrackpad.setEnabled(enabled && isInputEnabled)
+        if !enabled { directTrackpad.reset() }
+    }
 
     /// Keys from the laptop deck's keyboard. Downs are dropped while the gate
     /// is closed; ups never are, because an up the host is owed has to arrive

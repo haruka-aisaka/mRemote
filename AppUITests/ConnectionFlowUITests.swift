@@ -119,14 +119,15 @@ final class ConnectionFlowUITests: XCTestCase {
     func testTheLaptopDeckCanBeShownFromTheMenu() {
         element("profile-row-テスト接続先").tap()
         _ = assertAppears("session-workspace", "connecting presents the workspace")
-        XCTAssertFalse(element("laptop-deck").exists, "an unfolded screen has no deck")
+        // Whether the deck is already up depends on the Simulator's hinge,
+        // which the test cannot set; forcing it on is what is under test.
 
         element("session-menu-button").tap()
         _ = assertAppears("session-menu", "the floating menu opens")
         let picker = element("session-laptop-deck-picker")
         // The input section sits below the sheet's medium detent.
         for _ in 0..<6 where !(picker.exists && picker.isHittable) {
-            app.swipeUp()
+            element("session-menu").swipeUp()
         }
         XCTAssertTrue(picker.isHittable, "the menu offers the deck\n\(app.debugDescription)")
         picker.tap()
@@ -145,5 +146,29 @@ final class ConnectionFlowUITests: XCTestCase {
         shot.name = "laptop-deck"
         shot.lifetime = .keepAlways
         add(shot)
+
+        // Keyboard only: the pad and its buttons go, the keys stay.
+        element("session-menu-button").tap()
+        let arrangement = element("session-laptop-deck-arrangement")
+        for _ in 0..<6 where !(arrangement.exists && arrangement.isHittable) {
+            element("session-menu").swipeUp()
+        }
+        arrangement.tap()
+        let keyboardOnly = app.buttons["キーボードのみ（画面を触って操作）"].firstMatch
+        XCTAssertTrue(keyboardOnly.waitForExistence(timeout: 5), "the arrangement picker lists its options")
+        keyboardOnly.tap()
+        element("session-menu-close").tap()
+        XCTAssertTrue(element("laptop-key-a").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("laptop-trackpad").isHittable, "keyboard only hides the pad")
+        XCTAssertFalse(element("laptop-button-left").isHittable)
+
+        // Put the stored arrangement back for the next run.
+        element("session-menu-button").tap()
+        for _ in 0..<6 where !(arrangement.exists && arrangement.isHittable) {
+            element("session-menu").swipeUp()
+        }
+        arrangement.tap()
+        app.buttons["キーボード / トラックパッド"].firstMatch.tap()
+        element("session-menu-close").tap()
     }
 }

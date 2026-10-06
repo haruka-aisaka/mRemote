@@ -15,6 +15,8 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     let scrollDirection: ScrollDirection
     /// Where the laptop deck finds this surface, when there is one.
     let laptopChannel: LaptopDeckChannel?
+    /// The deck shows only its keyboard, so the desktop is the trackpad.
+    let directTouchesDriveTrackpad: Bool
     /// False while the scene is inactive or the session is not connected. The
     /// view releases whatever it thinks is held when this goes false, which is
     /// what keeps a button from staying down on the server.
@@ -43,6 +45,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
 
     private func configure(_ view: RemoteDesktopView) {
         laptopChannel?.surface = view
+        view.setDirectTouchesDriveTrackpad(directTouchesDriveTrackpad)
         view.onRenderSizeChange = onRenderSizeChange
         view.onDesktopSizeChange = onDesktopSizeChange
         view.onInputDiagnostics = onInputDiagnostics

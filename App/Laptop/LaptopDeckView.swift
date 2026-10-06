@@ -14,6 +14,19 @@ final class LaptopDeckChannel {
     weak var surface: RemoteDesktopView?
 }
 
+/// What the lower half holds, and in which order from the hinge down.
+enum LaptopDeckArrangement: String, CaseIterable {
+    case keyboardAboveTrackpad
+    case trackpadAboveKeyboard
+    /// The whole lower half is keyboard; the pointer is moved by touching
+    /// the desktop above, which then works as the trackpad.
+    case keyboardOnly
+
+    var hasTrackpad: Bool { self != .keyboardOnly }
+
+    static let storageKey = "laptop-deck-arrangement"
+}
+
 /// The lower half of a foldable in laptop posture: a PC keyboard and a
 /// trackpad with two buttons, in one view.
 ///
@@ -30,6 +43,7 @@ final class LaptopDeckView: UIView {
 
     private let channel: LaptopDeckChannel
     private var layout: LaptopKeyboardLayout
+    private var arrangement: LaptopDeckArrangement
     private var composer = LaptopKeyboardComposer()
     private var isInputEnabled = false
 
@@ -42,24 +56,17 @@ final class LaptopDeckView: UIView {
     private let haptics = UIImpactFeedbackGenerator(style: .light)
 
     private var repeatTimer: Timer?
-    private var padTracking = PadTracking()
+    private let padTracker: TrackpadGestureTracker
 
-    /// One touch sequence on the pad. Tapping is told apart from moving by
-    /// how far and how long, as on a laptop trackpad.
-    private struct PadTracking {
-        var touches: [ObjectIdentifier: CGPoint] = [:]
-        var maximumTouches = 0
-        var travel: CGFloat = 0
-        var startTime: TimeInterval = 0
-        var lastTime: TimeInterval = 0
-    }
-
-    private static let tapTravel: CGFloat = 8
-    private static let tapDuration: TimeInterval = 0.3
-
-    init(layout: LaptopKeyboardLayout, channel: LaptopDeckChannel) {
+    init(
+        layout: LaptopKeyboardLayout,
+        arrangement: LaptopDeckArrangement,
+        channel: LaptopDeckChannel
+    ) {
         self.layout = layout
+        self.arrangement = arrangement
         self.channel = channel
+        padTracker = TrackpadGestureTracker { [weak channel] in channel?.surface }
         super.init(frame: .zero)
         backgroundColor = UIColor(white: 0.09, alpha: 1)
         isMultipleTouchEnabled = true
@@ -91,6 +98,7 @@ final class LaptopDeckView: UIView {
             button.accessibilityIdentifier = identifier
             addSubview(button)
         }
+        applyArrangement()
     }
 
     required init?(coder: NSCoder) {
@@ -107,12 +115,27 @@ final class LaptopDeckView: UIView {
         setNeedsLayout()
     }
 
+    func setArrangement(_ newArrangement: LaptopDeckArrangement) {
+        guard newArrangement != arrangement else { return }
+        releaseEverything()
+        arrangement = newArrangement
+        applyArrangement()
+        setNeedsLayout()
+    }
+
+    private func applyArrangement() {
+        for view in [pad, leftButton, rightButton] {
+            view.isHidden = !arrangement.hasTrackpad
+        }
+    }
+
     /// Closing the gate lets go of everything, exactly as the surface does:
     /// a key or a button held across a menu or a session switch would stay
     /// down on the host.
     func setInputEnabled(_ enabled: Bool) {
         guard enabled != isInputEnabled else { return }
         isInputEnabled = enabled
+        padTracker.setEnabled(enabled)
         if !enabled { releaseEverything() }
         alpha = enabled ? 1 : 0.6
     }
@@ -124,7 +147,7 @@ final class LaptopDeckView: UIView {
             channel.surface?.setLaptopButton(button, pressed: false)
         }
         regions = [:]
-        padTracking = PadTracking()
+        padTracker.reset()
         refreshKeys()
         refreshButtons()
     }
@@ -152,17 +175,53 @@ final class LaptopDeckView: UIView {
         let area = bounds.inset(by: safeAreaInsets).insetBy(dx: 6, dy: 6)
         guard area.width > 0, area.height > 0 else { return }
 
-        let keyboardHeight = (area.height * 0.56).rounded()
+        let spacing: CGFloat = 10
+        let keyboardHeight: CGFloat
+        let keyboardY: CGFloat
+        let lower: CGRect
+        switch arrangement {
+        case .keyboardOnly:
+            // Keys taller than a thumb only make the reach longer, so the
+            // spare height goes above and below rather than into the keys.
+            keyboardHeight = min(area.height, 340)
+            keyboardY = area.midY - keyboardHeight / 2
+            lower = .zero
+        case .keyboardAboveTrackpad:
+            keyboardHeight = (area.height * 0.56).rounded()
+            keyboardY = area.minY
+            lower = CGRect(
+                x: area.minX,
+                y: keyboardY + keyboardHeight + spacing,
+                width: area.width,
+                height: area.height - keyboardHeight - spacing
+            )
+        case .trackpadAboveKeyboard:
+            keyboardHeight = (area.height * 0.56).rounded()
+            keyboardY = area.maxY - keyboardHeight
+            lower = CGRect(
+                x: area.minX,
+                y: area.minY,
+                width: area.width,
+                height: area.height - keyboardHeight - spacing
+            )
+        }
+        layoutKeys(in: CGRect(x: area.minX, y: keyboardY, width: area.width, height: keyboardHeight))
+        if arrangement.hasTrackpad {
+            layoutTrackpad(in: lower)
+        }
+    }
+
+    private func layoutKeys(in keyboard: CGRect) {
         let totalRowHeight = layout.rows.reduce(0) { $0 + $1.height }
         let gap: CGFloat = 4
-        let unitHeight = (keyboardHeight - gap * CGFloat(layout.rows.count - 1)) / CGFloat(totalRowHeight)
-        let unitWidth = area.width / CGFloat(LaptopKeyboardLayout.unitsPerRow)
+        let unitHeight = (keyboard.height - gap * CGFloat(layout.rows.count - 1)) / CGFloat(totalRowHeight)
+        let unitWidth = keyboard.width / CGFloat(LaptopKeyboardLayout.unitsPerRow)
 
         keyFrames = []
-        var y = area.minY
+        var y = keyboard.minY
         for row in layout.rows {
             let height = unitHeight * CGFloat(row.height)
-            var x = area.minX
+            var x = keyboard.minX
             for key in row.keys {
                 let width = unitWidth * CGFloat(key.width)
                 let hitFrame = CGRect(x: x, y: y - gap / 2, width: width, height: height + gap)
@@ -173,20 +232,20 @@ final class LaptopDeckView: UIView {
             }
             y += height + gap
         }
+    }
 
-        let lower = CGRect(
-            x: area.minX,
-            y: area.minY + keyboardHeight + 10,
-            width: area.width,
-            height: area.height - keyboardHeight - 10
-        )
-        let padWidth = min(area.width, max(area.width * 0.72, 300))
+    /// The pad with its two buttons below it, on the user's side, as on a
+    /// laptop: the buttons sit under the thumbs whichever way round the
+    /// keyboard is.
+    private func layoutTrackpad(in lower: CGRect) {
+        let padWidth = min(lower.width, max(lower.width * 0.72, 300))
         let buttonHeight = min(40, lower.height * 0.22)
+        let padHeight = lower.height - buttonHeight - 6
         let padFrame = CGRect(
             x: lower.midX - padWidth / 2,
             y: lower.minY,
             width: padWidth,
-            height: lower.height - buttonHeight - 6
+            height: padHeight
         )
         pad.frame = padFrame
         let buttonY = padFrame.maxY + 6
@@ -203,6 +262,7 @@ final class LaptopDeckView: UIView {
         if let key = keyFrames.first(where: { $0.frame.contains(point) })?.key {
             return .key(key)
         }
+        guard arrangement.hasTrackpad else { return nil }
         if leftButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.left) }
         if rightButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.right) }
         if pad.frame.insetBy(dx: -8, dy: -8).contains(point) { return .pad }
@@ -224,14 +284,14 @@ final class LaptopDeckView: UIView {
                 channel.surface?.setLaptopButton(button, pressed: isInputEnabled)
                 refreshButtons()
             case .pad:
-                padBegan(touch, id: id)
+                padTracker.began(touch, in: self)
             }
         }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         let padTouches = touches.filter { regions[ObjectIdentifier($0)].map(Self.isPad) ?? false }
-        if !padTouches.isEmpty { padMoved(padTouches) }
+        if !padTouches.isEmpty { padTracker.moved(Array(padTouches), in: self) }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -255,7 +315,7 @@ final class LaptopDeckView: UIView {
                 }
                 refreshButtons()
             case .pad:
-                padEnded(id: id, cancelled: cancelled, at: touch.timestamp)
+                padTracker.ended(touch, cancelled: cancelled)
             }
         }
     }
@@ -348,59 +408,6 @@ final class LaptopDeckView: UIView {
         })
         leftButton.backgroundColor = UIColor(white: held.contains(.left) ? 0.38 : 0.2, alpha: 1)
         rightButton.backgroundColor = UIColor(white: held.contains(.right) ? 0.38 : 0.2, alpha: 1)
-    }
-
-    // MARK: - Trackpad
-
-    private func padBegan(_ touch: UITouch, id: ObjectIdentifier) {
-        if padTracking.touches.isEmpty {
-            padTracking = PadTracking(startTime: touch.timestamp, lastTime: touch.timestamp)
-        }
-        padTracking.touches[id] = touch.location(in: self)
-        padTracking.maximumTouches = max(padTracking.maximumTouches, padTracking.touches.count)
-    }
-
-    private func padMoved(_ touches: Set<UITouch>) {
-        var sum = CGPoint.zero
-        var timestamp = padTracking.lastTime
-        for touch in touches {
-            let id = ObjectIdentifier(touch)
-            guard let previous = padTracking.touches[id] else { continue }
-            let location = touch.location(in: self)
-            sum.x += location.x - previous.x
-            sum.y += location.y - previous.y
-            padTracking.touches[id] = location
-            timestamp = max(timestamp, touch.timestamp)
-        }
-        let count = CGFloat(max(touches.count, 1))
-        let delta = CGPoint(x: sum.x / count, y: sum.y / count)
-        padTracking.travel += hypot(delta.x, delta.y)
-        let elapsed = max(timestamp - padTracking.lastTime, 1.0 / 240)
-        padTracking.lastTime = timestamp
-
-        guard isInputEnabled else { return }
-        if padTracking.touches.count >= 2 {
-            // Two fingers scroll, as on every trackpad. The deltas are the
-            // fingers' own, which `ScrollWheelAccumulator` already expects.
-            channel.surface?.scrollRemote(dx: Double(delta.x), dy: Double(delta.y))
-        } else {
-            let speed = Double(hypot(delta.x, delta.y)) / elapsed
-            channel.surface?.moveRemotePointer(dx: Double(delta.x), dy: Double(delta.y), speed: speed)
-        }
-    }
-
-    private func padEnded(id: ObjectIdentifier, cancelled: Bool, at timestamp: TimeInterval) {
-        padTracking.touches[id] = nil
-        guard padTracking.touches.isEmpty else { return }
-        let wasTap = !cancelled
-            && padTracking.travel < Self.tapTravel
-            && timestamp - padTracking.startTime < Self.tapDuration
-        if wasTap, isInputEnabled {
-            haptics.impactOccurred()
-            // One finger is a left click, two a right click.
-            channel.surface?.clickRemote(padTracking.maximumTouches >= 2 ? .right : .left)
-        }
-        padTracking = PadTracking()
     }
 }
 
@@ -521,17 +528,23 @@ private final class KeyCapView: UIView {
 /// Puts the deck in SwiftUI and keeps it told about the gate and the layout.
 struct LaptopDeck: UIViewRepresentable {
     let layout: KeyboardLayoutPreference
+    let arrangement: LaptopDeckArrangement
     let channel: LaptopDeckChannel
     let isInputEnabled: Bool
 
     func makeUIView(context: Context) -> LaptopDeckView {
-        let view = LaptopDeckView(layout: LaptopKeyboardLayout(layout), channel: channel)
+        let view = LaptopDeckView(
+            layout: LaptopKeyboardLayout(layout),
+            arrangement: arrangement,
+            channel: channel
+        )
         view.setInputEnabled(isInputEnabled)
         return view
     }
 
     func updateUIView(_ view: LaptopDeckView, context: Context) {
         view.setLayout(LaptopKeyboardLayout(layout))
+        view.setArrangement(arrangement)
         view.setInputEnabled(isInputEnabled)
     }
 
