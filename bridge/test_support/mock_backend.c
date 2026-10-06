@@ -13,7 +13,9 @@
 typedef uint8_t mr_rdp_mock_command_kind;
 enum {
     MR_RDP_MOCK_COMMAND_CLIPBOARD_PROBE = 1,
-    MR_RDP_MOCK_COMMAND_DISPLAY_RESIZE = 2
+    MR_RDP_MOCK_COMMAND_DISPLAY_RESIZE = 2,
+    MR_RDP_MOCK_COMMAND_CLIPBOARD_OFFER = 3,
+    MR_RDP_MOCK_COMMAND_CLIPBOARD_REQUEST = 4
 };
 
 typedef struct mr_rdp_mock_command {
@@ -21,6 +23,8 @@ typedef struct mr_rdp_mock_command {
     union {
         mr_rdp_backend_clipboard_probe clipboard_probe;
         mr_rdp_display_resize_request display_resize;
+        mr_rdp_backend_clipboard_offer clipboard_offer;
+        uint64_t clipboard_request_id;
     } value;
 } mr_rdp_mock_command;
 
@@ -39,6 +43,15 @@ typedef struct mr_rdp_mock_backend {
     mr_rdp_mock_config_observer on_config;
     mr_rdp_mock_clipboard_probe_observer on_start_clipboard_probe;
     mr_rdp_mock_display_resize_observer on_request_display_resize;
+    mr_rdp_mock_unicode_observer on_send_unicode;
+    mr_rdp_mock_audio_focus_observer on_set_audio_focused;
+    mr_rdp_mock_session_config_observer on_session_config;
+    mr_rdp_mock_clipboard_offer_observer on_offer_clipboard_text;
+    const mr_rdp_cursor_event *cursor_event;
+    const mr_rdp_audio_packet *audio_packet;
+    const uint8_t *remote_clipboard_utf16le;
+    size_t remote_clipboard_utf16le_byte_count;
+    int audio_focused;
     mr_rdp_owned_config config;
     mr_rdp_desktop_frame desktop_frame;
     mr_rdp_mock_channel_transition *channel_transitions;
@@ -69,6 +82,13 @@ static void mr_mock_command_destroy(mr_rdp_mock_command *command)
         uint8_t *bytes = (uint8_t *)(uintptr_t)probe->utf16le_bytes;
         if (bytes != NULL) {
             mr_mock_secure_zero(bytes, probe->utf16le_byte_count);
+            free(bytes);
+        }
+    } else if (command->kind == MR_RDP_MOCK_COMMAND_CLIPBOARD_OFFER) {
+        mr_rdp_backend_clipboard_offer *offer = &command->value.clipboard_offer;
+        uint8_t *bytes = (uint8_t *)(uintptr_t)offer->utf16le_bytes;
+        if (bytes != NULL) {
+            mr_mock_secure_zero(bytes, offer->utf16le_byte_count);
             free(bytes);
         }
     }
@@ -215,6 +235,36 @@ static mr_rdp_status mr_mock_process_command(
         }
         status = backend->host.display_resize_event(
             backend->host.context, request, MR_RDP_STATUS_OK);
+    } else if (command->kind == MR_RDP_MOCK_COMMAND_CLIPBOARD_OFFER) {
+        mr_rdp_backend_clipboard_offer *offer = &command->value.clipboard_offer;
+        if (backend->on_offer_clipboard_text != NULL) {
+            backend->on_offer_clipboard_text(
+                backend->observer_context,
+                offer->offer_id,
+                offer->utf16le_bytes,
+                offer->utf16le_byte_count);
+        }
+        status = backend->host.clipboard_offer_event(
+            backend->host.context, offer->offer_id,
+            MR_RDP_CLIPBOARD_OFFER_ACCEPTED, MR_RDP_STATUS_OK);
+        if (status == MR_RDP_STATUS_OK) {
+            status = backend->host.clipboard_offer_event(
+                backend->host.context, offer->offer_id,
+                MR_RDP_CLIPBOARD_OFFER_DELIVERED, MR_RDP_STATUS_OK);
+        }
+    } else if (command->kind == MR_RDP_MOCK_COMMAND_CLIPBOARD_REQUEST) {
+        if (backend->remote_clipboard_utf16le == NULL) {
+            status = backend->host.clipboard_text(
+                backend->host.context, command->value.clipboard_request_id,
+                MR_RDP_ERROR_UNSUPPORTED, NULL, 0u);
+        } else {
+            status = backend->host.clipboard_text(
+                backend->host.context, command->value.clipboard_request_id,
+                MR_RDP_STATUS_OK,
+                backend->remote_clipboard_utf16le_byte_count == 0u
+                    ? NULL : backend->remote_clipboard_utf16le,
+                backend->remote_clipboard_utf16le_byte_count);
+        }
     } else {
         status = MR_RDP_ERROR_BACKEND;
     }
@@ -252,6 +302,12 @@ static mr_rdp_status mr_mock_run(mr_rdp_backend *base)
     int wait_status = 0;
     struct timespec deadline;
 
+    if (backend->on_session_config != NULL) {
+        backend->on_session_config(
+            backend->observer_context,
+            backend->config.keyboard_profile,
+            backend->config.channel_flags);
+    }
     if (backend->on_config != NULL) {
         backend->on_config(
             backend->observer_context,
@@ -323,6 +379,33 @@ static mr_rdp_status mr_mock_run(mr_rdp_backend *base)
     if (backend->has_desktop_frame) {
         status = backend->host.present_frame(
             backend->host.context, &backend->desktop_frame);
+        if (status != MR_RDP_STATUS_OK) {
+            return status;
+        }
+    }
+    if (backend->cursor_event != NULL) {
+        status = backend->host.cursor_event(
+            backend->host.context, backend->cursor_event);
+        if (status != MR_RDP_STATUS_OK) {
+            return status;
+        }
+    }
+    if (backend->audio_packet != NULL) {
+        int focused;
+        (void)pthread_mutex_lock(&backend->mutex);
+        focused = backend->audio_focused;
+        (void)pthread_mutex_unlock(&backend->mutex);
+        /* Models the bridge's focus gate: unfocused PCM never surfaces. */
+        if (focused) {
+            status = backend->host.audio_packet(
+                backend->host.context, backend->audio_packet);
+            if (status != MR_RDP_STATUS_OK) {
+                return status;
+            }
+        }
+    }
+    if (backend->remote_clipboard_utf16le != NULL) {
+        status = backend->host.clipboard_remote_formats(backend->host.context, 1);
         if (status != MR_RDP_STATUS_OK) {
             return status;
         }
@@ -475,6 +558,104 @@ static mr_rdp_status mr_mock_request_display_resize(
     return status;
 }
 
+static mr_rdp_status mr_mock_enqueue(
+    mr_rdp_mock_backend *backend,
+    const mr_rdp_mock_command *command)
+{
+    size_t tail;
+    mr_rdp_status status = MR_RDP_STATUS_OK;
+    (void)pthread_mutex_lock(&backend->mutex);
+    if (backend->stop_requested) {
+        status = MR_RDP_ERROR_STOPPED;
+    } else if (backend->command_count >= MR_RDP_MOCK_COMMAND_CAPACITY) {
+        status = MR_RDP_ERROR_LIMIT_EXCEEDED;
+    } else {
+        tail = (backend->command_head + backend->command_count) %
+            MR_RDP_MOCK_COMMAND_CAPACITY;
+        backend->commands[tail] = *command;
+        ++backend->command_count;
+        (void)pthread_cond_broadcast(&backend->condition);
+    }
+    (void)pthread_mutex_unlock(&backend->mutex);
+    return status;
+}
+
+static mr_rdp_status mr_mock_send_unicode(
+    mr_rdp_backend *base,
+    const mr_rdp_unicode_event *event)
+{
+    mr_rdp_mock_backend *backend = (mr_rdp_mock_backend *)base;
+    mr_rdp_mock_unicode_observer observer;
+    void *observer_context;
+    int stopped;
+    (void)pthread_mutex_lock(&backend->mutex);
+    stopped = backend->stop_requested;
+    observer = backend->on_send_unicode;
+    observer_context = backend->observer_context;
+    (void)pthread_mutex_unlock(&backend->mutex);
+    if (stopped) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    if (observer != NULL) {
+        observer(observer_context, event);
+    }
+    return MR_RDP_STATUS_OK;
+}
+
+static void mr_mock_set_audio_focused(mr_rdp_backend *base, int focused)
+{
+    mr_rdp_mock_backend *backend = (mr_rdp_mock_backend *)base;
+    mr_rdp_mock_audio_focus_observer observer;
+    void *observer_context;
+    (void)pthread_mutex_lock(&backend->mutex);
+    backend->audio_focused = focused != 0;
+    observer = backend->on_set_audio_focused;
+    observer_context = backend->observer_context;
+    (void)pthread_mutex_unlock(&backend->mutex);
+    if (observer != NULL) {
+        observer(observer_context, focused != 0);
+    }
+}
+
+static mr_rdp_status mr_mock_offer_clipboard_text(
+    mr_rdp_backend *base,
+    const mr_rdp_backend_clipboard_offer *offer)
+{
+    mr_rdp_mock_backend *backend = (mr_rdp_mock_backend *)base;
+    mr_rdp_mock_command command;
+    uint8_t *bytes;
+    mr_rdp_status status;
+    if (offer == NULL || offer->utf16le_bytes == NULL ||
+        offer->utf16le_byte_count == 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    bytes = (uint8_t *)malloc(offer->utf16le_byte_count);
+    if (bytes == NULL) {
+        return MR_RDP_ERROR_OUT_OF_MEMORY;
+    }
+    memcpy(bytes, offer->utf16le_bytes, offer->utf16le_byte_count);
+    memset(&command, 0, sizeof(command));
+    command.kind = MR_RDP_MOCK_COMMAND_CLIPBOARD_OFFER;
+    command.value.clipboard_offer = *offer;
+    command.value.clipboard_offer.utf16le_bytes = bytes;
+    status = mr_mock_enqueue(backend, &command);
+    if (status != MR_RDP_STATUS_OK) {
+        mr_mock_command_destroy(&command);
+    }
+    return status;
+}
+
+static mr_rdp_status mr_mock_request_clipboard_text(
+    mr_rdp_backend *base,
+    uint64_t request_id)
+{
+    mr_rdp_mock_command command;
+    memset(&command, 0, sizeof(command));
+    command.kind = MR_RDP_MOCK_COMMAND_CLIPBOARD_REQUEST;
+    command.value.clipboard_request_id = request_id;
+    return mr_mock_enqueue((mr_rdp_mock_backend *)base, &command);
+}
+
 static void mr_mock_destroy(mr_rdp_backend *base)
 {
     mr_rdp_mock_backend *backend = (mr_rdp_mock_backend *)base;
@@ -497,6 +678,10 @@ static const mr_rdp_backend_vtable mr_mock_vtable = {
     .send_pointer = mr_mock_send_pointer,
     .start_clipboard_probe = mr_mock_start_clipboard_probe,
     .request_display_resize = mr_mock_request_display_resize,
+    .send_unicode = mr_mock_send_unicode,
+    .set_audio_focused = mr_mock_set_audio_focused,
+    .offer_clipboard_text = mr_mock_offer_clipboard_text,
+    .request_clipboard_text = mr_mock_request_clipboard_text,
     .destroy = mr_mock_destroy
 };
 
@@ -513,7 +698,10 @@ static mr_rdp_status mr_mock_backend_create(
     if (config == NULL || host == NULL || host->present_certificate == NULL ||
         host->connected == NULL || host->present_frame == NULL ||
         host->channel_event == NULL || host->clipboard_probe_event == NULL ||
-        host->display_resize_event == NULL || script == NULL || out_backend == NULL ||
+        host->display_resize_event == NULL || host->cursor_event == NULL ||
+        host->audio_packet == NULL || host->clipboard_remote_formats == NULL ||
+        host->clipboard_offer_event == NULL || host->clipboard_text == NULL ||
+        script == NULL || out_backend == NULL ||
         script->struct_size < sizeof(*script) ||
         script->certificate_chain_count > MR_RDP_MAX_CERTIFICATE_CHAIN + 1u ||
         script->channel_transition_count > MR_RDP_MOCK_MAX_CHANNEL_TRANSITIONS ||
@@ -602,6 +790,15 @@ static mr_rdp_status mr_mock_backend_create(
     backend->on_config = script->on_config;
     backend->on_start_clipboard_probe = script->on_start_clipboard_probe;
     backend->on_request_display_resize = script->on_request_display_resize;
+    backend->on_send_unicode = script->on_send_unicode;
+    backend->on_set_audio_focused = script->on_set_audio_focused;
+    backend->on_session_config = script->on_session_config;
+    backend->on_offer_clipboard_text = script->on_offer_clipboard_text;
+    backend->cursor_event = script->cursor_event;
+    backend->audio_packet = script->audio_packet;
+    backend->remote_clipboard_utf16le = script->remote_clipboard_utf16le;
+    backend->remote_clipboard_utf16le_byte_count =
+        script->remote_clipboard_utf16le_byte_count;
     backend->channel_transition_count = script->channel_transition_count;
     if (script->desktop_frame != NULL) {
         backend->desktop_frame = *script->desktop_frame;

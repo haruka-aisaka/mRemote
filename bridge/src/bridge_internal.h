@@ -31,7 +31,15 @@ typedef struct mr_rdp_owned_config {
     size_t domain_length;
     char *password;
     size_t password_length;
+    mr_rdp_keyboard_profile keyboard_profile;
+    mr_rdp_channel_flags channel_flags;
 } mr_rdp_owned_config;
+
+typedef struct mr_rdp_backend_clipboard_offer {
+    uint64_t offer_id;
+    const uint8_t *utf16le_bytes;
+    size_t utf16le_byte_count;
+} mr_rdp_backend_clipboard_offer;
 
 typedef struct mr_rdp_backend_host {
     void *context;
@@ -56,6 +64,27 @@ typedef struct mr_rdp_backend_host {
         void *context,
         const mr_rdp_display_resize_request *request,
         mr_rdp_status status);
+    /* ABI 2. Each validates its input before reaching the application. */
+    mr_rdp_status (*cursor_event)(
+        void *context,
+        const mr_rdp_cursor_event *event);
+    mr_rdp_status (*audio_packet)(
+        void *context,
+        const mr_rdp_audio_packet *packet);
+    mr_rdp_status (*clipboard_remote_formats)(
+        void *context,
+        int has_text);
+    mr_rdp_status (*clipboard_offer_event)(
+        void *context,
+        uint64_t offer_id,
+        mr_rdp_clipboard_offer_stage stage,
+        mr_rdp_status status);
+    mr_rdp_status (*clipboard_text)(
+        void *context,
+        uint64_t request_id,
+        mr_rdp_status status,
+        const uint8_t *utf16le_bytes,
+        size_t utf16le_byte_count);
 } mr_rdp_backend_host;
 
 typedef struct mr_rdp_backend_vtable {
@@ -74,6 +103,17 @@ typedef struct mr_rdp_backend_vtable {
     mr_rdp_status (*request_display_resize)(
         mr_rdp_backend *backend,
         const mr_rdp_display_resize_request *request);
+    /* ABI 2. offer_clipboard_text must copy the payload before returning. */
+    mr_rdp_status (*send_unicode)(
+        mr_rdp_backend *backend,
+        const mr_rdp_unicode_event *event);
+    void (*set_audio_focused)(mr_rdp_backend *backend, int focused);
+    mr_rdp_status (*offer_clipboard_text)(
+        mr_rdp_backend *backend,
+        const mr_rdp_backend_clipboard_offer *offer);
+    mr_rdp_status (*request_clipboard_text)(
+        mr_rdp_backend *backend,
+        uint64_t request_id);
     void (*destroy)(mr_rdp_backend *backend);
 } mr_rdp_backend_vtable;
 

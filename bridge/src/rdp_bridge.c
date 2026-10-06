@@ -768,6 +768,215 @@ static mr_rdp_status mr_bridge_display_resize_event(
     return MR_RDP_STATUS_OK;
 }
 
+static mr_rdp_status mr_bridge_invoke_check(mr_rdp_session *session)
+{
+    int stopped;
+    (void)pthread_mutex_lock(&session->mutex);
+    stopped = session->stop_requested || session->destroying;
+    (void)pthread_mutex_unlock(&session->mutex);
+    return stopped ? MR_RDP_ERROR_STOPPED : MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_bridge_cursor_event(
+    void *context,
+    const mr_rdp_cursor_event *event)
+{
+    mr_rdp_session *session = (mr_rdp_session *)context;
+    mr_rdp_cursor_callback callback;
+    mr_rdp_cursor_event view;
+    if (session == NULL || event == NULL ||
+        event->struct_size < sizeof(*event) ||
+        event->generation != session->config.generation) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (event->kind == MR_RDP_CURSOR_SHAPE) {
+        if (event->width == 0u || event->height == 0u ||
+            event->width > MR_RDP_MAX_CURSOR_DIMENSION ||
+            event->height > MR_RDP_MAX_CURSOR_DIMENSION ||
+            event->hotspot_x >= event->width ||
+            event->hotspot_y >= event->height ||
+            event->stride < event->width * 4u ||
+            event->bytes == NULL ||
+            event->length < (size_t)event->stride * (size_t)event->height) {
+            return MR_RDP_ERROR_INVALID_DATA;
+        }
+    } else if (event->kind != MR_RDP_CURSOR_HIDDEN &&
+               event->kind != MR_RDP_CURSOR_DEFAULT) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (mr_bridge_invoke_check(session) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    callback = session->callbacks.on_cursor;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (callback == NULL) {
+        return MR_RDP_STATUS_OK;
+    }
+    memset(&view, 0, sizeof(view));
+    view.struct_size = (uint32_t)sizeof(view);
+    view.kind = event->kind;
+    view.generation = event->generation;
+    if (event->kind == MR_RDP_CURSOR_SHAPE) {
+        view.width = event->width;
+        view.height = event->height;
+        view.hotspot_x = event->hotspot_x;
+        view.hotspot_y = event->hotspot_y;
+        view.stride = event->stride;
+        view.bytes = event->bytes;
+        view.length = (size_t)event->stride * (size_t)event->height;
+    }
+    callback(session->callback_context, &view);
+    return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_bridge_audio_packet(
+    void *context,
+    const mr_rdp_audio_packet *packet)
+{
+    mr_rdp_session *session = (mr_rdp_session *)context;
+    mr_rdp_audio_callback callback;
+    mr_rdp_audio_packet view;
+    size_t frame_bytes;
+    if (session == NULL || packet == NULL ||
+        packet->struct_size < sizeof(*packet) ||
+        packet->generation != session->config.generation ||
+        packet->bits_per_sample != 16u ||
+        packet->channels < 1u || packet->channels > 2u ||
+        packet->samples_per_second < 8000u ||
+        packet->samples_per_second > 192000u ||
+        packet->bytes == NULL || packet->length == 0u) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    frame_bytes = (size_t)packet->channels * 2u;
+    if (packet->length % frame_bytes != 0u) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (mr_bridge_invoke_check(session) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    callback = session->callbacks.on_audio;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (callback == NULL) {
+        return MR_RDP_STATUS_OK;
+    }
+    memset(&view, 0, sizeof(view));
+    view.struct_size = (uint32_t)sizeof(view);
+    view.generation = packet->generation;
+    view.samples_per_second = packet->samples_per_second;
+    view.channels = packet->channels;
+    view.bits_per_sample = packet->bits_per_sample;
+    view.bytes = packet->bytes;
+    view.length = packet->length;
+    callback(session->callback_context, &view);
+    return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_bridge_clipboard_remote_formats(
+    void *context,
+    int has_text)
+{
+    mr_rdp_session *session = (mr_rdp_session *)context;
+    mr_rdp_clipboard_remote_formats_callback callback;
+    mr_rdp_clipboard_remote_formats_event event;
+    mr_rdp_status status;
+    uint64_t sequence;
+    status = mr_next_telemetry_sequence(session, &sequence);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    callback = session->callbacks.on_clipboard_remote_formats;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (callback == NULL) {
+        return MR_RDP_STATUS_OK;
+    }
+    memset(&event, 0, sizeof(event));
+    event.struct_size = (uint32_t)sizeof(event);
+    event.has_text = has_text ? 1u : 0u;
+    event.generation = session->config.generation;
+    event.sequence = sequence;
+    callback(session->callback_context, &event);
+    return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_bridge_clipboard_offer_event(
+    void *context,
+    uint64_t offer_id,
+    mr_rdp_clipboard_offer_stage stage,
+    mr_rdp_status result)
+{
+    mr_rdp_session *session = (mr_rdp_session *)context;
+    mr_rdp_clipboard_offer_callback callback;
+    mr_rdp_clipboard_offer_event event;
+    if (session == NULL || offer_id == 0u ||
+        stage < MR_RDP_CLIPBOARD_OFFER_ACCEPTED ||
+        stage > MR_RDP_CLIPBOARD_OFFER_FAILED || result > MR_RDP_STATUS_OK ||
+        (stage == MR_RDP_CLIPBOARD_OFFER_FAILED) == (result == MR_RDP_STATUS_OK)) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (mr_bridge_invoke_check(session) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    callback = session->callbacks.on_clipboard_offer;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (callback == NULL) {
+        return MR_RDP_STATUS_OK;
+    }
+    memset(&event, 0, sizeof(event));
+    event.struct_size = (uint32_t)sizeof(event);
+    event.stage = stage;
+    event.generation = session->config.generation;
+    event.offer_id = offer_id;
+    event.status = result;
+    callback(session->callback_context, &event);
+    return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_bridge_clipboard_text(
+    void *context,
+    uint64_t request_id,
+    mr_rdp_status result,
+    const uint8_t *utf16le_bytes,
+    size_t utf16le_byte_count)
+{
+    mr_rdp_session *session = (mr_rdp_session *)context;
+    mr_rdp_clipboard_text_callback callback;
+    mr_rdp_clipboard_text_event event;
+    if (session == NULL || request_id == 0u || result > MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (result == MR_RDP_STATUS_OK) {
+        if ((utf16le_bytes == NULL) != (utf16le_byte_count == 0u) ||
+            (utf16le_byte_count & 1u) != 0u ||
+            utf16le_byte_count > MR_RDP_MAX_CLIPBOARD_TEXT_UTF16LE_BYTES) {
+            return MR_RDP_ERROR_INVALID_DATA;
+        }
+    } else if (utf16le_bytes != NULL || utf16le_byte_count != 0u) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (mr_bridge_invoke_check(session) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    callback = session->callbacks.on_clipboard_text;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (callback == NULL) {
+        return MR_RDP_STATUS_OK;
+    }
+    memset(&event, 0, sizeof(event));
+    event.struct_size = (uint32_t)sizeof(event);
+    event.status = result;
+    event.generation = session->config.generation;
+    event.request_id = request_id;
+    event.utf16le_bytes = utf16le_byte_count == 0u ? NULL : utf16le_bytes;
+    event.utf16le_byte_count = utf16le_byte_count;
+    callback(session->callback_context, &event);
+    return MR_RDP_STATUS_OK;
+}
+
 void mr_rdp_config_init(mr_rdp_config *config)
 {
     if (config == NULL) {
@@ -780,6 +989,8 @@ void mr_rdp_config_init(mr_rdp_config *config)
     config->certificate_timeout_ms = MR_RDP_DEFAULT_CERTIFICATE_TIMEOUT_MS;
     config->desktop_width = MR_RDP_DEFAULT_DESKTOP_WIDTH;
     config->desktop_height = MR_RDP_DEFAULT_DESKTOP_HEIGHT;
+    config->keyboard_profile = MR_RDP_KEYBOARD_JAPANESE;
+    config->channel_flags = MR_RDP_CHANNEL_FLAG_AUDIO | MR_RDP_CHANNEL_FLAG_CLIPBOARD;
 }
 
 void mr_rdp_callbacks_init(mr_rdp_callbacks *callbacks)
@@ -828,6 +1039,24 @@ void mr_rdp_display_resize_request_init(mr_rdp_display_resize_request *request)
     request->struct_size = (uint32_t)sizeof(*request);
 }
 
+void mr_rdp_unicode_event_init(mr_rdp_unicode_event *event)
+{
+    if (event == NULL) {
+        return;
+    }
+    memset(event, 0, sizeof(*event));
+    event->struct_size = (uint32_t)sizeof(*event);
+}
+
+void mr_rdp_clipboard_offer_init(mr_rdp_clipboard_offer *offer)
+{
+    if (offer == NULL) {
+        return;
+    }
+    memset(offer, 0, sizeof(*offer));
+    offer->struct_size = (uint32_t)sizeof(*offer);
+}
+
 static mr_rdp_status mr_validate_config(const mr_rdp_config *config, size_t *out_hostname_length)
 {
     size_t hostname_length;
@@ -844,6 +1073,13 @@ static mr_rdp_status mr_validate_config(const mr_rdp_config *config, size_t *out
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     if (config->certificate_timeout_ms > 600000u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if (config->keyboard_profile < MR_RDP_KEYBOARD_JAPANESE ||
+        config->keyboard_profile > MR_RDP_KEYBOARD_AUTOMATIC ||
+        (config->channel_flags &
+         ~(mr_rdp_channel_flags)(MR_RDP_CHANNEL_FLAG_AUDIO |
+                                 MR_RDP_CHANNEL_FLAG_CLIPBOARD)) != 0u) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     if (config->desktop_width < MR_RDP_MIN_DESKTOP_DIMENSION ||
@@ -942,6 +1178,8 @@ mr_rdp_status mr_rdp_session_create_internal(
         : config->certificate_timeout_ms;
     session->config.desktop_width = config->desktop_width;
     session->config.desktop_height = config->desktop_height;
+    session->config.keyboard_profile = config->keyboard_profile;
+    session->config.channel_flags = config->channel_flags;
     session->config.username_length = config->username_length;
     status = mr_copy_string_span(
         config->username, config->username_length, &session->config.username);
@@ -984,6 +1222,11 @@ mr_rdp_status mr_rdp_session_create_internal(
     host.channel_event = mr_bridge_channel_event;
     host.clipboard_probe_event = mr_bridge_clipboard_probe_event;
     host.display_resize_event = mr_bridge_display_resize_event;
+    host.cursor_event = mr_bridge_cursor_event;
+    host.audio_packet = mr_bridge_audio_packet;
+    host.clipboard_remote_formats = mr_bridge_clipboard_remote_formats;
+    host.clipboard_offer_event = mr_bridge_clipboard_offer_event;
+    host.clipboard_text = mr_bridge_clipboard_text;
     status = factory(&session->config, &host, factory_context, &session->backend);
     if (status != MR_RDP_STATUS_OK || session->backend == NULL ||
         session->backend->vtable == NULL ||
@@ -993,6 +1236,10 @@ mr_rdp_status mr_rdp_session_create_internal(
         session->backend->vtable->send_pointer == NULL ||
         session->backend->vtable->start_clipboard_probe == NULL ||
         session->backend->vtable->request_display_resize == NULL ||
+        session->backend->vtable->send_unicode == NULL ||
+        session->backend->vtable->set_audio_focused == NULL ||
+        session->backend->vtable->offer_clipboard_text == NULL ||
+        session->backend->vtable->request_clipboard_text == NULL ||
         session->backend->vtable->destroy == NULL) {
         if (status == MR_RDP_STATUS_OK) {
             status = MR_RDP_ERROR_BACKEND;
@@ -1255,34 +1502,32 @@ mr_rdp_status mr_rdp_session_send_pointer(
     return status;
 }
 
-static mr_rdp_status mr_validate_clipboard_probe(
-    const mr_rdp_clipboard_probe *probe)
+static mr_rdp_status mr_validate_utf16le_text(
+    const uint8_t *bytes,
+    size_t byte_count,
+    size_t maximum)
 {
     size_t offset;
-    if (probe == NULL || probe->struct_size < sizeof(*probe) ||
-        probe->reserved != 0u || probe->probe_id == 0u ||
-        probe->utf16le_bytes == NULL || probe->utf16le_byte_count < 4u ||
-        probe->utf16le_byte_count > MR_RDP_MAX_CLIPBOARD_PROBE_UTF16LE_BYTES ||
-        (probe->utf16le_byte_count & 1u) != 0u) {
+    if (bytes == NULL || byte_count < 4u || byte_count > maximum ||
+        (byte_count & 1u) != 0u) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
-    if (probe->utf16le_bytes[probe->utf16le_byte_count - 2u] != 0u ||
-        probe->utf16le_bytes[probe->utf16le_byte_count - 1u] != 0u) {
+    if (bytes[byte_count - 2u] != 0u || bytes[byte_count - 1u] != 0u) {
         return MR_RDP_ERROR_INVALID_DATA;
     }
-    for (offset = 0u; offset + 2u < probe->utf16le_byte_count; offset += 2u) {
-        const uint16_t code_unit = (uint16_t)probe->utf16le_bytes[offset] |
-            ((uint16_t)probe->utf16le_bytes[offset + 1u] << 8u);
+    for (offset = 0u; offset + 2u < byte_count; offset += 2u) {
+        const uint16_t code_unit = (uint16_t)bytes[offset] |
+            ((uint16_t)bytes[offset + 1u] << 8u);
         if (code_unit == 0u) {
             return MR_RDP_ERROR_INVALID_DATA;
         }
         if (code_unit >= 0xd800u && code_unit <= 0xdbffu) {
             uint16_t low_surrogate;
-            if (offset + 4u >= probe->utf16le_byte_count) {
+            if (offset + 4u >= byte_count) {
                 return MR_RDP_ERROR_INVALID_DATA;
             }
-            low_surrogate = (uint16_t)probe->utf16le_bytes[offset + 2u] |
-                ((uint16_t)probe->utf16le_bytes[offset + 3u] << 8u);
+            low_surrogate = (uint16_t)bytes[offset + 2u] |
+                ((uint16_t)bytes[offset + 3u] << 8u);
             if (low_surrogate < 0xdc00u || low_surrogate > 0xdfffu) {
                 return MR_RDP_ERROR_INVALID_DATA;
             }
@@ -1292,6 +1537,19 @@ static mr_rdp_status mr_validate_clipboard_probe(
         }
     }
     return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_validate_clipboard_probe(
+    const mr_rdp_clipboard_probe *probe)
+{
+    if (probe == NULL || probe->struct_size < sizeof(*probe) ||
+        probe->reserved != 0u || probe->probe_id == 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    return mr_validate_utf16le_text(
+        probe->utf16le_bytes,
+        probe->utf16le_byte_count,
+        MR_RDP_MAX_CLIPBOARD_PROBE_UTF16LE_BYTES);
 }
 
 mr_rdp_status mr_rdp_session_start_clipboard_probe(
@@ -1356,6 +1614,118 @@ mr_rdp_status mr_rdp_session_request_display_resize(
     ++session->api_calls_in_flight;
     (void)pthread_mutex_unlock(&session->mutex);
     status = backend->vtable->request_display_resize(backend, request);
+    mr_api_call_finished(session);
+    return status;
+}
+
+/* Registers an API call against the live backend, or reports why not. */
+static mr_rdp_status mr_api_call_begin(
+    mr_rdp_session *session,
+    int require_writable,
+    mr_rdp_backend **out_backend)
+{
+    (void)pthread_mutex_lock(&session->mutex);
+    if (session->stop_requested || session->destroying ||
+        session->backend == NULL ||
+        (require_writable && !session->writable)) {
+        (void)pthread_mutex_unlock(&session->mutex);
+        return MR_RDP_ERROR_INVALID_STATE;
+    }
+    *out_backend = session->backend;
+    ++session->api_calls_in_flight;
+    (void)pthread_mutex_unlock(&session->mutex);
+    return MR_RDP_STATUS_OK;
+}
+
+mr_rdp_status mr_rdp_session_send_unicode(
+    mr_rdp_session *session,
+    const mr_rdp_unicode_event *event)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_status status;
+    if (session == NULL || event == NULL ||
+        event->struct_size < sizeof(*event) ||
+        event->code_unit == 0u || event->reserved != 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    status = backend->vtable->send_unicode(backend, event);
+    mr_api_call_finished(session);
+    return status;
+}
+
+mr_rdp_status mr_rdp_session_set_audio_focused(
+    mr_rdp_session *session,
+    uint8_t focused)
+{
+    mr_rdp_backend *backend = NULL;
+    if (session == NULL || focused > 1u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if (mr_api_call_begin(session, 0, &backend) != MR_RDP_STATUS_OK) {
+        /* A stopping session plays nothing either way. */
+        return MR_RDP_STATUS_OK;
+    }
+    backend->vtable->set_audio_focused(backend, focused);
+    mr_api_call_finished(session);
+    return MR_RDP_STATUS_OK;
+}
+
+mr_rdp_status mr_rdp_session_offer_clipboard_text(
+    mr_rdp_session *session,
+    const mr_rdp_clipboard_offer *offer)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_backend_clipboard_offer backend_offer;
+    mr_rdp_status status;
+    if (session == NULL || offer == NULL ||
+        offer->struct_size < sizeof(*offer) || offer->reserved != 0u ||
+        offer->offer_id == 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    status = mr_validate_utf16le_text(
+        offer->utf16le_bytes,
+        offer->utf16le_byte_count,
+        MR_RDP_MAX_CLIPBOARD_TEXT_UTF16LE_BYTES);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    if ((session->config.channel_flags & MR_RDP_CHANNEL_FLAG_CLIPBOARD) == 0u) {
+        return MR_RDP_ERROR_INVALID_STATE;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    memset(&backend_offer, 0, sizeof(backend_offer));
+    backend_offer.offer_id = offer->offer_id;
+    backend_offer.utf16le_bytes = offer->utf16le_bytes;
+    backend_offer.utf16le_byte_count = offer->utf16le_byte_count;
+    status = backend->vtable->offer_clipboard_text(backend, &backend_offer);
+    mr_api_call_finished(session);
+    return status;
+}
+
+mr_rdp_status mr_rdp_session_request_clipboard_text(
+    mr_rdp_session *session,
+    uint64_t request_id)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_status status;
+    if (session == NULL || request_id == 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if ((session->config.channel_flags & MR_RDP_CHANNEL_FLAG_CLIPBOARD) == 0u) {
+        return MR_RDP_ERROR_INVALID_STATE;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    status = backend->vtable->request_clipboard_text(backend, request_id);
     mr_api_call_finished(session);
     return status;
 }

@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define MR_RDP_BRIDGE_ABI_VERSION 1u
+#define MR_RDP_BRIDGE_ABI_VERSION 2u
 #define MR_RDP_DEFAULT_PORT 3389u
 #define MR_RDP_DEFAULT_CERTIFICATE_TIMEOUT_MS 30000u
 #define MR_RDP_MAX_CERTIFICATE_CHAIN 16u
@@ -26,6 +26,9 @@ extern "C" {
 #define MR_RDP_MAX_CLIPBOARD_PROBE_UTF16LE_BYTES (64u * 1024u)
 #define MR_RDP_MAX_WHEEL_DELTA 32767
 #define MR_RDP_SHA256_BYTES 32u
+#define MR_RDP_MAX_CURSOR_DIMENSION 384u
+#define MR_RDP_MAX_CLIPBOARD_TEXT_UTF16LE_BYTES (4u * 1024u * 1024u)
+#define MR_RDP_CLIPBOARD_REQUEST_TIMEOUT_MS 10000u
 
 typedef struct mr_rdp_session mr_rdp_session;
 typedef int32_t mr_rdp_status;
@@ -57,6 +60,23 @@ enum {
     MR_RDP_SESSION_FAILED = 6
 };
 
+typedef uint32_t mr_rdp_keyboard_profile;
+enum {
+    /* Windows Japanese layout 0x411, keyboard type 7 (106/109). The only
+     * profile under which Eisu/Kana -> NonConvert/Convert is promised. */
+    MR_RDP_KEYBOARD_JAPANESE = 1,
+    /* Windows US layout 0x409, keyboard type 4 (101/102). */
+    MR_RDP_KEYBOARD_US = 2,
+    /* Layout 0: the server keeps the user's own default. */
+    MR_RDP_KEYBOARD_AUTOMATIC = 3
+};
+
+typedef uint32_t mr_rdp_channel_flags;
+enum {
+    MR_RDP_CHANNEL_FLAG_AUDIO = 1u << 0,
+    MR_RDP_CHANNEL_FLAG_CLIPBOARD = 1u << 1
+};
+
 typedef struct mr_rdp_config {
     uint32_t struct_size;
     uint32_t abi_version;
@@ -73,7 +93,13 @@ typedef struct mr_rdp_config {
     size_t domain_length;
     const char *password;
     size_t password_length;
+    mr_rdp_keyboard_profile keyboard_profile;
+    mr_rdp_channel_flags channel_flags;
 } mr_rdp_config;
+
+/* keyboard_profile and channel_flags are ABI 2. config_init selects the
+ * Japanese profile and enables audio and clipboard; a cleared flag keeps that
+ * channel from being loaded at all rather than loaded and ignored. */
 
 /* username/domain/password are borrowed byte spans used only during create;
  * their lengths exclude any trailing NUL. Username and password must be
@@ -225,6 +251,95 @@ typedef struct mr_rdp_display_resize_event {
     uint32_t height;
 } mr_rdp_display_resize_event;
 
+typedef uint8_t mr_rdp_cursor_kind;
+enum {
+    /* A server-supplied shape: bytes/width/height/hotspot are valid. */
+    MR_RDP_CURSOR_SHAPE = 1,
+    /* The server hid the pointer. */
+    MR_RDP_CURSOR_HIDDEN = 2,
+    /* The server asked for the system default arrow. */
+    MR_RDP_CURSOR_DEFAULT = 3
+};
+
+typedef struct mr_rdp_cursor_event {
+    uint32_t struct_size;
+    mr_rdp_cursor_kind kind;
+    uint8_t reserved[3];
+    uint64_t generation;
+    uint32_t width;
+    uint32_t height;
+    uint32_t hotspot_x;
+    uint32_t hotspot_y;
+    uint32_t stride;
+    uint32_t reserved2;
+    const uint8_t *bytes;
+    size_t length;
+} mr_rdp_cursor_event;
+
+/* SHAPE bytes are straight-alpha BGRA, top row first, stride >= width * 4,
+ * and each dimension is 1...MR_RDP_MAX_CURSOR_DIMENSION. The hotspot lies
+ * inside the image. Other kinds carry no bytes. The view is borrowed for the
+ * duration of the callback. */
+
+typedef struct mr_rdp_audio_packet {
+    uint32_t struct_size;
+    uint32_t reserved;
+    uint64_t generation;
+    uint32_t samples_per_second;
+    uint16_t channels;
+    uint16_t bits_per_sample;
+    const uint8_t *bytes;
+    size_t length;
+} mr_rdp_audio_packet;
+
+/* Interleaved signed 16-bit little-endian PCM, 1 or 2 channels, a whole
+ * number of frames. Delivered only while the session's audio is focused;
+ * the bytes are borrowed for the duration of the callback, which must copy
+ * them into a bounded buffer and return promptly. The protocol's own wave
+ * confirmations are sent by FreeRDP whether or not the app plays anything. */
+
+typedef struct mr_rdp_clipboard_remote_formats_event {
+    uint32_t struct_size;
+    uint8_t has_text;
+    uint8_t reserved[3];
+    uint64_t generation;
+    uint64_t sequence;
+} mr_rdp_clipboard_remote_formats_event;
+
+typedef uint8_t mr_rdp_clipboard_offer_stage;
+enum {
+    /* The server acknowledged the client format list: a paste on the remote
+     * side will now ask this client for the text. */
+    MR_RDP_CLIPBOARD_OFFER_ACCEPTED = 1,
+    /* The server read the offered text. */
+    MR_RDP_CLIPBOARD_OFFER_DELIVERED = 2,
+    /* The offer failed or was replaced by a remote copy. */
+    MR_RDP_CLIPBOARD_OFFER_FAILED = 3
+};
+
+typedef struct mr_rdp_clipboard_offer_event {
+    uint32_t struct_size;
+    mr_rdp_clipboard_offer_stage stage;
+    uint8_t reserved[3];
+    uint64_t generation;
+    uint64_t offer_id;
+    mr_rdp_status status;
+    uint32_t reserved2;
+} mr_rdp_clipboard_offer_event;
+
+typedef struct mr_rdp_clipboard_text_event {
+    uint32_t struct_size;
+    mr_rdp_status status;
+    uint64_t generation;
+    uint64_t request_id;
+    const uint8_t *utf16le_bytes;
+    size_t utf16le_byte_count;
+} mr_rdp_clipboard_text_event;
+
+/* On OK, utf16le_bytes is the remote CF_UNICODETEXT with any trailing NUL
+ * code units removed; it may be empty. The view is borrowed for the duration
+ * of the callback. On failure the span is NULL/0. */
+
 typedef void (*mr_rdp_state_callback)(
     void *context,
     const mr_rdp_state_event *event);
@@ -247,6 +362,22 @@ typedef void (*mr_rdp_display_resize_callback)(
     void *context,
     const mr_rdp_display_resize_event *event);
 
+typedef void (*mr_rdp_cursor_callback)(
+    void *context,
+    const mr_rdp_cursor_event *event);
+typedef void (*mr_rdp_audio_callback)(
+    void *context,
+    const mr_rdp_audio_packet *packet);
+typedef void (*mr_rdp_clipboard_remote_formats_callback)(
+    void *context,
+    const mr_rdp_clipboard_remote_formats_event *event);
+typedef void (*mr_rdp_clipboard_offer_callback)(
+    void *context,
+    const mr_rdp_clipboard_offer_event *event);
+typedef void (*mr_rdp_clipboard_text_callback)(
+    void *context,
+    const mr_rdp_clipboard_text_event *event);
+
 typedef struct mr_rdp_callbacks {
     uint32_t struct_size;
     uint32_t abi_version;
@@ -257,6 +388,12 @@ typedef struct mr_rdp_callbacks {
     mr_rdp_channel_callback on_channel_event;
     mr_rdp_clipboard_probe_callback on_clipboard_probe_event;
     mr_rdp_display_resize_callback on_display_resize_event;
+    /* ABI 2. */
+    mr_rdp_cursor_callback on_cursor;
+    mr_rdp_audio_callback on_audio;
+    mr_rdp_clipboard_remote_formats_callback on_clipboard_remote_formats;
+    mr_rdp_clipboard_offer_callback on_clipboard_offer;
+    mr_rdp_clipboard_text_callback on_clipboard_text;
 } mr_rdp_callbacks;
 
 typedef uint8_t mr_rdp_key_action;
@@ -304,6 +441,29 @@ typedef struct mr_rdp_pointer_event {
     uint8_t reserved;
 } mr_rdp_pointer_event;
 
+/* One Unicode code unit typed as a down/up pair (KBDUNICODE). A
+ * supplementary-plane character is two calls, high surrogate first. The pair
+ * is atomic, so a Unicode tap never leaves anything pressed on the server. */
+typedef struct mr_rdp_unicode_event {
+    uint32_t struct_size;
+    uint16_t code_unit;
+    uint16_t reserved;
+} mr_rdp_unicode_event;
+
+typedef struct mr_rdp_clipboard_offer {
+    uint32_t struct_size;
+    uint32_t reserved;
+    uint64_t offer_id;
+    const uint8_t *utf16le_bytes;
+    size_t utf16le_byte_count;
+} mr_rdp_clipboard_offer;
+
+/* utf16le_bytes follows the probe rules (one trailing NUL, no embedded NUL,
+ * well-formed surrogates, even length) with the larger
+ * MR_RDP_MAX_CLIPBOARD_TEXT_UTF16LE_BYTES limit. It is copied before
+ * mr_rdp_session_offer_clipboard_text returns and served to every server data
+ * request until a newer offer or a remote copy replaces it. */
+
 /* Each wheel axis is bounded to +/- MR_RDP_MAX_WHEEL_DELTA. The backend may
  * split one accepted delta across multiple RDP pointer PDUs. */
 
@@ -321,6 +481,8 @@ void mr_rdp_key_event_init(mr_rdp_key_event *event);
 void mr_rdp_pointer_event_init(mr_rdp_pointer_event *event);
 void mr_rdp_clipboard_probe_init(mr_rdp_clipboard_probe *probe);
 void mr_rdp_display_resize_request_init(mr_rdp_display_resize_request *request);
+void mr_rdp_unicode_event_init(mr_rdp_unicode_event *event);
+void mr_rdp_clipboard_offer_init(mr_rdp_clipboard_offer *offer);
 
 /*
  * Copies config, hostname, credentials, and the callback table before
@@ -391,6 +553,35 @@ mr_rdp_status mr_rdp_session_start_clipboard_probe(
 mr_rdp_status mr_rdp_session_request_display_resize(
     mr_rdp_session *session,
     const mr_rdp_display_resize_request *request);
+
+/* Types one UTF-16 code unit through the same bounded, ordered queue as
+ * keys. code_unit zero is rejected. */
+mr_rdp_status mr_rdp_session_send_unicode(
+    mr_rdp_session *session,
+    const mr_rdp_unicode_event *event);
+
+/* Whether this session's PCM reaches on_audio. Thread-safe, callable in any
+ * state, and remembered across the channel connecting later. Unfocused audio
+ * is dropped in the bridge; the server is still confirmed. */
+mr_rdp_status mr_rdp_session_set_audio_focused(
+    mr_rdp_session *session,
+    uint8_t focused);
+
+/* Announces CF_UNICODETEXT to the server on behalf of a user-initiated copy.
+ * Progress arrives on on_clipboard_offer. Fails with INVALID_STATE when the
+ * clipboard channel is not ready or was disabled in the config. */
+mr_rdp_status mr_rdp_session_offer_clipboard_text(
+    mr_rdp_session *session,
+    const mr_rdp_clipboard_offer *offer);
+
+/* Asks the server for its CF_UNICODETEXT. Exactly one on_clipboard_text
+ * answers each accepted request, unless the session stops first. Only one
+ * request may be outstanding; a request older than
+ * MR_RDP_CLIPBOARD_REQUEST_TIMEOUT_MS is answered with TIMEOUT when the next
+ * one is made. request_id zero is rejected. */
+mr_rdp_status mr_rdp_session_request_clipboard_text(
+    mr_rdp_session *session,
+    uint64_t request_id);
 
 /*
  * Request stop, wait for the registered run/callback and in-flight calls, then

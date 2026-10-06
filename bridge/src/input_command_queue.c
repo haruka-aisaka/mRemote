@@ -216,6 +216,15 @@ mr_input_enqueue_result mr_input_command_queue_enqueue(
         return MR_INPUT_ENQUEUE_QUEUED;
     }
 
+    if (command->kind == MR_INPUT_COMMAND_UNICODE) {
+        /* Typed text keeps its order but owes the server nothing afterwards,
+         * so under pressure it is dropped rather than failing the session. */
+        if (mr_input_queue_free(queue) == 0u) {
+            return MR_INPUT_ENQUEUE_DROPPED;
+        }
+        mr_input_queue_append(queue, command);
+        return MR_INPUT_ENQUEUE_QUEUED;
+    }
     if (command->kind != MR_INPUT_COMMAND_POINTER) {
         return MR_INPUT_ENQUEUE_INVALID;
     }

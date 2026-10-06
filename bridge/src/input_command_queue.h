@@ -11,7 +11,9 @@
 typedef uint8_t mr_input_command_kind;
 enum {
     MR_INPUT_COMMAND_KEY = 1,
-    MR_INPUT_COMMAND_POINTER = 2
+    MR_INPUT_COMMAND_POINTER = 2,
+    /* A self-contained down/up pair: it creates no release obligation. */
+    MR_INPUT_COMMAND_UNICODE = 3
 };
 
 typedef struct mr_input_command {
@@ -19,6 +21,7 @@ typedef struct mr_input_command {
     union {
         mr_rdp_key_event key;
         mr_rdp_pointer_event pointer;
+        mr_rdp_unicode_event unicode;
     } value;
 } mr_input_command;
 

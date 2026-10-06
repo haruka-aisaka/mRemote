@@ -2,8 +2,13 @@
 #include "certificate_chain.h"
 #include "control_deadline.h"
 #include "input_command_queue.h"
+#include "mremote/rdpsnd.h"
 
+#include <freerdp/addin.h>
 #include <freerdp/client.h>
+#include <freerdp/client/channels.h>
+#include <freerdp/client/rdpsnd.h>
+#include <freerdp/graphics.h>
 #include <freerdp/client/cliprdr.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/disp.h>
@@ -31,6 +36,8 @@
 #define MR_FREERDP_PROTOCOL_HYBRID 0x00000002u
 #define MR_FREERDP_CLIPBOARD_PROBE_TIMEOUT_MS 10000u
 #define MR_FREERDP_COMMAND_BATCH_LIMIT 64u
+#define MR_FREERDP_RDPSND_SUBSYSTEM "mremote"
+#define MR_FREERDP_MAX_AUDIO_SINKS 2u
 
 typedef struct mr_freerdp_backend mr_freerdp_backend;
 
@@ -38,6 +45,12 @@ typedef struct mr_freerdp_clipboard_probe {
     mr_rdp_backend_clipboard_probe descriptor;
     uint8_t *bytes;
 } mr_freerdp_clipboard_probe;
+
+typedef struct mr_freerdp_clipboard_offer {
+    uint64_t offer_id;
+    uint8_t *bytes;
+    size_t byte_count;
+} mr_freerdp_clipboard_offer;
 
 typedef struct mr_freerdp_context {
     rdpClientContext common;
@@ -74,6 +87,20 @@ struct mr_freerdp_backend {
     mr_rdp_status input_failure_status;
     uint64_t surface_generation;
     uint64_t frame_id;
+
+    /* ABI 2 */
+    mr_rdp_keyboard_profile keyboard_profile;
+    mr_rdp_channel_flags channel_flags;
+    int audio_focused;
+    mr_rdpsnd_device *audio_sinks[MR_FREERDP_MAX_AUDIO_SINKS];
+    /* Announced on the next drain; then owned as current_offer. */
+    mr_freerdp_clipboard_offer *offer_to_announce;
+    mr_freerdp_clipboard_offer *current_offer;
+    int offer_awaiting_response;
+    uint64_t pending_text_request_id;
+    uint64_t expired_text_request_id;
+    uint64_t outstanding_text_request_id;
+    UINT64 outstanding_text_request_since;
 };
 
 static mr_freerdp_backend *mr_freerdp_backend_from_instance(freerdp *instance)
@@ -216,6 +243,72 @@ static mr_rdp_status mr_freerdp_expire_clipboard_probe(
     return host_status;
 }
 
+static void mr_freerdp_clipboard_offer_destroy(mr_freerdp_clipboard_offer *offer)
+{
+    if (offer == NULL) {
+        return;
+    }
+    if (offer->bytes != NULL) {
+        SecureZeroMemory(offer->bytes, offer->byte_count);
+        free(offer->bytes);
+    }
+    SecureZeroMemory(offer, sizeof(*offer));
+    free(offer);
+}
+
+static void mr_freerdp_emit_offer(
+    mr_freerdp_backend *backend,
+    uint64_t offer_id,
+    mr_rdp_clipboard_offer_stage stage,
+    mr_rdp_status status)
+{
+    mr_rdp_status host_status;
+    if (offer_id == 0u) {
+        return;
+    }
+    host_status = backend->host.clipboard_offer_event(
+        backend->host.context, offer_id, stage, status);
+    if (host_status != MR_RDP_STATUS_OK && host_status != MR_RDP_ERROR_STOPPED) {
+        mr_freerdp_record_status(backend, host_status);
+    }
+}
+
+static void mr_freerdp_emit_text(
+    mr_freerdp_backend *backend,
+    uint64_t request_id,
+    mr_rdp_status status,
+    const uint8_t *bytes,
+    size_t byte_count)
+{
+    mr_rdp_status host_status;
+    if (request_id == 0u) {
+        return;
+    }
+    host_status = backend->host.clipboard_text(
+        backend->host.context, request_id, status, bytes, byte_count);
+    if (host_status != MR_RDP_STATUS_OK && host_status != MR_RDP_ERROR_STOPPED) {
+        mr_freerdp_record_status(backend, host_status);
+    }
+}
+
+/* Drops every clipboard obligation. Called with the mutex held when the
+ * channel or the connection goes away; the caller frees what is returned. */
+static void mr_freerdp_take_clipboard_state_locked(
+    mr_freerdp_backend *backend,
+    mr_freerdp_clipboard_offer **out_announce,
+    mr_freerdp_clipboard_offer **out_current)
+{
+    *out_announce = backend->offer_to_announce;
+    *out_current = backend->current_offer;
+    backend->offer_to_announce = NULL;
+    backend->current_offer = NULL;
+    backend->offer_awaiting_response = 0;
+    backend->pending_text_request_id = 0u;
+    backend->expired_text_request_id = 0u;
+    backend->outstanding_text_request_id = 0u;
+    backend->outstanding_text_request_since = 0u;
+}
+
 static UINT mr_freerdp_cliprdr_monitor_ready(
     CliprdrClientContext *cliprdr,
     const CLIPRDR_MONITOR_READY *monitor_ready)
@@ -236,9 +329,18 @@ static UINT mr_freerdp_cliprdr_monitor_ready(
     general.version = CB_CAPS_VERSION_2;
     general.generalFlags = CB_USE_LONG_FORMAT_NAMES;
     {
-        const UINT status = cliprdr->ClientCapabilities(cliprdr, &capabilities);
+        UINT status = cliprdr->ClientCapabilities(cliprdr, &capabilities);
         mr_freerdp_backend *backend =
             (mr_freerdp_backend *)cliprdr->custom;
+        if (status == CHANNEL_RC_OK && cliprdr->ClientFormatList != NULL) {
+            /* MS-RDPECLIP 1.3.2.1: the client follows its capabilities with
+             * a format list. It is empty because nothing has been copied
+             * here yet; an offer announces CF_UNICODETEXT later. */
+            CLIPRDR_FORMAT_LIST empty;
+            memset(&empty, 0, sizeof(empty));
+            empty.common.msgType = CB_FORMAT_LIST;
+            status = cliprdr->ClientFormatList(cliprdr, &empty);
+        }
         if (status == CHANNEL_RC_OK) {
             (void)pthread_mutex_lock(&backend->mutex);
             if (backend->cliprdr == cliprdr) {
@@ -265,14 +367,48 @@ static UINT mr_freerdp_cliprdr_server_format_list(
     const CLIPRDR_FORMAT_LIST *format_list)
 {
     CLIPRDR_FORMAT_LIST_RESPONSE response;
+    mr_freerdp_backend *backend;
+    mr_freerdp_clipboard_offer *replaced;
+    uint64_t failed_offer_id = 0u;
+    mr_rdp_status host_status;
+    int has_text = 0;
+    UINT32 index;
+    UINT status;
     if (cliprdr == NULL || format_list == NULL || cliprdr->custom == NULL ||
         cliprdr->ClientFormatListResponse == NULL) {
         return CHANNEL_RC_INITIALIZATION_ERROR;
     }
+    backend = (mr_freerdp_backend *)cliprdr->custom;
+    for (index = 0u; index < format_list->numFormats && format_list->formats != NULL;
+         ++index) {
+        if (format_list->formats[index].formatId == CF_UNICODETEXT) {
+            has_text = 1;
+        }
+    }
     memset(&response, 0, sizeof(response));
     response.common.msgType = CB_FORMAT_LIST_RESPONSE;
     response.common.msgFlags = CB_RESPONSE_OK;
-    return cliprdr->ClientFormatListResponse(cliprdr, &response);
+    status = cliprdr->ClientFormatListResponse(cliprdr, &response);
+
+    /* A remote copy takes clipboard ownership: whatever this client offered
+     * is no longer what a remote paste would read. */
+    (void)pthread_mutex_lock(&backend->mutex);
+    replaced = backend->current_offer;
+    backend->current_offer = NULL;
+    if (replaced != NULL && backend->offer_awaiting_response) {
+        failed_offer_id = replaced->offer_id;
+    }
+    backend->offer_awaiting_response = 0;
+    (void)pthread_mutex_unlock(&backend->mutex);
+    mr_freerdp_emit_offer(
+        backend, failed_offer_id, MR_RDP_CLIPBOARD_OFFER_FAILED, MR_RDP_ERROR_INVALID_STATE);
+    mr_freerdp_clipboard_offer_destroy(replaced);
+
+    host_status = backend->host.clipboard_remote_formats(backend->host.context, has_text);
+    if (host_status != MR_RDP_STATUS_OK && host_status != MR_RDP_ERROR_STOPPED) {
+        mr_freerdp_record_status(backend, host_status);
+    }
+    return status;
 }
 
 static UINT mr_freerdp_cliprdr_server_format_list_response(
@@ -295,6 +431,20 @@ static UINT mr_freerdp_cliprdr_server_format_list_response(
         : NULL;
     (void)pthread_mutex_unlock(&backend->mutex);
     if (probe == NULL) {
+        uint64_t offer_id = 0u;
+        (void)pthread_mutex_lock(&backend->mutex);
+        if (backend->offer_awaiting_response && backend->current_offer != NULL) {
+            offer_id = backend->current_offer->offer_id;
+            backend->offer_awaiting_response = 0;
+        }
+        (void)pthread_mutex_unlock(&backend->mutex);
+        if ((response->common.msgFlags & CB_RESPONSE_OK) != 0u) {
+            mr_freerdp_emit_offer(
+                backend, offer_id, MR_RDP_CLIPBOARD_OFFER_ACCEPTED, MR_RDP_STATUS_OK);
+        } else {
+            mr_freerdp_emit_offer(
+                backend, offer_id, MR_RDP_CLIPBOARD_OFFER_FAILED, MR_RDP_ERROR_BACKEND);
+        }
         return CHANNEL_RC_OK;
     }
     operation_status = (response->common.msgFlags & CB_RESPONSE_OK) != 0u
@@ -354,6 +504,48 @@ static UINT mr_freerdp_cliprdr_server_format_data_request(
     } else {
         probe = NULL;
     }
+    if (probe == NULL) {
+        /* The offer's bytes are owned under the mutex; the response is sent
+         * from a private copy so a concurrent replacement cannot free them
+         * while the channel is still reading. */
+        uint8_t *served = NULL;
+        size_t served_count = 0u;
+        uint64_t offer_id = 0u;
+        if (backend->current_offer != NULL &&
+            request->requestedFormatId == CF_UNICODETEXT) {
+            served = (uint8_t *)malloc(backend->current_offer->byte_count);
+            if (served != NULL) {
+                memcpy(served, backend->current_offer->bytes,
+                       backend->current_offer->byte_count);
+                served_count = backend->current_offer->byte_count;
+                offer_id = backend->current_offer->offer_id;
+            }
+        }
+        (void)pthread_mutex_unlock(&backend->mutex);
+        memset(&response, 0, sizeof(response));
+        response.common.msgType = CB_FORMAT_DATA_RESPONSE;
+        if (served != NULL) {
+            response.common.msgFlags = CB_RESPONSE_OK;
+            response.common.dataLen = (UINT32)served_count;
+            response.requestedFormatData = served;
+        } else {
+            response.common.msgFlags = CB_RESPONSE_FAIL;
+        }
+        channel_status = cliprdr->ClientFormatDataResponse(cliprdr, &response);
+        if (served != NULL) {
+            SecureZeroMemory(served, served_count);
+            free(served);
+            mr_freerdp_emit_offer(
+                backend, offer_id,
+                channel_status == CHANNEL_RC_OK
+                    ? MR_RDP_CLIPBOARD_OFFER_DELIVERED
+                    : MR_RDP_CLIPBOARD_OFFER_FAILED,
+                channel_status == CHANNEL_RC_OK
+                    ? MR_RDP_STATUS_OK
+                    : MR_RDP_ERROR_BACKEND);
+        }
+        return channel_status;
+    }
     (void)pthread_mutex_unlock(&backend->mutex);
 
     memset(&response, 0, sizeof(response));
@@ -394,6 +586,53 @@ static UINT mr_freerdp_cliprdr_server_format_data_request(
         return CHANNEL_RC_INITIALIZATION_ERROR;
     }
     return channel_status;
+}
+
+static UINT mr_freerdp_cliprdr_server_format_data_response(
+    CliprdrClientContext *cliprdr,
+    const CLIPRDR_FORMAT_DATA_RESPONSE *response)
+{
+    mr_freerdp_backend *backend;
+    uint64_t request_id;
+    if (cliprdr == NULL || response == NULL || cliprdr->custom == NULL) {
+        return CHANNEL_RC_INITIALIZATION_ERROR;
+    }
+    backend = (mr_freerdp_backend *)cliprdr->custom;
+    (void)pthread_mutex_lock(&backend->mutex);
+    request_id = backend->outstanding_text_request_id;
+    backend->outstanding_text_request_id = 0u;
+    backend->outstanding_text_request_since = 0u;
+    (void)pthread_mutex_unlock(&backend->mutex);
+    if (request_id == 0u) {
+        /* Nobody is waiting: a response to a request that already timed out. */
+        return CHANNEL_RC_OK;
+    }
+    if ((response->common.msgFlags & CB_RESPONSE_OK) == 0u) {
+        mr_freerdp_emit_text(backend, request_id, MR_RDP_ERROR_BACKEND, NULL, 0u);
+        return CHANNEL_RC_OK;
+    }
+    {
+        size_t length = response->common.dataLen;
+        const BYTE *data = response->requestedFormatData;
+        if (length > 0u && data == NULL) {
+            mr_freerdp_emit_text(backend, request_id, MR_RDP_ERROR_INVALID_DATA, NULL, 0u);
+            return CHANNEL_RC_OK;
+        }
+        if ((length & 1u) != 0u) {
+            /* A stray byte cannot be half a code unit of anything useful. */
+            length -= 1u;
+        }
+        while (length >= 2u && data[length - 2u] == 0u && data[length - 1u] == 0u) {
+            length -= 2u;
+        }
+        if (length > MR_RDP_MAX_CLIPBOARD_TEXT_UTF16LE_BYTES) {
+            mr_freerdp_emit_text(backend, request_id, MR_RDP_ERROR_LIMIT_EXCEEDED, NULL, 0u);
+            return CHANNEL_RC_OK;
+        }
+        mr_freerdp_emit_text(
+            backend, request_id, MR_RDP_STATUS_OK, length == 0u ? NULL : data, length);
+    }
+    return CHANNEL_RC_OK;
 }
 
 static int mr_freerdp_channel_kind_from_name(
@@ -452,6 +691,8 @@ static void mr_freerdp_on_channel_connected(
                 mr_freerdp_cliprdr_server_format_list_response;
             backend->cliprdr->ServerFormatDataRequest =
                 mr_freerdp_cliprdr_server_format_data_request;
+            backend->cliprdr->ServerFormatDataResponse =
+                mr_freerdp_cliprdr_server_format_data_response;
         }
     } else if (strcmp(event->name, DISP_DVC_CHANNEL_NAME) == 0) {
         backend->disp = (DispClientContext *)event->pInterface;
@@ -475,6 +716,8 @@ static void mr_freerdp_on_channel_disconnected(
     mr_freerdp_backend *backend;
     mr_freerdp_clipboard_probe *pending_probe = NULL;
     mr_freerdp_clipboard_probe *active_probe = NULL;
+    mr_freerdp_clipboard_offer *announce = NULL;
+    mr_freerdp_clipboard_offer *current = NULL;
     mr_rdp_channel_kind kind;
     mr_rdp_status status;
     if (client_context == NULL || event == NULL || event->name == NULL ||
@@ -496,6 +739,7 @@ static void mr_freerdp_on_channel_disconnected(
         backend->active_clipboard_probe = NULL;
         mr_control_deadline_reset(&backend->clipboard_probe_deadline);
         backend->clipboard_probe_timed_out = 0;
+        mr_freerdp_take_clipboard_state_locked(backend, &announce, &current);
     } else if (strcmp(event->name, DISP_DVC_CHANNEL_NAME) == 0) {
         if (backend->disp == (DispClientContext *)event->pInterface) {
             backend->disp = NULL;
@@ -507,6 +751,8 @@ static void mr_freerdp_on_channel_disconnected(
     (void)pthread_mutex_unlock(&backend->mutex);
     mr_freerdp_clipboard_probe_destroy(pending_probe);
     mr_freerdp_clipboard_probe_destroy(active_probe);
+    mr_freerdp_clipboard_offer_destroy(announce);
+    mr_freerdp_clipboard_offer_destroy(current);
     freerdp_client_OnChannelDisconnectedEventHandler(context, event);
     if (mr_freerdp_channel_kind_from_name(event->name, &kind)) {
         status = backend->host.channel_event(
@@ -764,11 +1010,359 @@ static BOOL mr_freerdp_desktop_resize(rdpContext *context)
     return mr_freerdp_present_gdi_frame(backend, &full, 1u);
 }
 
+/* ---- Remote cursor --------------------------------------------------- */
+
+typedef struct mr_freerdp_pointer {
+    rdpPointer pointer;
+    uint8_t *bgra;
+    uint32_t stride;
+} mr_freerdp_pointer;
+
+static mr_freerdp_backend *mr_freerdp_backend_from_context(rdpContext *context)
+{
+    if (context == NULL) {
+        return NULL;
+    }
+    return ((mr_freerdp_context *)context)->backend;
+}
+
+static BOOL mr_freerdp_emit_cursor_kind(rdpContext *context, mr_rdp_cursor_kind kind)
+{
+    mr_freerdp_backend *backend = mr_freerdp_backend_from_context(context);
+    mr_rdp_cursor_event event;
+    mr_rdp_status status;
+    if (backend == NULL) {
+        return FALSE;
+    }
+    memset(&event, 0, sizeof(event));
+    event.struct_size = (uint32_t)sizeof(event);
+    event.kind = kind;
+    event.generation = backend->generation;
+    status = backend->host.cursor_event(backend->host.context, &event);
+    /* A cursor the app could not take is cosmetic; only a stop matters. */
+    return status == MR_RDP_STATUS_OK || status == MR_RDP_ERROR_INVALID_DATA;
+}
+
+static BOOL mr_freerdp_pointer_new(rdpContext *context, rdpPointer *pointer)
+{
+    mr_freerdp_pointer *shape = (mr_freerdp_pointer *)pointer;
+    if (context == NULL || shape == NULL) {
+        return FALSE;
+    }
+    shape->bgra = NULL;
+    shape->stride = 0u;
+    if (pointer->width == 0u || pointer->height == 0u ||
+        pointer->width > MR_RDP_MAX_CURSOR_DIMENSION ||
+        pointer->height > MR_RDP_MAX_CURSOR_DIMENSION) {
+        /* Kept as a shape without pixels; Set shows the default arrow. */
+        return TRUE;
+    }
+    shape->stride = pointer->width * 4u;
+    shape->bgra = (uint8_t *)calloc((size_t)pointer->height, shape->stride);
+    if (shape->bgra == NULL) {
+        return FALSE;
+    }
+    if (!freerdp_image_copy_from_pointer_data(
+            shape->bgra, PIXEL_FORMAT_BGRA32, shape->stride, 0u, 0u,
+            pointer->width, pointer->height,
+            pointer->xorMaskData, pointer->lengthXorMask,
+            pointer->andMaskData, pointer->lengthAndMask,
+            pointer->xorBpp,
+            context->gdi != NULL ? &context->gdi->palette : NULL)) {
+        free(shape->bgra);
+        shape->bgra = NULL;
+        shape->stride = 0u;
+    }
+    return TRUE;
+}
+
+static void mr_freerdp_pointer_free(rdpContext *context, rdpPointer *pointer)
+{
+    mr_freerdp_pointer *shape = (mr_freerdp_pointer *)pointer;
+    (void)context;
+    if (shape != NULL) {
+        free(shape->bgra);
+        shape->bgra = NULL;
+    }
+}
+
+static BOOL mr_freerdp_pointer_set(rdpContext *context, rdpPointer *pointer)
+{
+    mr_freerdp_backend *backend = mr_freerdp_backend_from_context(context);
+    mr_freerdp_pointer *shape = (mr_freerdp_pointer *)pointer;
+    mr_rdp_cursor_event event;
+    mr_rdp_status status;
+    if (backend == NULL || shape == NULL) {
+        return FALSE;
+    }
+    if (shape->bgra == NULL) {
+        return mr_freerdp_emit_cursor_kind(context, MR_RDP_CURSOR_DEFAULT);
+    }
+    memset(&event, 0, sizeof(event));
+    event.struct_size = (uint32_t)sizeof(event);
+    event.kind = MR_RDP_CURSOR_SHAPE;
+    event.generation = backend->generation;
+    event.width = pointer->width;
+    event.height = pointer->height;
+    /* Servers occasionally send a hotspot on the far edge; clamp rather than
+     * drop the whole shape. */
+    event.hotspot_x = pointer->xPos < pointer->width ? pointer->xPos : pointer->width - 1u;
+    event.hotspot_y = pointer->yPos < pointer->height ? pointer->yPos : pointer->height - 1u;
+    event.stride = shape->stride;
+    event.bytes = shape->bgra;
+    event.length = (size_t)shape->stride * pointer->height;
+    status = backend->host.cursor_event(backend->host.context, &event);
+    return status == MR_RDP_STATUS_OK || status == MR_RDP_ERROR_INVALID_DATA;
+}
+
+static BOOL mr_freerdp_pointer_set_null(rdpContext *context)
+{
+    return mr_freerdp_emit_cursor_kind(context, MR_RDP_CURSOR_HIDDEN);
+}
+
+static BOOL mr_freerdp_pointer_set_default(rdpContext *context)
+{
+    return mr_freerdp_emit_cursor_kind(context, MR_RDP_CURSOR_DEFAULT);
+}
+
+static BOOL mr_freerdp_pointer_set_position(rdpContext *context, UINT32 x, UINT32 y)
+{
+    /* iPadOS gives an app no way to move the system pointer, so a server
+     * warp is ignored rather than drawn somewhere the user is not. */
+    (void)context;
+    (void)x;
+    (void)y;
+    return TRUE;
+}
+
+/* ---- rdpsnd device ---------------------------------------------------- */
+
+/* FreeRDP 3.31.1's core sends both Wave Confirm PDUs around Play (see
+ * rdpsnd_treat_wave), so this device never confirms anything itself. It only
+ * hands PCM to mr_rdpsnd, whose focus gate decides whether the app hears it. */
+typedef struct mr_freerdp_rdpsnd_device {
+    rdpsndDevicePlugin device;
+    mr_freerdp_backend *backend;
+    mr_rdpsnd_device *sink;
+} mr_freerdp_rdpsnd_device;
+
+static int mr_freerdp_audio_format_supported(const AUDIO_FORMAT *format)
+{
+    return format != NULL && format->wFormatTag == WAVE_FORMAT_PCM &&
+        format->wBitsPerSample == 16u &&
+        format->nChannels >= 1u && format->nChannels <= 2u &&
+        format->nSamplesPerSec >= 8000u && format->nSamplesPerSec <= 192000u &&
+        format->nBlockAlign == format->nChannels * 2u;
+}
+
+static void mr_freerdp_rdpsnd_format(const AUDIO_FORMAT *source, mr_rdpsnd_format *out)
+{
+    mr_rdpsnd_format_init(out);
+    out->format_tag = MR_RDPSND_WAVE_FORMAT_PCM;
+    out->channels = source->nChannels;
+    out->samples_per_second = source->nSamplesPerSec;
+    out->block_align = (uint16_t)(source->nChannels * 2u);
+    out->average_bytes_per_second = source->nSamplesPerSec * out->block_align;
+    out->bits_per_sample = 16u;
+}
+
+static mr_rdpsnd_pcm_result mr_freerdp_rdpsnd_on_pcm(
+    void *context,
+    const mr_rdpsnd_pcm_packet *packet)
+{
+    mr_freerdp_rdpsnd_device *device = (mr_freerdp_rdpsnd_device *)context;
+    mr_rdp_audio_packet audio;
+    memset(&audio, 0, sizeof(audio));
+    audio.struct_size = (uint32_t)sizeof(audio);
+    audio.generation = device->backend->generation;
+    audio.samples_per_second = packet->format.samples_per_second;
+    audio.channels = packet->format.channels;
+    audio.bits_per_sample = packet->format.bits_per_sample;
+    audio.bytes = packet->bytes;
+    audio.length = packet->length;
+    return device->backend->host.audio_packet(device->backend->host.context, &audio) ==
+            MR_RDP_STATUS_OK
+        ? MR_RDPSND_PCM_ACCEPTED
+        : MR_RDPSND_PCM_DROP_BACKPRESSURE;
+}
+
+static void mr_freerdp_rdpsnd_on_confirm(
+    void *context,
+    const mr_rdpsnd_wave_confirmation *confirmation)
+{
+    (void)context;
+    (void)confirmation;
+}
+
+static BOOL mr_freerdp_rdpsnd_format_supported(
+    rdpsndDevicePlugin *device,
+    const AUDIO_FORMAT *format)
+{
+    (void)device;
+    return mr_freerdp_audio_format_supported(format) ? TRUE : FALSE;
+}
+
+static BOOL mr_freerdp_rdpsnd_open(
+    rdpsndDevicePlugin *plugin,
+    const AUDIO_FORMAT *format,
+    UINT32 latency)
+{
+    mr_freerdp_rdpsnd_device *device = (mr_freerdp_rdpsnd_device *)plugin;
+    mr_rdpsnd_format native;
+    (void)latency;
+    if (device == NULL || !mr_freerdp_audio_format_supported(format)) {
+        return FALSE;
+    }
+    mr_freerdp_rdpsnd_format(format, &native);
+    return mr_rdpsnd_device_open(device->sink, &native) == MR_RDP_STATUS_OK;
+}
+
+static UINT32 mr_freerdp_rdpsnd_get_volume(rdpsndDevicePlugin *device)
+{
+    (void)device;
+    return 0xFFFFFFFFu;
+}
+
+static BOOL mr_freerdp_rdpsnd_set_volume(rdpsndDevicePlugin *device, UINT32 value)
+{
+    /* Volume is the app's mixer's business, per session. */
+    (void)device;
+    (void)value;
+    return TRUE;
+}
+
+static UINT mr_freerdp_rdpsnd_play(
+    rdpsndDevicePlugin *plugin,
+    const BYTE *data,
+    size_t size)
+{
+    mr_freerdp_rdpsnd_device *device = (mr_freerdp_rdpsnd_device *)plugin;
+    if (device != NULL) {
+        /* Block number and timestamp are not exposed by this FreeRDP
+         * version; mr_rdpsnd carries them for telemetry only. */
+        (void)mr_rdpsnd_device_play(device->sink, 0u, 0u, data, size);
+    }
+    return 0u;
+}
+
+static void mr_freerdp_rdpsnd_close(rdpsndDevicePlugin *plugin)
+{
+    mr_freerdp_rdpsnd_device *device = (mr_freerdp_rdpsnd_device *)plugin;
+    if (device != NULL) {
+        (void)mr_rdpsnd_device_close(device->sink);
+    }
+}
+
+static void mr_freerdp_rdpsnd_free(rdpsndDevicePlugin *plugin)
+{
+    mr_freerdp_rdpsnd_device *device = (mr_freerdp_rdpsnd_device *)plugin;
+    size_t index;
+    if (device == NULL) {
+        return;
+    }
+    (void)pthread_mutex_lock(&device->backend->mutex);
+    for (index = 0u; index < MR_FREERDP_MAX_AUDIO_SINKS; ++index) {
+        if (device->backend->audio_sinks[index] == device->sink) {
+            device->backend->audio_sinks[index] = NULL;
+        }
+    }
+    (void)pthread_mutex_unlock(&device->backend->mutex);
+    (void)mr_rdpsnd_device_free(&device->sink);
+    free(device);
+}
+
+static UINT VCAPITYPE mr_freerdp_rdpsnd_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINTS entry)
+{
+    mr_freerdp_rdpsnd_device *device;
+    mr_freerdp_backend *backend;
+    mr_rdpsnd_config config;
+    mr_rdpsnd_callbacks callbacks;
+    size_t index;
+    int registered = 0;
+    if (entry == NULL || entry->rdpsnd == NULL || entry->pRegisterRdpsndDevice == NULL) {
+        return ERROR_INVALID_PARAMETER;
+    }
+    backend = mr_freerdp_backend_from_context(freerdp_rdpsnd_get_context(entry->rdpsnd));
+    if (backend == NULL) {
+        return ERROR_INTERNAL_ERROR;
+    }
+    device = (mr_freerdp_rdpsnd_device *)calloc(1u, sizeof(*device));
+    if (device == NULL) {
+        return CHANNEL_RC_NO_MEMORY;
+    }
+    device->backend = backend;
+    mr_rdpsnd_config_init(&config);
+    config.generation = backend->generation;
+    config.max_wave_bytes = MR_RDPSND_DEFAULT_MAX_WAVE_BYTES;
+    (void)pthread_mutex_lock(&backend->mutex);
+    config.initially_focused = backend->audio_focused ? 1u : 0u;
+    (void)pthread_mutex_unlock(&backend->mutex);
+    mr_rdpsnd_callbacks_init(&callbacks);
+    callbacks.on_pcm = mr_freerdp_rdpsnd_on_pcm;
+    callbacks.on_wave_confirm = mr_freerdp_rdpsnd_on_confirm;
+    if (mr_rdpsnd_device_create(&config, &callbacks, device, &device->sink) !=
+        MR_RDP_STATUS_OK) {
+        free(device);
+        return ERROR_INTERNAL_ERROR;
+    }
+    (void)pthread_mutex_lock(&backend->mutex);
+    for (index = 0u; index < MR_FREERDP_MAX_AUDIO_SINKS; ++index) {
+        if (backend->audio_sinks[index] == NULL) {
+            backend->audio_sinks[index] = device->sink;
+            registered = 1;
+            break;
+        }
+    }
+    /* Re-read under the same lock that set_audio_focused holds, so a focus
+     * change racing this entry cannot be lost. */
+    (void)mr_rdpsnd_device_set_focused(device->sink, backend->audio_focused ? 1u : 0u);
+    (void)pthread_mutex_unlock(&backend->mutex);
+    if (!registered) {
+        (void)mr_rdpsnd_device_free(&device->sink);
+        free(device);
+        return ERROR_INTERNAL_ERROR;
+    }
+    device->device.FormatSupported = mr_freerdp_rdpsnd_format_supported;
+    device->device.Open = mr_freerdp_rdpsnd_open;
+    device->device.GetVolume = mr_freerdp_rdpsnd_get_volume;
+    device->device.SetVolume = mr_freerdp_rdpsnd_set_volume;
+    device->device.Play = mr_freerdp_rdpsnd_play;
+    device->device.Close = mr_freerdp_rdpsnd_close;
+    device->device.Free = mr_freerdp_rdpsnd_free;
+    entry->pRegisterRdpsndDevice(entry->rdpsnd, &device->device);
+    return CHANNEL_RC_OK;
+}
+
+/* freerdp_client_context_new replaces the process-wide addin provider with
+ * the static channel table every time it runs, so the mRemote provider is
+ * re-registered right after it, under one lock, and delegates everything but
+ * its own rdpsnd subsystem back to that table. */
+static pthread_mutex_t mr_freerdp_addin_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static PVIRTUALCHANNELENTRY mr_freerdp_addin_provider(
+    LPCSTR name,
+    LPCSTR subsystem,
+    LPCSTR type,
+    DWORD flags)
+{
+    if (name != NULL && subsystem != NULL &&
+        strcmp(name, RDPSND_CHANNEL_NAME) == 0 &&
+        strcmp(subsystem, MR_FREERDP_RDPSND_SUBSYSTEM) == 0) {
+        PFREERDP_RDPSND_DEVICE_ENTRY entry = mr_freerdp_rdpsnd_entry;
+        return WINPR_FUNC_PTR_CAST(entry, PVIRTUALCHANNELENTRY);
+    }
+    return freerdp_channels_load_static_addin_entry(name, subsystem, type, flags);
+}
+
 static BOOL mr_freerdp_pre_connect(freerdp *instance)
 {
     mr_freerdp_backend *backend = mr_freerdp_backend_from_instance(instance);
     rdpSettings *settings;
-    const char *rdpsnd[] = { "rdpsnd", "sys:ios" };
+    const char *rdpsnd[] = { "rdpsnd", "sys:" MR_FREERDP_RDPSND_SUBSYSTEM };
+    const BOOL audio = (backend != NULL &&
+        (backend->channel_flags & MR_RDP_CHANNEL_FLAG_AUDIO) != 0u) ? TRUE : FALSE;
+    const BOOL clipboard = (backend != NULL &&
+        (backend->channel_flags & MR_RDP_CHANNEL_FLAG_CLIPBOARD) != 0u) ? TRUE : FALSE;
 
     if (backend == NULL || instance->context == NULL ||
         instance->context->settings == NULL || mr_freerdp_is_stopped(backend)) {
@@ -785,16 +1379,20 @@ static BOOL mr_freerdp_pre_connect(freerdp *instance)
      * one-argument registrations therefore preserve this sys:ios selection.
      * Register both forms because the server may negotiate the SVC or DVC.
      * The loader also enables RDPDR for rdpsnd and loads cliprdr/drdynvc plus
-     * the requested DVCs. AudioPlayback must be true for that path. */
-    if (!freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, TRUE) ||
+     * the requested DVCs. AudioPlayback must be true for that path. The
+     * subsystem is this adapter's own device (mr_freerdp_rdpsnd_entry), so the
+     * PCM reaches the app's per-session focus policy instead of FreeRDP's
+     * process-wide iOS AudioQueue. */
+    if (!freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, audio) ||
         !freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, FALSE) ||
-        !freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, TRUE) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, clipboard) ||
         !freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE) ||
         !freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate, TRUE) ||
-        !freerdp_client_add_static_channel(
-            settings, sizeof(rdpsnd) / sizeof(rdpsnd[0]), rdpsnd) ||
-        !freerdp_client_add_dynamic_channel(
-            settings, sizeof(rdpsnd) / sizeof(rdpsnd[0]), rdpsnd)) {
+        (audio &&
+         (!freerdp_client_add_static_channel(
+              settings, sizeof(rdpsnd) / sizeof(rdpsnd[0]), rdpsnd) ||
+          !freerdp_client_add_dynamic_channel(
+              settings, sizeof(rdpsnd) / sizeof(rdpsnd[0]), rdpsnd)))) {
         mr_freerdp_record_status(backend, MR_RDP_ERROR_BACKEND);
         return FALSE;
     }
@@ -874,6 +1472,18 @@ static BOOL mr_freerdp_post_connect(freerdp *instance)
         mr_freerdp_record_status(backend, MR_RDP_ERROR_LIMIT_EXCEEDED);
         return FALSE;
     }
+    {
+        mr_freerdp_pointer prototype;
+        memset(&prototype, 0, sizeof(prototype));
+        prototype.pointer.size = sizeof(mr_freerdp_pointer);
+        prototype.pointer.New = mr_freerdp_pointer_new;
+        prototype.pointer.Free = mr_freerdp_pointer_free;
+        prototype.pointer.Set = mr_freerdp_pointer_set;
+        prototype.pointer.SetNull = mr_freerdp_pointer_set_null;
+        prototype.pointer.SetDefault = mr_freerdp_pointer_set_default;
+        prototype.pointer.SetPosition = mr_freerdp_pointer_set_position;
+        graphics_register_pointer(context->graphics, &prototype.pointer);
+    }
     context->update->BeginPaint = mr_freerdp_begin_paint;
     context->update->EndPaint = mr_freerdp_end_paint;
     context->update->DesktopResize = mr_freerdp_desktop_resize;
@@ -897,6 +1507,8 @@ static void mr_freerdp_post_disconnect(freerdp *instance)
     mr_freerdp_backend *backend = mr_freerdp_backend_from_instance(instance);
     mr_freerdp_clipboard_probe *pending_probe;
     mr_freerdp_clipboard_probe *active_probe;
+    mr_freerdp_clipboard_offer *announce;
+    mr_freerdp_clipboard_offer *current;
     if (backend == NULL || instance->context == NULL) {
         return;
     }
@@ -918,9 +1530,12 @@ static void mr_freerdp_post_disconnect(freerdp *instance)
     backend->display_resize_pending = 0;
     memset(&backend->pending_display_resize, 0,
            sizeof(backend->pending_display_resize));
+    mr_freerdp_take_clipboard_state_locked(backend, &announce, &current);
     (void)pthread_mutex_unlock(&backend->mutex);
     mr_freerdp_clipboard_probe_destroy(pending_probe);
     mr_freerdp_clipboard_probe_destroy(active_probe);
+    mr_freerdp_clipboard_offer_destroy(announce);
+    mr_freerdp_clipboard_offer_destroy(current);
     if (backend->channels_subscribed) {
         PubSub_UnsubscribeChannelConnected(
             instance->context->pubSub,
@@ -1158,6 +1773,139 @@ static mr_rdp_status mr_freerdp_process_control_command(
     return MR_RDP_STATUS_OK;
 }
 
+/* Announces a pending offer or sends a pending text request. One piece of
+ * work per call, like the control commands, so the batch limit still bounds
+ * how long the run loop stays away from FreeRDP's own handles. */
+static mr_rdp_status mr_freerdp_process_clipboard_command(
+    mr_freerdp_backend *backend,
+    int *out_processed)
+{
+    mr_freerdp_clipboard_offer *announce = NULL;
+    mr_freerdp_clipboard_offer *replaced = NULL;
+    uint64_t expired_request = 0u;
+    uint64_t request = 0u;
+    uint64_t replaced_failed_id = 0u;
+    CliprdrClientContext *cliprdr = NULL;
+    UINT channel_status;
+
+    *out_processed = 0;
+    (void)pthread_mutex_lock(&backend->mutex);
+    if (backend->stop_requested || backend->input_failure_status != MR_RDP_STATUS_OK) {
+        (void)pthread_mutex_unlock(&backend->mutex);
+        return MR_RDP_STATUS_OK;
+    }
+    cliprdr = backend->cliprdr_ready ? backend->cliprdr : NULL;
+    if (backend->expired_text_request_id != 0u) {
+        expired_request = backend->expired_text_request_id;
+        backend->expired_text_request_id = 0u;
+    } else if (backend->offer_to_announce != NULL) {
+        announce = backend->offer_to_announce;
+        backend->offer_to_announce = NULL;
+        replaced = backend->current_offer;
+        if (replaced != NULL && backend->offer_awaiting_response) {
+            replaced_failed_id = replaced->offer_id;
+        }
+        backend->current_offer = cliprdr != NULL ? announce : NULL;
+        backend->offer_awaiting_response = cliprdr != NULL;
+    } else if (backend->pending_text_request_id != 0u) {
+        request = backend->pending_text_request_id;
+        backend->pending_text_request_id = 0u;
+        if (cliprdr != NULL) {
+            backend->outstanding_text_request_id = request;
+            backend->outstanding_text_request_since = GetTickCount64();
+        }
+    }
+    (void)pthread_mutex_unlock(&backend->mutex);
+
+    if (expired_request != 0u) {
+        *out_processed = 1;
+        mr_freerdp_emit_text(backend, expired_request, MR_RDP_ERROR_TIMEOUT, NULL, 0u);
+        return MR_RDP_STATUS_OK;
+    }
+    if (announce != NULL) {
+        *out_processed = 1;
+        mr_freerdp_emit_offer(
+            backend, replaced_failed_id, MR_RDP_CLIPBOARD_OFFER_FAILED,
+            MR_RDP_ERROR_INVALID_STATE);
+        mr_freerdp_clipboard_offer_destroy(replaced);
+        if (cliprdr == NULL || cliprdr->ClientFormatList == NULL) {
+            mr_freerdp_emit_offer(
+                backend, announce->offer_id, MR_RDP_CLIPBOARD_OFFER_FAILED,
+                MR_RDP_ERROR_INVALID_STATE);
+            if (cliprdr == NULL) {
+                mr_freerdp_clipboard_offer_destroy(announce);
+            }
+            return MR_RDP_STATUS_OK;
+        }
+        {
+            CLIPRDR_FORMAT format;
+            CLIPRDR_FORMAT_LIST format_list;
+            memset(&format, 0, sizeof(format));
+            memset(&format_list, 0, sizeof(format_list));
+            format.formatId = CF_UNICODETEXT;
+            format_list.common.msgType = CB_FORMAT_LIST;
+            format_list.numFormats = 1u;
+            format_list.formats = &format;
+            channel_status = cliprdr->ClientFormatList(cliprdr, &format_list);
+        }
+        if (channel_status != CHANNEL_RC_OK) {
+            uint64_t failed = 0u;
+            (void)pthread_mutex_lock(&backend->mutex);
+            if (backend->current_offer == announce) {
+                backend->current_offer = NULL;
+                backend->offer_awaiting_response = 0;
+                failed = announce->offer_id;
+            } else {
+                announce = NULL;
+            }
+            (void)pthread_mutex_unlock(&backend->mutex);
+            mr_freerdp_emit_offer(
+                backend, failed, MR_RDP_CLIPBOARD_OFFER_FAILED, MR_RDP_ERROR_BACKEND);
+            mr_freerdp_clipboard_offer_destroy(announce);
+        }
+        return MR_RDP_STATUS_OK;
+    }
+    if (request != 0u) {
+        CLIPRDR_FORMAT_DATA_REQUEST data_request;
+        *out_processed = 1;
+        if (cliprdr == NULL || cliprdr->ClientFormatDataRequest == NULL) {
+            (void)pthread_mutex_lock(&backend->mutex);
+            if (backend->outstanding_text_request_id == request) {
+                backend->outstanding_text_request_id = 0u;
+            }
+            (void)pthread_mutex_unlock(&backend->mutex);
+            mr_freerdp_emit_text(backend, request, MR_RDP_ERROR_INVALID_STATE, NULL, 0u);
+            return MR_RDP_STATUS_OK;
+        }
+        memset(&data_request, 0, sizeof(data_request));
+        data_request.common.msgType = CB_FORMAT_DATA_REQUEST;
+        data_request.requestedFormatId = CF_UNICODETEXT;
+        channel_status = cliprdr->ClientFormatDataRequest(cliprdr, &data_request);
+        if (channel_status != CHANNEL_RC_OK) {
+            int owned = 0;
+            (void)pthread_mutex_lock(&backend->mutex);
+            if (backend->outstanding_text_request_id == request) {
+                backend->outstanding_text_request_id = 0u;
+                owned = 1;
+            }
+            (void)pthread_mutex_unlock(&backend->mutex);
+            if (owned) {
+                mr_freerdp_emit_text(backend, request, MR_RDP_ERROR_BACKEND, NULL, 0u);
+            }
+        }
+    }
+    return MR_RDP_STATUS_OK;
+}
+
+static int mr_freerdp_has_pending_work_locked(const mr_freerdp_backend *backend)
+{
+    return backend->pending_clipboard_probe != NULL ||
+        backend->display_resize_pending ||
+        backend->offer_to_announce != NULL ||
+        backend->pending_text_request_id != 0u ||
+        backend->expired_text_request_id != 0u;
+}
+
 static mr_rdp_status mr_freerdp_enqueue_command(
     mr_freerdp_backend *backend,
     const mr_input_command *command)
@@ -1219,13 +1967,11 @@ static int mr_freerdp_dequeue_command(
                    &backend->command_queue, out_command)) {
         has_command = 1;
         if (mr_input_command_queue_count(&backend->command_queue) == 0u &&
-            backend->pending_clipboard_probe == NULL &&
-            !backend->display_resize_pending) {
+            !mr_freerdp_has_pending_work_locked(backend)) {
             (void)ResetEvent(backend->command_event);
         }
     } else {
-        if (backend->pending_clipboard_probe == NULL &&
-            !backend->display_resize_pending) {
+        if (!mr_freerdp_has_pending_work_locked(backend)) {
             (void)ResetEvent(backend->command_event);
         }
     }
@@ -1250,6 +1996,14 @@ static mr_rdp_status mr_freerdp_drain_commands(mr_freerdp_backend *backend)
         if (processed_control) {
             continue;
         }
+        control_status = mr_freerdp_process_clipboard_command(
+            backend, &processed_control);
+        if (control_status != MR_RDP_STATUS_OK) {
+            return control_status;
+        }
+        if (processed_control) {
+            continue;
+        }
         if (!mr_freerdp_dequeue_command(
                 backend, &command, &dequeue_status)) {
             return dequeue_status;
@@ -1258,6 +2012,13 @@ static mr_rdp_status mr_freerdp_drain_commands(mr_freerdp_backend *backend)
             sent = mr_freerdp_send_key_command(backend, &command.value.key);
         } else if (command.kind == MR_INPUT_COMMAND_POINTER) {
             sent = mr_freerdp_send_pointer_command(backend, &command.value.pointer);
+        } else if (command.kind == MR_INPUT_COMMAND_UNICODE) {
+            sent = backend->context != NULL && backend->context->input != NULL &&
+                freerdp_input_send_unicode_keyboard_event(
+                    backend->context->input, 0u, command.value.unicode.code_unit) &&
+                freerdp_input_send_unicode_keyboard_event(
+                    backend->context->input, KBD_FLAGS_RELEASE,
+                    command.value.unicode.code_unit);
         } else {
             sent = FALSE;
         }
@@ -1514,6 +2275,127 @@ static mr_rdp_status mr_freerdp_request_display_resize(
     return status;
 }
 
+static mr_rdp_status mr_freerdp_send_unicode(
+    mr_rdp_backend *base,
+    const mr_rdp_unicode_event *event)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    mr_input_command command;
+    memset(&command, 0, sizeof(command));
+    command.kind = MR_INPUT_COMMAND_UNICODE;
+    command.value.unicode = *event;
+    return mr_freerdp_enqueue_command(backend, &command);
+}
+
+static void mr_freerdp_set_audio_focused(mr_rdp_backend *base, int focused)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    size_t index;
+    /* Held across the sink calls: rdpsnd's Free unregisters under the same
+     * lock, so a sink cannot be freed between being read and being told. */
+    (void)pthread_mutex_lock(&backend->mutex);
+    backend->audio_focused = focused != 0;
+    for (index = 0u; index < MR_FREERDP_MAX_AUDIO_SINKS; ++index) {
+        if (backend->audio_sinks[index] != NULL) {
+            (void)mr_rdpsnd_device_set_focused(
+                backend->audio_sinks[index], focused ? 1u : 0u);
+        }
+    }
+    (void)pthread_mutex_unlock(&backend->mutex);
+}
+
+static mr_rdp_status mr_freerdp_offer_clipboard_text(
+    mr_rdp_backend *base,
+    const mr_rdp_backend_clipboard_offer *offer)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    mr_freerdp_clipboard_offer *copy;
+    mr_freerdp_clipboard_offer *superseded = NULL;
+    mr_rdp_status status = MR_RDP_STATUS_OK;
+    if (offer == NULL || offer->offer_id == 0u || offer->utf16le_bytes == NULL ||
+        offer->utf16le_byte_count == 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    copy = (mr_freerdp_clipboard_offer *)calloc(1u, sizeof(*copy));
+    if (copy == NULL) {
+        return MR_RDP_ERROR_OUT_OF_MEMORY;
+    }
+    copy->bytes = (uint8_t *)malloc(offer->utf16le_byte_count);
+    if (copy->bytes == NULL) {
+        free(copy);
+        return MR_RDP_ERROR_OUT_OF_MEMORY;
+    }
+    memcpy(copy->bytes, offer->utf16le_bytes, offer->utf16le_byte_count);
+    copy->byte_count = offer->utf16le_byte_count;
+    copy->offer_id = offer->offer_id;
+
+    (void)pthread_mutex_lock(&backend->mutex);
+    if (backend->stop_requested) {
+        status = MR_RDP_ERROR_STOPPED;
+    } else if (backend->input_failure_status != MR_RDP_STATUS_OK) {
+        status = backend->input_failure_status;
+    } else if (!backend->accepting_input || backend->cliprdr == NULL ||
+               !backend->cliprdr_ready) {
+        status = MR_RDP_ERROR_INVALID_STATE;
+    } else if (backend->pending_clipboard_probe != NULL ||
+               backend->active_clipboard_probe != NULL) {
+        status = MR_RDP_ERROR_LIMIT_EXCEEDED;
+    } else if (!SetEvent(backend->command_event)) {
+        status = MR_RDP_ERROR_BACKEND;
+    } else {
+        /* The newest copy wins; an older one not yet announced never was. */
+        superseded = backend->offer_to_announce;
+        backend->offer_to_announce = copy;
+        copy = NULL;
+    }
+    (void)pthread_mutex_unlock(&backend->mutex);
+    mr_freerdp_clipboard_offer_destroy(superseded);
+    mr_freerdp_clipboard_offer_destroy(copy);
+    return status;
+}
+
+static mr_rdp_status mr_freerdp_request_clipboard_text(
+    mr_rdp_backend *base,
+    uint64_t request_id)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    mr_rdp_status status = MR_RDP_STATUS_OK;
+    (void)pthread_mutex_lock(&backend->mutex);
+    if (backend->stop_requested) {
+        status = MR_RDP_ERROR_STOPPED;
+    } else if (backend->input_failure_status != MR_RDP_STATUS_OK) {
+        status = backend->input_failure_status;
+    } else if (!backend->accepting_input || backend->cliprdr == NULL ||
+               !backend->cliprdr_ready) {
+        status = MR_RDP_ERROR_INVALID_STATE;
+    } else if (backend->pending_text_request_id != 0u) {
+        status = MR_RDP_ERROR_LIMIT_EXCEEDED;
+    } else {
+        if (backend->outstanding_text_request_id != 0u) {
+            if (GetTickCount64() - backend->outstanding_text_request_since <
+                MR_RDP_CLIPBOARD_REQUEST_TIMEOUT_MS) {
+                status = MR_RDP_ERROR_LIMIT_EXCEEDED;
+            } else {
+                /* CLIPRDR responses carry no id: a late answer to the expired
+                 * request would be read as this one's, which is acceptable
+                 * only because both ask for the same remote clipboard. */
+                backend->expired_text_request_id = backend->outstanding_text_request_id;
+                backend->outstanding_text_request_id = 0u;
+                backend->outstanding_text_request_since = 0u;
+            }
+        }
+        if (status == MR_RDP_STATUS_OK) {
+            if (!SetEvent(backend->command_event)) {
+                status = MR_RDP_ERROR_BACKEND;
+            } else {
+                backend->pending_text_request_id = request_id;
+            }
+        }
+    }
+    (void)pthread_mutex_unlock(&backend->mutex);
+    return status;
+}
+
 static void mr_freerdp_destroy(mr_rdp_backend *base)
 {
     mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
@@ -1552,8 +2434,42 @@ static const mr_rdp_backend_vtable mr_freerdp_vtable = {
     .send_pointer = mr_freerdp_send_pointer,
     .start_clipboard_probe = mr_freerdp_start_clipboard_probe,
     .request_display_resize = mr_freerdp_request_display_resize,
+    .send_unicode = mr_freerdp_send_unicode,
+    .set_audio_focused = mr_freerdp_set_audio_focused,
+    .offer_clipboard_text = mr_freerdp_offer_clipboard_text,
+    .request_clipboard_text = mr_freerdp_request_clipboard_text,
     .destroy = mr_freerdp_destroy
 };
+
+/* The layout/type pair the server is told at connect. Japanese is the only
+ * profile under which Eisu/Kana reaching Windows as NonConvert/Convert is
+ * promised; automatic leaves FreeRDP's own defaults untouched. */
+static BOOL mr_freerdp_configure_keyboard(
+    rdpSettings *settings,
+    mr_rdp_keyboard_profile profile)
+{
+    switch (profile) {
+        case MR_RDP_KEYBOARD_JAPANESE:
+            return freerdp_settings_set_uint32(
+                       settings, FreeRDP_KeyboardLayout, (uint32_t)KBD_JAPANESE) &&
+                freerdp_settings_set_uint32(
+                    settings, FreeRDP_KeyboardType, (uint32_t)WINPR_KBD_TYPE_JAPANESE) &&
+                freerdp_settings_set_uint32(settings, FreeRDP_KeyboardSubType, 2u) &&
+                freerdp_settings_set_uint32(settings, FreeRDP_KeyboardFunctionKey, 12u);
+        case MR_RDP_KEYBOARD_US:
+            return freerdp_settings_set_uint32(
+                       settings, FreeRDP_KeyboardLayout, (uint32_t)KBD_US) &&
+                freerdp_settings_set_uint32(
+                    settings, FreeRDP_KeyboardType,
+                    (uint32_t)WINPR_KBD_TYPE_IBM_ENHANCED) &&
+                freerdp_settings_set_uint32(settings, FreeRDP_KeyboardSubType, 0u) &&
+                freerdp_settings_set_uint32(settings, FreeRDP_KeyboardFunctionKey, 12u);
+        case MR_RDP_KEYBOARD_AUTOMATIC:
+            return TRUE;
+        default:
+            return FALSE;
+    }
+}
 
 static mr_rdp_status mr_freerdp_configure_settings(
     mr_freerdp_backend *backend,
@@ -1579,15 +2495,7 @@ static mr_rdp_status mr_freerdp_configure_settings(
         !freerdp_settings_set_uint32(
             settings, FreeRDP_DesktopHeight, config->desktop_height) ||
         !freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32u) ||
-        !freerdp_settings_set_uint32(
-            settings, FreeRDP_KeyboardLayout, (uint32_t)KBD_JAPANESE) ||
-        !freerdp_settings_set_uint32(
-            settings, FreeRDP_KeyboardType,
-            (uint32_t)WINPR_KBD_TYPE_JAPANESE) ||
-        !freerdp_settings_set_uint32(
-            settings, FreeRDP_KeyboardSubType, 2u) ||
-        !freerdp_settings_set_uint32(
-            settings, FreeRDP_KeyboardFunctionKey, 12u) ||
+        !mr_freerdp_configure_keyboard(settings, config->keyboard_profile) ||
         !freerdp_settings_set_bool(settings, FreeRDP_SoftwareGdi, TRUE) ||
         !freerdp_settings_set_bool(
             settings, FreeRDP_ExternalCertificateManagement, TRUE) ||
@@ -1639,7 +2547,9 @@ mr_rdp_status mr_rdp_backend_create_default(
     if (config == NULL || host == NULL || host->present_certificate == NULL ||
         host->connected == NULL || host->present_frame == NULL ||
         host->channel_event == NULL || host->clipboard_probe_event == NULL ||
-        host->display_resize_event == NULL ||
+        host->display_resize_event == NULL || host->cursor_event == NULL ||
+        host->audio_packet == NULL || host->clipboard_remote_formats == NULL ||
+        host->clipboard_offer_event == NULL || host->clipboard_text == NULL ||
         out_backend == NULL) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
@@ -1654,6 +2564,8 @@ mr_rdp_status mr_rdp_backend_create_default(
     backend->expected_port = config->port;
     backend->callback_status = MR_RDP_STATUS_OK;
     backend->input_failure_status = MR_RDP_STATUS_OK;
+    backend->keyboard_profile = config->keyboard_profile;
+    backend->channel_flags = config->channel_flags;
     if (!mr_input_command_queue_init(
             &backend->command_queue, MR_INPUT_COMMAND_QUEUE_CAPACITY)) {
         free(backend);
@@ -1678,7 +2590,14 @@ mr_rdp_status mr_rdp_backend_create_default(
     entry_points.Size = sizeof(entry_points);
     entry_points.Version = RDP_CLIENT_INTERFACE_VERSION;
     entry_points.ContextSize = sizeof(mr_freerdp_context);
+    (void)pthread_mutex_lock(&mr_freerdp_addin_lock);
     backend->context = freerdp_client_context_new(&entry_points);
+    if (backend->context != NULL &&
+        freerdp_register_addin_provider(mr_freerdp_addin_provider, 0u) != CHANNEL_RC_OK) {
+        (void)pthread_mutex_unlock(&mr_freerdp_addin_lock);
+        goto fail;
+    }
+    (void)pthread_mutex_unlock(&mr_freerdp_addin_lock);
     if (backend->context == NULL) {
         goto fail;
     }
@@ -1704,8 +2623,8 @@ mr_rdp_status mr_rdp_backend_create_default(
 
     /* FreeRDP 3.31.1's public rdpsnd device vtable does not expose block
      * number/server timestamp and its core sends WaveConfirm around Play.
-     * Therefore this adapter selects the stock PCM-only sys:ios subsystem and
-     * deliberately does not wire mr_rdpsnd or emit a second confirmation. */
+     * The mremote subsystem therefore wires mr_rdpsnd for its focus gate
+     * only and never emits a confirmation of its own. */
     *out_backend = &backend->base;
     return MR_RDP_STATUS_OK;
 

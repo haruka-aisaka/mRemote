@@ -477,6 +477,28 @@ typedef struct test_case {
     test_function function;
 } test_case;
 
+static int test_unicode_tap_owes_nothing_and_drops_when_full(void)
+{
+    mr_input_command_queue queue;
+    mr_input_command unicode;
+    mr_input_command down = key_command(0x1du, 0u, 0u, MR_RDP_KEY_DOWN);
+    mr_input_command out;
+    memset(&unicode, 0, sizeof(unicode));
+    unicode.kind = MR_INPUT_COMMAND_UNICODE;
+    mr_rdp_unicode_event_init(&unicode.value.unicode);
+    unicode.value.unicode.code_unit = 0x3042u;
+    CHECK(mr_input_command_queue_init(&queue, 3u));
+    CHECK(mr_input_command_queue_enqueue(&queue, &down) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &unicode) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_reserved_count(&queue) == 1u);
+    /* The modifier's release slot is never given to typed text. */
+    CHECK(mr_input_command_queue_enqueue(&queue, &unicode) == MR_INPUT_ENQUEUE_DROPPED);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.kind == MR_INPUT_COMMAND_KEY);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) &&
+          out.kind == MR_INPUT_COMMAND_UNICODE && out.value.unicode.code_unit == 0x3042u);
+    return 1;
+}
+
 int main(void)
 {
     const test_case tests[] = {
@@ -496,7 +518,8 @@ int main(void)
         { "duplicate button reservation", test_duplicate_button_down_reuses_one_release_reservation },
         { "reset", test_reset_discards_commands_and_reservations },
         { "multiple reservations", test_multiple_release_reservations },
-        { "non-transition drop", test_non_transition_drops_only_without_coalescing_route }
+        { "non-transition drop", test_non_transition_drops_only_without_coalescing_route },
+        { "unicode tap", test_unicode_tap_owes_nothing_and_drops_when_full }
     };
     size_t index;
     for (index = 0u; index < sizeof(tests) / sizeof(tests[0]); ++index) {

@@ -34,6 +34,20 @@ typedef void (*mr_rdp_mock_config_observer)(
     uint32_t desktop_width,
     uint32_t desktop_height);
 
+typedef void (*mr_rdp_mock_unicode_observer)(
+    void *context,
+    const mr_rdp_unicode_event *event);
+typedef void (*mr_rdp_mock_audio_focus_observer)(void *context, int focused);
+typedef void (*mr_rdp_mock_session_config_observer)(
+    void *context,
+    mr_rdp_keyboard_profile keyboard_profile,
+    mr_rdp_channel_flags channel_flags);
+typedef void (*mr_rdp_mock_clipboard_offer_observer)(
+    void *context,
+    uint64_t offer_id,
+    const uint8_t *utf16le_bytes,
+    size_t utf16le_byte_count);
+
 typedef struct mr_rdp_mock_channel_transition {
     mr_rdp_channel_kind channel;
     mr_rdp_channel_transition transition;
@@ -55,6 +69,18 @@ typedef struct mr_rdp_mock_script {
     size_t channel_transition_count;
     mr_rdp_mock_clipboard_probe_observer on_start_clipboard_probe;
     mr_rdp_mock_display_resize_observer on_request_display_resize;
+    /* ABI 2. The cursor and audio views are borrowed through run returning
+     * and emitted once each after the desktop frame. A non-NULL remote
+     * clipboard announces text after connect and answers every request with
+     * it (count 0 with a non-NULL pointer answers with empty text). */
+    mr_rdp_mock_unicode_observer on_send_unicode;
+    mr_rdp_mock_audio_focus_observer on_set_audio_focused;
+    mr_rdp_mock_session_config_observer on_session_config;
+    mr_rdp_mock_clipboard_offer_observer on_offer_clipboard_text;
+    const mr_rdp_cursor_event *cursor_event;
+    const mr_rdp_audio_packet *audio_packet;
+    const uint8_t *remote_clipboard_utf16le;
+    size_t remote_clipboard_utf16le_byte_count;
 } mr_rdp_mock_script;
 
 void mr_rdp_mock_script_init(mr_rdp_mock_script *script);
