@@ -15,6 +15,9 @@ public protocol DesktopSession: RemoteSession {
     /// the same reason frames are not routed through the actor.
     nonisolated var inputSink: any DesktopInputSink { get }
 
+    /// The pointer image the server wants shown. Data plane, like frames.
+    nonisolated var cursorStore: RemoteCursorStore { get }
+
     /// The size the connection was negotiated at, before any dynamic resize.
     nonisolated var initialDesktopSize: (width: Int, height: Int) { get }
 

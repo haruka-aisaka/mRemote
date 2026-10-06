@@ -59,6 +59,8 @@ struct RDPNativeConnection: Sendable {
     let password: SecureBytes
     let desktopWidth: UInt32
     let desktopHeight: UInt32
+    let keyboardProfile: mr_rdp_keyboard_profile
+    let channelFlags: mr_rdp_channel_flags
 }
 
 /// One already-classified event from the native session, delivered in order.
@@ -109,7 +111,8 @@ final class RDPNativeSession: @unchecked Sendable {
         endpoint: RemoteEndpoint,
         trust: any TrustRepository,
         logger: RDPSessionLogger,
-        frameStore: LatestDesktopFrameStore
+        frameStore: LatestDesktopFrameStore,
+        cursorStore: RemoteCursorStore
     ) {
         self.generation = generation
         worker = DispatchQueue(
@@ -127,6 +130,7 @@ final class RDPNativeSession: @unchecked Sendable {
             trust: trust,
             logger: logger,
             frameStore: frameStore,
+            cursorStore: cursorStore,
             continuation: continuation
         )
     }
@@ -222,6 +226,7 @@ final class RDPNativeSession: @unchecked Sendable {
         callbacks.on_channel_event = rdpChannelCallback
         callbacks.on_clipboard_probe_event = nil
         callbacks.on_display_resize_event = rdpDisplayResizeCallback
+        callbacks.on_cursor = rdpCursorCallback
 
         var config = mr_rdp_config()
         mr_rdp_config_init(&config)
@@ -229,6 +234,8 @@ final class RDPNativeSession: @unchecked Sendable {
         config.port = connection.port
         config.desktop_width = connection.desktopWidth
         config.desktop_height = connection.desktopHeight
+        config.keyboard_profile = connection.keyboardProfile
+        config.channel_flags = connection.channelFlags
         config.username_length = connection.username.utf8.count
         config.domain_length = connection.domain.utf8.count
 
@@ -274,18 +281,21 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
     /// that is already attached keeps drawing into the same store when the
     /// connection comes back.
     private let frameStore: LatestDesktopFrameStore
+    private let cursorStore: RemoteCursorStore
 
     init(
         endpoint: RemoteEndpoint,
         trust: any TrustRepository,
         logger: RDPSessionLogger,
         frameStore: LatestDesktopFrameStore,
+        cursorStore: RemoteCursorStore,
         continuation: AsyncStream<RDPNativeEvent>.Continuation
     ) {
         self.endpoint = endpoint
         self.trust = trust
         self.logger = logger
         self.frameStore = frameStore
+        self.cursorStore = cursorStore
         self.continuation = continuation
     }
 
@@ -355,6 +365,10 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
         // Straight to the store: docs/architecture.md keeps frames off the
         // control plane, so this never touches the session actor.
         frameStore.submit(frame)
+    }
+
+    func receiveCursor(_ cursor: RemoteCursor) {
+        cursorStore.submit(cursor)
     }
 
     func rejectMalformedCertificate(generation: UInt64, challengeID: UInt64) {
@@ -674,4 +688,32 @@ private func rdpDisplayResizeCallback(
           event.height <= UInt32(MR_RDP_MAX_DESKTOP_DIMENSION)
     else { return }
     context.receiveDisplayResize(width: event.width, height: event.height)
+}
+
+private func rdpCursorCallback(
+    _ opaque: UnsafeMutableRawPointer?,
+    _ eventPointer: UnsafePointer<mr_rdp_cursor_event>?
+) {
+    guard let context = callbackContext(opaque), let eventPointer,
+          eventPointer.pointee.struct_size >= UInt32(MemoryLayout<mr_rdp_cursor_event>.size)
+    else { return }
+    let event = eventPointer.pointee
+    if event.kind == mr_rdp_cursor_kind(MR_RDP_CURSOR_HIDDEN) {
+        context.receiveCursor(.hidden)
+    } else if event.kind == mr_rdp_cursor_kind(MR_RDP_CURSOR_SHAPE) {
+        guard let bytes = event.bytes else { return }
+        // Copied and premultiplied here: the bridge's view ends with the
+        // callback.
+        let image = RemoteCursorImage(
+            straightBGRA: UnsafeRawBufferPointer(start: bytes, count: event.length),
+            width: Int(event.width),
+            height: Int(event.height),
+            sourceBytesPerRow: Int(event.stride),
+            hotspotX: Int(event.hotspot_x),
+            hotspotY: Int(event.hotspot_y)
+        )
+        context.receiveCursor(image.map(RemoteCursor.shape) ?? .systemDefault)
+    } else {
+        context.receiveCursor(.systemDefault)
+    }
 }

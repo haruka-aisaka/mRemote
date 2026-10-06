@@ -56,6 +56,13 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("診断") {
+                    NavigationLink("入力診断") {
+                        InputDiagnosticsView()
+                    }
+                    .accessibilityIdentifier("input-diagnostics-link")
+                }
+
                 Section {
                     NavigationLink("ライセンス") {
                         LicensesView()

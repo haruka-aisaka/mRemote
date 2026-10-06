@@ -28,6 +28,10 @@ final class AppEnvironment {
     /// disconnect, so without this they would be running with no way back to
     /// them.
     private(set) var runningSessions: [SessionWorkspaceModel] = []
+    /// A main-actor mirror of `SessionManager.focusedSessionID`, so a view
+    /// can gate input on it without awaiting the actor.
+    private(set) var focusedSessionID: SessionID?
+    let inputDiagnostics = InputDiagnosticsCenter()
 
     private let logger = AppLog.logger(.app)
 
@@ -181,6 +185,7 @@ final class AppEnvironment {
                 configuration: configuration
             )
             try await sessions.add(session)
+            focusedSessionID = await sessions.focusedSessionID
             await sessions.applyVisibilityPolicy()
             try? await repository.markConnected(id: profile.id)
             await refresh()
@@ -204,6 +209,7 @@ final class AppEnvironment {
     /// slot; focus moves to whatever is still connected.
     func endSession(_ id: SessionID) async {
         _ = await sessions.remove(id)
+        focusedSessionID = await sessions.focusedSessionID
         await sessions.applyVisibilityPolicy()
         runningSessions.removeAll { $0.id == id }
         presentedSession = nil
@@ -211,6 +217,16 @@ final class AppEnvironment {
 
     func present(_ model: SessionWorkspaceModel) {
         presentedSession = model
+        Task { await focus(model.id) }
+    }
+
+    /// Moves input focus. The view of the previous session sees its gate
+    /// close through `focusedSessionID` and releases what it held before the
+    /// new one can open.
+    func focus(_ id: SessionID?) async {
+        _ = await sessions.setFocus(to: id)
+        focusedSessionID = await sessions.focusedSessionID
+        await sessions.applyVisibilityPolicy()
     }
 }
 

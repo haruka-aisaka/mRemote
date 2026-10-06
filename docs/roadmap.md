@@ -160,6 +160,24 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 - local IME の候補/文字が混入せず、focus/lifecycle 操作で押下残りがない。
 - 手元の Apple JIS キーボードと利用可能なポインターで合格する。PC JIS と他のポインターは入手できた時点で追加検証とし、未検証であることを文書に残す。
 
+### 実装状況（2026-10-07、シミュレータ確認まで）
+
+実機確認を後回しにして Phase 6 まで先に進める方針になったため、ここでの「済み」は
+実装と自動試験、シミュレータでの起動確認までを指す。
+
+| 項目 | 状態 |
+|---|---|
+| GCKeyboard 経路と usage ごとの静的 source policy | 実装済み。`HardwareKeyboardMonitor` が `GCKeyboard.coalesced` を観測し、`InputCore` の `KeyboardEventArbiter` が usage ごとに一つの source だけを remote へ通す。基準 policy は全 usage が UIKit（Phase 0 の実機結果） |
+| `releaseAll` の source 横断 quarantine | 実装済み。解放時に物理的に押されていた usage を隔離し、その押下の up/再 down を送らない。gate を開くときは `GCKeyboard` の `isPressed` で隔離を照合し直す |
+| Japanese layout/type negotiation | 実装済み。bridge ABI 2 の `keyboard_profile`。日本語は 0x411/type 7、US は 0x409/type 4、自動は FreeRDP 既定のまま |
+| focused-session input gate | 実装済み。`SessionManager` の focus を `AppEnvironment.focusedSessionID` に写し、focus 外の surface は gate が閉じる |
+| scroll 反転の global override | 既存の `Inheritable<ScrollDirection>`（グローバル既定 + 接続先ごとの上書き）とセッション中の切替で満たしている |
+| remote cursor shape | 実装済み。bridge の pointer class が BGRA へ変換し、surface はリモート倍率で描いたレイヤーをローカルポインタに追従させ、システムポインタを隠す。サーバーからの位置ワープは iPadOS が許さないため無視する |
+| redacted input diagnostics | 実装済み。設定 > 入力診断。常時の集計と、非文字キー限定・メモリのみ・10 分で自動停止する記録 |
+| GCMouse | 採用しない。Phase 0 で UIKit の indirect pointer が左右ボタン・ドラッグ・ホイールを取れており、二経路を混ぜない原則（入力設計 8.1）に従う |
+| KEY-EISU-01/KEY-KANA-01 各 10 回（KeyEcho） | **未実施**。実機と Windows が必要 |
+| 押下残りの実機確認（focus/lifecycle） | **未実施**。自動試験（`KeyboardEventArbiterTests`）のみ |
+
 ## 6. Phase 4 — 複数セッション
 
 ### 実装

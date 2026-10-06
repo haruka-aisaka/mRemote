@@ -20,6 +20,7 @@ actor RDPRemoteSession: DesktopSession {
     nonisolated let id: SessionID
     nonisolated let profileID: ProfileID?
     nonisolated let frameStore = LatestDesktopFrameStore()
+    nonisolated let cursorStore = RemoteCursorStore()
     nonisolated let inputSink: any DesktopInputSink
     nonisolated let initialDesktopSize: (width: Int, height: Int)
     /// The concrete sink, kept separately so the actor can retarget it without
@@ -234,6 +235,27 @@ actor RDPRemoteSession: DesktopSession {
         logger.session("disp resize \(clampedWidth)x\(clampedHeight) accepted=\(accepted)")
     }
 
+    static func keyboardProfile(for layout: KeyboardLayoutPreference) -> mr_rdp_keyboard_profile {
+        switch layout {
+        case .japanese: return mr_rdp_keyboard_profile(MR_RDP_KEYBOARD_JAPANESE)
+        case .us: return mr_rdp_keyboard_profile(MR_RDP_KEYBOARD_US)
+        case .automatic: return mr_rdp_keyboard_profile(MR_RDP_KEYBOARD_AUTOMATIC)
+        }
+    }
+
+    /// A channel the profile turned off is not loaded at all, rather than
+    /// negotiated and then ignored.
+    static func channelFlags(for configuration: EffectiveConnectionConfiguration) -> mr_rdp_channel_flags {
+        var flags: mr_rdp_channel_flags = 0
+        if configuration.audioPlayback {
+            flags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_AUDIO)
+        }
+        if configuration.clipboardPolicy != .disabled {
+            flags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_CLIPBOARD)
+        }
+        return flags
+    }
+
     static func clampDimension(_ value: Int, roundToEven: Bool) -> Int {
         var clamped = min(max(value, 200), 8_192)
         if roundToEven, !clamped.isMultiple(of: 2) { clamped -= 1 }
@@ -268,7 +290,8 @@ actor RDPRemoteSession: DesktopSession {
             endpoint: configuration.endpoint,
             trust: trust,
             logger: logger,
-            frameStore: frameStore
+            frameStore: frameStore,
+            cursorStore: cursorStore
         )
         native = session
         pointerSink.attach(session)
@@ -290,7 +313,9 @@ actor RDPRemoteSession: DesktopSession {
             domain: credential.domain ?? "",
             password: SecureBytes(credential.password),
             desktopWidth: UInt32(initialDesktopSize.width),
-            desktopHeight: UInt32(initialDesktopSize.height)
+            desktopHeight: UInt32(initialDesktopSize.height),
+            keyboardProfile: Self.keyboardProfile(for: configuration.keyboardLayout),
+            channelFlags: Self.channelFlags(for: configuration)
         ))
     }
 
@@ -435,6 +460,7 @@ actor RDPRemoteSession: DesktopSession {
             emit(.stateChanged(machine.state, generation: machine.generation))
         }
         frameStore.discardPending()
+        cursorStore.reset()
         for continuation in continuations.values {
             continuation.finish()
         }

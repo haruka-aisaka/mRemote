@@ -1,4 +1,5 @@
 import SwiftUI
+import InputCore
 import SessionCore
 
 /// Bridges the Metal surface into the SwiftUI workspace.
@@ -8,6 +9,7 @@ import SessionCore
 /// unrelated state change in the workspace.
 struct RemoteDesktopSurface: UIViewRepresentable {
     let frameStore: LatestDesktopFrameStore
+    let cursorStore: RemoteCursorStore?
     let inputSink: (any DesktopInputSink)?
     let scaleMode: InitialScale
     let scrollDirection: ScrollDirection
@@ -15,12 +17,15 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     /// view releases whatever it thinks is held when this goes false, which is
     /// what keeps a button from staying down on the server.
     let isInputEnabled: Bool
+    let isInputTraceEnabled: Bool
     let onRenderSizeChange: (Int, Int) -> Void
     let onDesktopSizeChange: (Int, Int) -> Void
+    let onInputDiagnostics: (InputDiagnostics) -> Void
 
     func makeUIView(context: Context) -> RemoteDesktopView {
         let view = RemoteDesktopView(
             frameStore: frameStore,
+            cursorStore: cursorStore,
             scaleMode: scaleMode,
             scrollDirection: scrollDirection
         )
@@ -36,7 +41,9 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     private func configure(_ view: RemoteDesktopView) {
         view.onRenderSizeChange = onRenderSizeChange
         view.onDesktopSizeChange = onDesktopSizeChange
+        view.onInputDiagnostics = onInputDiagnostics
         view.inputSink = inputSink
+        view.setInputTraceEnabled(isInputTraceEnabled)
         view.setScrollDirection(scrollDirection)
         view.setInputEnabled(isInputEnabled)
     }
@@ -49,7 +56,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
         // modifier left down would turn every later keystroke into a
         // shortcut.
         view.releaseHeldButtons()
-        view.releaseHeldKeys()
+        view.releaseHeldKeys(reason: .surfaceRemoved)
         view.detachFromFrameStore()
     }
 }

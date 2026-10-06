@@ -64,18 +64,26 @@ struct SessionWorkspaceView: View {
         if let frameStore = model.frameStore {
             RemoteDesktopSurface(
                 frameStore: frameStore,
+                cursorStore: model.cursorStore,
                 inputSink: model.inputSink,
                 scaleMode: model.runtime.scale,
                 scrollDirection: model.runtime.scrollDirection,
                 // Input is gated on both halves of docs/architecture.md
                 // section 10: the session must be able to deliver it, and the
                 // scene must be the one the user is looking at.
-                isInputEnabled: model.state.acceptsInput && scenePhase == .active,
+                // A third: the session must be the focused one, so a surface
+                // left behind during a switch can never type into it.
+                isInputEnabled: model.state.acceptsInput && scenePhase == .active
+                    && model.isFocused,
+                isInputTraceEnabled: environment.inputDiagnostics.isTraceRequested,
                 onRenderSizeChange: { width, height in
                     model.renderSizeChanged(width: width, height: height)
                 },
                 onDesktopSizeChange: { width, height in
                     model.desktopSizeChanged(width: width, height: height)
+                },
+                onInputDiagnostics: { diagnostics in
+                    environment.inputDiagnostics.update(diagnostics)
                 }
             )
             .ignoresSafeArea()

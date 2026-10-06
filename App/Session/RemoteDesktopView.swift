@@ -23,10 +23,16 @@ import SessionCore
 /// or `UITextInput`, and it does not forward a press it handled to `super`.
 /// That combination is what keeps iPadOS from consuming 英数/かな for its own
 /// input-source switcher (`KEY-IME-02`), so they can reach Windows as
-/// 無変換/変換 instead. `GCKeyboard` and the per-usage source arbitration
-/// remain Phase 3; this is UIKit only.
+/// 無変換/変換 instead. `GCKeyboard` reports reach the same
+/// `KeyboardEventArbiter`, which binds each usage to one source so a press
+/// seen by both is still sent once (KEY-04).
+///
+/// The server's cursor is drawn here too, as a layer that follows the local
+/// pointer, with the system pointer hidden while a shape is shown: iPadOS
+/// cannot be given an arbitrary bitmap as its pointer.
 @MainActor
-final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate {
+final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate,
+    UIPointerInteractionDelegate {
     private static let shaderSource = """
     #include <metal_stdlib>
     using namespace metal;
@@ -77,6 +83,9 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     var onRenderSizeChange: ((Int, Int) -> Void)?
     var onTransformChange: ((ViewportTransform) -> Void)?
     var onDiagnostic: ((String) -> Void)?
+    /// Called whenever a key observation changed the counters. The snapshot
+    /// carries no characters; see `InputDiagnostics`.
+    var onInputDiagnostics: ((InputDiagnostics) -> Void)?
 
     /// Where pointer input goes. Set by the surface once the session exists;
     /// nil means the events are tracked locally but sent nowhere.
@@ -92,6 +101,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     private let frameStore: LatestDesktopFrameStore
+    private let cursorStore: RemoteCursorStore?
+    private let cursorLayer = CALayer()
+    private var pointerInteraction: UIPointerInteraction?
+    private var hoverLocation: CGPoint?
+    private var remoteCursor: RemoteCursor = .systemDefault
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private var desktopTexture: MTLTexture?
@@ -104,7 +118,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     private var zoomOrigin: Double = 1
     private var hasPresentedAFrame = false
     private var pointerRouter: PointerInputRouter
-    private var keyboardRouter = KeyboardInputRouter()
+    private var keyboard = KeyboardEventArbiter()
     private var keyRepeatTimer: Timer?
     /// Buttons the platform reports as held right now. Kept so a touch phase
     /// that carries no button mask does not read as "everything released".
@@ -117,6 +131,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     init(
         frameStore: LatestDesktopFrameStore,
+        cursorStore: RemoteCursorStore?,
         scaleMode: InitialScale,
         scrollDirection: ScrollDirection
     ) {
@@ -138,6 +153,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         }
 
         self.frameStore = frameStore
+        self.cursorStore = cursorStore
         self.commandQueue = commandQueue
         self.pipeline = pipeline
         self.scaleMode = scaleMode
@@ -201,7 +217,18 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         hover.delegate = self
         addGestureRecognizer(hover)
 
+        let pointer = UIPointerInteraction(delegate: self)
+        addInteraction(pointer)
+        pointerInteraction = pointer
+
+        cursorLayer.isHidden = true
+        cursorLayer.contentsGravity = .resize
+        cursorLayer.magnificationFilter = .nearest
+        cursorLayer.zPosition = 1
+        layer.addSublayer(cursorLayer)
+
         attachToFrameStore()
+        attachToCursorStore()
     }
 
     required init(coder: NSCoder) {
@@ -219,6 +246,14 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     func detachFromFrameStore() {
         frameStore.setSignal(nil)
+        cursorStore?.setSignal(nil)
+    }
+
+    private func attachToCursorStore() {
+        cursorStore?.setSignal { [weak self] in
+            Task { @MainActor in self?.applyRemoteCursor() }
+        }
+        applyRemoteCursor()
     }
 
     deinit {
@@ -227,6 +262,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // repeat timer needs nothing: it never repeats, it holds only a weak
         // reference back here, and it is re-armed rather than reused.
         frameStore.setSignal(nil)
+        cursorStore?.setSignal(nil)
     }
 
     // MARK: - Presentation
@@ -356,6 +392,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             pointerRouter.forgetPosition()
         }
         onTransformChange?(viewportTransform)
+        positionCursorLayer()
     }
 
     @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
@@ -421,12 +458,28 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         }
         isInputEnabled = enabled
         if enabled {
+            if let held = HardwareKeyboardMonitor.shared.physicallyHeldUsages() {
+                keyboard.reconcile(physicallyHeld: held)
+            }
+            apply(keyboard.setGate(open: true))
             captureKeyboardIfPossible()
         } else {
             releaseHeldButtons()
-            releaseHeldKeys()
+            stopKeyRepeat()
+            send(keyboard.setGate(open: false))
             _ = resignFirstResponder()
         }
+        publishDiagnostics()
+    }
+
+    func setInputTraceEnabled(_ enabled: Bool) {
+        guard enabled != keyboard.diagnostics.isTraceEnabled else { return }
+        keyboard.setTraceEnabled(enabled)
+        publishDiagnostics()
+    }
+
+    private func publishDiagnostics() {
+        onInputDiagnostics?(keyboard.diagnostics)
     }
 
     func releaseHeldButtons() {
@@ -435,7 +488,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     func setKeyRepeat(_ settings: KeyRepeatSettings) {
-        apply(keyboardRouter.setRepeatSettings(settings))
+        apply(keyboard.setRepeatSettings(settings))
     }
 
     private func deliver(_ events: [PointerInput]) {
@@ -452,8 +505,12 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     @objc private func handleHover(_ recognizer: UIHoverGestureRecognizer) {
         switch recognizer.state {
         case .began, .changed:
+            hoverLocation = recognizer.location(in: self)
+            positionCursorLayer()
             deliver(pointerRouter.moved(to: viewportPoint(recognizer.location(in: self))))
         case .ended, .cancelled:
+            hoverLocation = nil
+            positionCursorLayer()
             // The pointer left the surface. Nothing is sent - the remote
             // pointer simply stays where it was - but a button held on the way
             // out has to be released.
@@ -527,6 +584,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     ) -> Bool {
         guard touches.contains(where: { $0.type == .indirectPointer }) else { return false }
         let location = touches.first { $0.type == .indirectPointer }?.location(in: self)
+        if let location {
+            // A drag carries the pointer with it; hover does not fire then.
+            hoverLocation = location
+            positionCursorLayer()
+        }
         // An ending touch releases everything rather than trusting the mask,
         // which may still name the button that is lifting. On a two-button
         // chord that releases one button, this releases both and the next
@@ -578,7 +640,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         // A cancelled press has no reliable up of its own, so everything held
         // is released rather than only what this event names.
-        releaseHeldKeys()
+        releaseHeldKeys(reason: .pressesCancelled)
         let unhandled = presses.filter { $0.key == nil }
         if !unhandled.isEmpty { super.pressesCancelled(unhandled, with: event) }
     }
@@ -594,21 +656,42 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     ) {
         for press in presses {
             guard let key = press.key else { continue }
-            apply(keyboardRouter.receive(
+            apply(keyboard.receive(
                 usage: UInt16(truncatingIfNeeded: key.keyCode.rawValue),
-                transition: transition
+                transition: transition,
+                from: .uiKit
             ))
         }
+        publishDiagnostics()
         let unhandled = presses.filter { $0.key == nil }
         if !unhandled.isEmpty { superImplementation(unhandled, event) }
     }
 
     private func apply(_ output: KeyboardRouterOutput) {
+        send(output)
+        guard output.restartsRepeat else { return }
+        armKeyRepeat(after: keyboard.repeatSettings.initialDelay)
+    }
+
+    private func send(_ output: KeyboardRouterOutput) {
         for key in output.events {
             inputSink?.send(key)
         }
-        guard output.restartsRepeat else { return }
-        armKeyRepeat(after: keyboardRouter.repeatSettings.initialDelay)
+    }
+
+    private func receiveGameController(usage: UInt16, pressed: Bool) {
+        apply(keyboard.receive(
+            usage: usage,
+            transition: pressed ? .down : .up,
+            from: .gameController
+        ))
+        publishDiagnostics()
+    }
+
+    private func gameControllerKeyboardDisconnected() {
+        stopKeyRepeat()
+        send(keyboard.sourceDisconnected(.gameController))
+        publishDiagnostics()
     }
 
     /// One pending fire at a time, replaced rather than stacked. `.common` so
@@ -616,7 +699,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     private func armKeyRepeat(after delay: TimeInterval) {
         keyRepeatTimer?.invalidate()
         keyRepeatTimer = nil
-        guard isInputEnabled, keyboardRouter.repeatTarget != nil else { return }
+        guard isInputEnabled, keyboard.repeatTarget != nil else { return }
         let timer = Timer(timeInterval: delay, repeats: false) { _ in
             MainActor.assumeIsolated { [weak self] in self?.fireKeyRepeat() }
         }
@@ -628,22 +711,24 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // Re-checked at every fire rather than trusted from arming time: a
         // release or a scene change can happen underneath a pending timer, and
         // a repeat must never outlive the down it extends.
-        guard isInputEnabled, let key = keyboardRouter.repeatDown() else {
+        guard isInputEnabled, let key = keyboard.repeatDown() else {
             keyRepeatTimer?.invalidate()
             keyRepeatTimer = nil
             return
         }
         inputSink?.send(key)
-        armKeyRepeat(after: keyboardRouter.repeatSettings.interval)
+        armKeyRepeat(after: keyboard.repeatSettings.interval)
     }
 
-    func releaseHeldKeys() {
+    private func stopKeyRepeat() {
         keyRepeatTimer?.invalidate()
         keyRepeatTimer = nil
-        let output = keyboardRouter.releaseAll()
-        for key in output.events {
-            inputSink?.send(key)
-        }
+    }
+
+    func releaseHeldKeys(reason: InputReleaseReason = .focusLost) {
+        stopKeyRepeat()
+        send(keyboard.releaseAll(reason: reason))
+        publishDiagnostics()
     }
 
     override func resignFirstResponder() -> Bool {
@@ -651,18 +736,94 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         let result = super.resignFirstResponder()
         // Losing the responder means no more `pressesEnded`, so anything held
         // has to be released now or it stays down on the server.
-        if wasFirstResponder, result { releaseHeldKeys() }
+        if wasFirstResponder, result { releaseHeldKeys(reason: .focusLost) }
         return result
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
         guard window != nil else {
+            HardwareKeyboardMonitor.shared.release(self)
             releaseHeldButtons()
-            releaseHeldKeys()
+            releaseHeldKeys(reason: .surfaceRemoved)
             return
         }
+        HardwareKeyboardMonitor.shared.claim(self, target: .init(
+            onKey: { [weak self] usage, pressed in
+                self?.receiveGameController(usage: usage, pressed: pressed)
+            },
+            onDisconnect: { [weak self] in
+                self?.gameControllerKeyboardDisconnected()
+            }
+        ))
         captureKeyboardIfPossible()
+    }
+
+    // MARK: - Remote cursor
+
+    private func applyRemoteCursor() {
+        let cursor = cursorStore?.cursor ?? .systemDefault
+        guard cursor != remoteCursor else { return }
+        remoteCursor = cursor
+        if case .shape(let image) = cursor {
+            cursorLayer.contents = Self.cgImage(image)
+        } else {
+            cursorLayer.contents = nil
+        }
+        pointerInteraction?.invalidate()
+        positionCursorLayer()
+    }
+
+    /// The remote cursor is drawn at the remote desktop's scale, so a 32-pixel
+    /// arrow shrinks with the desktop when fitted and grows when zoomed - the
+    /// same size relative to the remote content as on a real monitor.
+    private func positionCursorLayer() {
+        guard case .shape(let image) = remoteCursor, let hoverLocation else {
+            cursorLayer.isHidden = true
+            return
+        }
+        let transform = viewportTransform
+        let scale = transform.contentRect.width / Double(max(transform.desktopWidth, 1))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        cursorLayer.frame = CGRect(
+            x: hoverLocation.x - CGFloat(Double(image.hotspotX) * scale),
+            y: hoverLocation.y - CGFloat(Double(image.hotspotY) * scale),
+            width: CGFloat(Double(image.width) * scale),
+            height: CGFloat(Double(image.height) * scale)
+        )
+        cursorLayer.isHidden = false
+        CATransaction.commit()
+    }
+
+    private static func cgImage(_ image: RemoteCursorImage) -> CGImage? {
+        guard let provider = CGDataProvider(data: image.pixels as CFData) else { return nil }
+        return CGImage(
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: image.bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue
+                | CGImageAlphaInfo.premultipliedFirst.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
+    }
+
+    func pointerInteraction(
+        _ interaction: UIPointerInteraction,
+        styleFor region: UIPointerRegion
+    ) -> UIPointerStyle? {
+        switch remoteCursor {
+        case .systemDefault: return nil
+        // Hidden either way: the remote shape is drawn by the layer, and a
+        // server that hid its pointer gets no pointer here either.
+        case .hidden, .shape: return .hidden()
+        }
     }
 
     private func captureKeyboardIfPossible() {

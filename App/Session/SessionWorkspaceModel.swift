@@ -82,6 +82,12 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// without pretending to have a mouse.
     var inputSink: (any DesktopInputSink)? { desktop?.inputSink }
 
+    var cursorStore: RemoteCursorStore? { desktop?.cursorStore }
+
+    /// docs/input-design.md section 5: only the focused session may receive
+    /// input. Mirrored from `SessionManager` by the environment.
+    var isFocused: Bool { environment.focusedSessionID == id }
+
     var showsDesktop: Bool { desktop != nil && (state == .connected || desktopSize != nil) }
 
     func start() async {
