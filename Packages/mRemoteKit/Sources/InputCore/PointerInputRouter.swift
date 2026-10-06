@@ -40,6 +40,18 @@ public struct PointerInputRouter: Sendable {
         return [.move(pixel)]
     }
 
+    /// A move to a desktop pixel computed elsewhere: the on-screen trackpad
+    /// moves the pointer relatively, so there is no local point to map.
+    public mutating func moved(toPixel pixel: PixelPoint) -> [PointerInput] {
+        guard !hasLastPixel || pixel != lastPixel else { return [] }
+        lastPixel = pixel
+        hasLastPixel = true
+        return [.move(pixel)]
+    }
+
+    /// Where the remote pointer is, when this side has said so.
+    public var knownPixel: PixelPoint? { hasLastPixel ? lastPixel : nil }
+
     /// The full set of buttons now held. Reporting the set rather than one
     /// transition is what makes a chord change safe: the platform tells us
     /// what is pressed now, and anything this side thought was pressed and is

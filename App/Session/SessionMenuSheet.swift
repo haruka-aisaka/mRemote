@@ -109,6 +109,14 @@ struct SessionMenuSheet: View {
                         Text("反転").tag(ScrollDirection.reversed)
                     }
                     .accessibilityIdentifier("session-scroll-picker")
+                    // 自動 is the foldable's laptop posture; the other two
+                    // let any phone use the deck, or a folded one do without.
+                    Picker("画面下半分のキーボードとトラックパッド", selection: $model.laptopDeckPreference) {
+                        Text("折り曲げたとき").tag(LaptopDeckPreference.automatic)
+                        Text("常に表示").tag(LaptopDeckPreference.always)
+                        Text("表示しない").tag(LaptopDeckPreference.never)
+                    }
+                    .accessibilityIdentifier("session-laptop-deck-picker")
                 }
 
                 if model.clipboardPolicy != .disabled {

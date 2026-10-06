@@ -13,6 +13,8 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     let inputSink: (any DesktopInputSink)?
     let scaleMode: InitialScale
     let scrollDirection: ScrollDirection
+    /// Where the laptop deck finds this surface, when there is one.
+    let laptopChannel: LaptopDeckChannel?
     /// False while the scene is inactive or the session is not connected. The
     /// view releases whatever it thinks is held when this goes false, which is
     /// what keeps a button from staying down on the server.
@@ -40,6 +42,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     }
 
     private func configure(_ view: RemoteDesktopView) {
+        laptopChannel?.surface = view
         view.onRenderSizeChange = onRenderSizeChange
         view.onDesktopSizeChange = onDesktopSizeChange
         view.onInputDiagnostics = onInputDiagnostics

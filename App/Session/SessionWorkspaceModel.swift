@@ -41,6 +41,10 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// it coming back: pasting it straight back needs no new offer, because
     /// the remote still holds it (docs/architecture.md section 9).
     private var lastReceivedText: String?
+    /// Whether the laptop deck - keyboard and trackpad on the lower half -
+    /// is shown. Per session and not saved: whether it is wanted depends on
+    /// how the device is being held, not on the host.
+    var laptopDeckPreference: LaptopDeckPreference = .automatic
     /// Built once in `init`; never replaced, so observation is not needed on
     /// the property itself - the controller is observable on its own.
     @ObservationIgnored private(set) var softwareKeyboard: SoftwareKeyboardController!
@@ -454,5 +458,21 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         eventTask?.cancel()
         eventTask = nil
         await environment.endSession(id)
+    }
+}
+
+/// When the laptop deck takes the lower half of the screen.
+enum LaptopDeckPreference: Hashable, CaseIterable {
+    /// In a foldable's laptop posture: half open, hinge across the screen.
+    case automatic
+    case always
+    case never
+
+    func showsDeck(posture: HingePosture, isPortrait: Bool) -> Bool {
+        switch self {
+        case .automatic: return posture == .partiallyOpen && isPortrait
+        case .always: return true
+        case .never: return false
+        }
     }
 }

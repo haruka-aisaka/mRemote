@@ -47,6 +47,7 @@ let package = Package(
         .testTarget(name: "PersistenceTests", dependencies: ["Persistence"]),
         .testTarget(name: "AppleAdaptersTests", dependencies: ["AppleAdapters"]),
         .testTarget(name: "RDPProtocolTests", dependencies: ["RDPProtocol"]),
-        .testTarget(name: "InputCoreTests", dependencies: ["InputCore"]),
+        // RDPProtocol only to check that every on-screen key has a scan code.
+        .testTarget(name: "InputCoreTests", dependencies: ["InputCore", "RDPProtocol"]),
     ]
 )

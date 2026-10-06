@@ -123,6 +123,14 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// Buttons the platform reports as held right now. Kept so a touch phase
     /// that carries no button mask does not read as "everything released".
     private var indirectButtons: Set<PointerButton> = []
+    /// Buttons held on the laptop deck's trackpad, which has its own: a
+    /// tap-to-click there must not let go of a drag held with its button.
+    private var laptopButtons: Set<PointerButton> = []
+    /// Where the laptop deck's trackpad put the remote pointer. Kept as a
+    /// desktop pixel rather than a local point so a zoom or a resize redraws
+    /// the cursor where the pointer is, not where it was on screen.
+    private var relativePointerPixel: PixelPoint?
+    private var relativeMotion = RelativePointerMotion()
     /// False until the surface is configured, so nothing is delivered before
     /// the workspace has said whether the session can carry it.
     private var isInputEnabled = false
@@ -392,6 +400,8 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             // longer exists, so the next move must be sent even if it lands on
             // the same number.
             pointerRouter.forgetPosition()
+            relativePointerPixel = nil
+            relativeMotion.reset()
         }
         onTransformChange?(viewportTransform)
         positionCursorLayer()
@@ -486,6 +496,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     func releaseHeldButtons() {
         indirectButtons = []
+        laptopButtons = []
         deliver(pointerRouter.releaseAll())
     }
 
@@ -508,6 +519,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         switch recognizer.state {
         case .began, .changed:
             hoverLocation = recognizer.location(in: self)
+            relativePointerPixel = nil
             positionCursorLayer()
             deliver(pointerRouter.moved(to: viewportPoint(recognizer.location(in: self))))
         case .ended, .cancelled:
@@ -589,6 +601,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         if let location {
             // A drag carries the pointer with it; hover does not fire then.
             hoverLocation = location
+            relativePointerPixel = nil
             positionCursorLayer()
         }
         // An ending touch releases everything rather than trusting the mask,
@@ -614,6 +627,88 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // it, so this is only reached with real hardware attached.
         if mask.contains(.button(3)) { buttons.insert(.middle) }
         return buttons
+    }
+
+    // MARK: - Laptop deck
+
+    /// Keys from the laptop deck's keyboard. Downs are dropped while the gate
+    /// is closed; ups never are, because an up the host is owed has to arrive
+    /// whatever happened to the gate in between.
+    func sendLaptopKeys(_ events: [KeyboardInput]) {
+        guard let inputSink else { return }
+        for event in events where event.transition == .up || isInputEnabled {
+            inputSink.send(event)
+        }
+    }
+
+    /// Finger travel on the deck's trackpad, in points.
+    func moveRemotePointer(dx: Double, dy: Double, speed: Double) {
+        guard isInputEnabled, desktopSize.width > 1 || desktopSize.height > 1 else { return }
+        let start = relativePointerPixel
+            ?? pointerRouter.knownPixel
+            ?? PixelPoint(x: desktopSize.width / 2, y: desktopSize.height / 2)
+        let pixel = relativeMotion.next(
+            from: start,
+            dx: dx,
+            dy: dy,
+            pixelsPerPoint: 1 / max(viewportTransform.scale, 0.01),
+            speed: speed,
+            desktopWidth: desktopSize.width,
+            desktopHeight: desktopSize.height
+        )
+        relativePointerPixel = pixel
+        hoverLocation = nil
+        deliver(pointerRouter.moved(toPixel: pixel))
+        keepRelativePointerInView()
+        positionCursorLayer()
+    }
+
+    func setLaptopButton(_ button: PointerButton, pressed: Bool) {
+        if pressed {
+            laptopButtons.insert(button)
+        } else {
+            laptopButtons.remove(button)
+        }
+        anchorRelativePointer()
+        deliver(pointerRouter.buttonsChanged(to: laptopButtons))
+    }
+
+    /// Tap to click: down and up around whatever the deck's buttons hold.
+    func clickRemote(_ button: PointerButton) {
+        anchorRelativePointer()
+        deliver(pointerRouter.buttonsChanged(to: laptopButtons.union([button])))
+        deliver(pointerRouter.buttonsChanged(to: laptopButtons))
+    }
+
+    func scrollRemote(dx: Double, dy: Double) {
+        deliver(pointerRouter.scrolled(horizontal: dx, vertical: dy))
+    }
+
+    /// A click before the trackpad ever moved lands where the cursor is
+    /// drawn, not at the desktop's origin.
+    private func anchorRelativePointer() {
+        guard pointerRouter.knownPixel == nil else { return }
+        let centre = PixelPoint(x: desktopSize.width / 2, y: desktopSize.height / 2)
+        relativePointerPixel = centre
+        deliver(pointerRouter.moved(toPixel: centre))
+        positionCursorLayer()
+    }
+
+    /// Zoomed in, the view follows the pointer the way a magnifier does, so
+    /// the trackpad can reach the whole desktop without a pan gesture.
+    private func keepRelativePointerInView() {
+        guard let relativePointerPixel, zoom > 1 || scaleMode == .oneToOne else { return }
+        let point = viewportTransform.localPoint(fromRemote: relativePointerPixel)
+        let margin = 24.0
+        var shift = ViewportPoint.zero
+        if point.x < margin { shift.x = margin - point.x }
+        if point.x > bounds.width - margin { shift.x = bounds.width - margin - point.x }
+        if point.y < margin { shift.y = margin - point.y }
+        if point.y > bounds.height - margin { shift.y = bounds.height - margin - point.y }
+        guard shift != .zero else { return }
+        pan = ViewportPoint(x: pan.x + shift.x, y: pan.y + shift.y)
+        updateTransform()
+        setNeedsDisplay()
     }
 
     // MARK: - Remote keyboard
@@ -780,23 +875,68 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// arrow shrinks with the desktop when fitted and grows when zoomed - the
     /// same size relative to the remote content as on a real monitor.
     private func positionCursorLayer() {
-        guard case .shape(let image) = remoteCursor, let hoverLocation else {
+        let transform = viewportTransform
+        let location: CGPoint
+        if let relativePointerPixel {
+            let point = transform.localPoint(fromRemote: relativePointerPixel)
+            location = CGPoint(x: point.x, y: point.y)
+        } else if let hoverLocation {
+            location = hoverLocation
+        } else {
             cursorLayer.isHidden = true
             return
         }
-        let transform = viewportTransform
-        let scale = transform.contentRect.width / Double(max(transform.desktopWidth, 1))
+        let frame: CGRect
+        switch remoteCursor {
+        case .shape(let image):
+            let scale = transform.contentRect.width / Double(max(transform.desktopWidth, 1))
+            frame = CGRect(
+                x: location.x - CGFloat(Double(image.hotspotX) * scale),
+                y: location.y - CGFloat(Double(image.hotspotY) * scale),
+                width: CGFloat(Double(image.width) * scale),
+                height: CGFloat(Double(image.height) * scale)
+            )
+        case .systemDefault where relativePointerPixel != nil:
+            // The system pointer stands in for the default arrow only when it
+            // is where the remote pointer is; moved from the trackpad it is
+            // not, so an arrow is drawn instead.
+            cursorLayer.contents = Self.fallbackArrow
+            frame = CGRect(origin: location, size: Self.fallbackArrowSize)
+        default:
+            cursorLayer.isHidden = true
+            return
+        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        cursorLayer.frame = CGRect(
-            x: hoverLocation.x - CGFloat(Double(image.hotspotX) * scale),
-            y: hoverLocation.y - CGFloat(Double(image.hotspotY) * scale),
-            width: CGFloat(Double(image.width) * scale),
-            height: CGFloat(Double(image.height) * scale)
-        )
+        cursorLayer.frame = frame
         cursorLayer.isHidden = false
         CATransaction.commit()
     }
+
+    private static let fallbackArrowSize = CGSize(width: 13, height: 20)
+
+    private static let fallbackArrow: CGImage? = {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        let renderer = UIGraphicsImageRenderer(size: fallbackArrowSize, format: format)
+        return renderer.image { _ in
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: 1, y: 1))
+            path.addLine(to: CGPoint(x: 1, y: 16))
+            path.addLine(to: CGPoint(x: 4.8, y: 12.6))
+            path.addLine(to: CGPoint(x: 7.4, y: 18.4))
+            path.addLine(to: CGPoint(x: 9.8, y: 17.3))
+            path.addLine(to: CGPoint(x: 7.3, y: 11.8))
+            path.addLine(to: CGPoint(x: 12, y: 11.8))
+            path.close()
+            path.lineJoinStyle = .round
+            path.lineWidth = 1.2
+            UIColor.white.setFill()
+            path.fill()
+            UIColor.black.setStroke()
+            path.stroke()
+        }.cgImage
+    }()
 
     private static func cgImage(_ image: RemoteCursorImage) -> CGImage? {
         guard let provider = CGDataProvider(data: image.pixels as CFData) else { return nil }

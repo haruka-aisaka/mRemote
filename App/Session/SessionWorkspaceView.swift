@@ -9,20 +9,24 @@ struct SessionWorkspaceView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Bindable var model: SessionWorkspaceModel
     @State private var toastText: String?
+    @State private var hingePosture: HingePosture = .unavailable
+    @State private var laptopChannel = LaptopDeckChannel()
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            desktop
+            HingePostureReader { hingePosture = $0 }
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             SoftwareKeyboardHost(controller: model.softwareKeyboard)
                 .frame(width: 1, height: 1)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
-            if !model.showsDesktop {
-                status
+            GeometryReader { proxy in
+                split(in: proxy.size)
             }
-            floatingMenu
-            toast
+            .ignoresSafeArea()
             privacyCover
         }
         .onAppear { showToast() }
@@ -77,6 +81,46 @@ struct SessionWorkspaceView: View {
         }
     }
 
+    /// The whole screen, or - with the laptop deck - the upper half for the
+    /// desktop and the lower half for the deck. The hinge is in the middle,
+    /// so that is where the split is.
+    ///
+    /// The desktop keeps its place in the hierarchy either way: the deck is
+    /// added after it rather than the two being swapped between layouts,
+    /// which would rebuild the surface and drop its texture.
+    @ViewBuilder
+    private func split(in size: CGSize) -> some View {
+        let showsDeck = model.laptopDeckPreference.showsDeck(
+            posture: hingePosture,
+            isPortrait: size.height > size.width
+        )
+        VStack(spacing: 0) {
+            ZStack {
+                desktop
+                if !model.showsDesktop {
+                    status
+                }
+                floatingMenu
+                toast
+            }
+            .frame(height: showsDeck ? (size.height / 2).rounded() : size.height)
+            .clipped()
+            if showsDeck {
+                LaptopDeck(
+                    layout: model.configuration.keyboardLayout,
+                    channel: laptopChannel,
+                    isInputEnabled: model.acceptsInput && scenePhase == .active
+                )
+                .transition(.move(edge: .bottom))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: showsDeck)
+        .onChange(of: showsDeck, initial: true) { _, shows in
+            // The deck is the keyboard now; the system one would only cover it.
+            if shows { model.softwareKeyboard.hide() }
+        }
+    }
+
     @ViewBuilder
     private var desktop: some View {
         if let frameStore = model.frameStore {
@@ -86,6 +130,7 @@ struct SessionWorkspaceView: View {
                 inputSink: model.inputSink,
                 scaleMode: model.runtime.scale,
                 scrollDirection: model.runtime.scrollDirection,
+                laptopChannel: laptopChannel,
                 // Input is gated on both halves of docs/architecture.md
                 // section 10: the session must be able to deliver it, and the
                 // scene must be the one the user is looking at.

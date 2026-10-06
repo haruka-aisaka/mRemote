@@ -275,6 +275,32 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 | 送れない文字の明示 clipboard paste | クリップボード送信（Phase 5）で代替可能。キーバーからの自動誘導は未実装 |
 | Windows 側で一度だけ届くこと、host IME での変換/無変換 | **未実施**。Windows が必要 |
 
+### 追加: 折りたたみ端末のラップトップ姿勢（2026-10-07、シミュレータ確認まで）
+
+iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-flow.md 9.1。
+
+調査で分かったこと:
+
+- iOS 27.1 の `UIHingeInteraction` / SwiftUI `onHingeChange` は状態（closed / partiallyOpen / fullyOpen）と角度だけを返し、**ヒンジの画面上の位置は取れない**。
+- Duo の内側ディスプレイは 669×951pt、カバーは 466×678pt で内側の半分に相当する。縦持ちで長辺を横切って中央で折れるため、「縦長 + partiallyOpen」をラップトップ姿勢とし、中央で分割する。
+- シミュレータのヒンジ操作は DeviceHub.app の UI のみ。`simctl` / `devicectl` には無い。
+- `UIHingeInteraction` は Xcode 27.0 の SDK に無いため `#if canImport(UIKit, _version: 9127.0.85)` で分岐。27.0 でもビルドは通り、ヒンジは常に「なし」になる。
+
+| 項目 | 状態 |
+|---|---|
+| ヒンジ検出と上下分割 | 実装済み（`HingePostureReader`、`SessionWorkspaceView`）。surface は分割時も再生成しない |
+| PC 配列キーボード（JIS / US） | 実装済み（`LaptopKeyboardLayout`、`LaptopKeyboardComposer`）。キー位置を HID usage で送る。押している間 down、リピート、修飾キーは同時押しとタップでの one-shot/lock の両方 |
+| トラックパッド | 実装済み（`RelativePointerMotion`）。相対移動と加速、タップで左、2 本指タップで右、2 本指スクロール、左右ボタン、ズーム時の追従、トラックパッド移動時のカーソル描画 |
+| 解放 | 実装済み。gate が閉じたとき、デッキが消えたときにキーとボタンをすべて解放 |
+| メニューの表示切替 | 実装済み。折り曲げたとき / 常に表示 / 表示しない（セッション単位、保存しない） |
+| テスト | 単体テスト（配列幅、scan code の有無、合成、相対移動）と UI テスト（常に表示でデッキが出る）が通過 |
+| 実際に折り曲げたときの自動切替 | **未確認**。DeviceHub での操作が必要 |
+| 実ホストでのキー・ポインター | **未実施**。Windows が必要（fake session には surface が無い） |
+
+次にやること:
+
+- **分割時の解像度の扱いをオプション化する。** 現状はデッキの表示・非表示で surface の高さが変わり、動的解像度に対応したホストには折り曲げるたびに解像度変更を要求する。これを「折り曲げるたびに解像度を変える」か「解像度は保ったまま描画側でスケールする」か選べるようにする。
+
 ## 9. Phase 7 — リリース仕上げ
 
 - accessibility、String Catalog、日本語/英語文言

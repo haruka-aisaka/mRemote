@@ -1,0 +1,402 @@
+import Foundation
+import SessionCore
+
+/// One key on the on-screen laptop keyboard shown in a foldable's laptop
+/// posture.
+///
+/// Unlike the software keyboard, which types characters, this one is a
+/// picture of a PC keyboard: each key is a key position, sent as its HID
+/// usage, so what it types is whatever the host's layout and IME make of it -
+/// exactly as with a physical keyboard plugged into the host.
+public struct LaptopKey: Hashable, Sendable, Identifiable {
+    public enum Kind: Hashable, Sendable {
+        /// A key that goes down while touched and up when released.
+        case key(UInt16)
+        /// Ctrl, Alt, Shift, Win: held while touched, latched when tapped.
+        case modifier(VirtualModifier)
+    }
+
+    /// Unique within its layout, so a left and a right Shift are two keys.
+    public let id: String
+    public let label: String
+    /// What Shift produces, drawn small above the label. Nil when it is the
+    /// same key (letters) or meaningless (Enter).
+    public let shiftedLabel: String?
+    public let kind: Kind
+    /// In key units; every row of a layout adds up to the same total.
+    public let width: Double
+
+    public init(
+        id: String,
+        label: String,
+        shiftedLabel: String? = nil,
+        kind: Kind,
+        width: Double = 1
+    ) {
+        self.id = id
+        self.label = label
+        self.shiftedLabel = shiftedLabel
+        self.kind = kind
+        self.width = width
+    }
+
+    public var isModifier: Bool {
+        if case .modifier = kind { return true }
+        return false
+    }
+
+    /// Arrows, Backspace and the like repeat while held; modifiers and the
+    /// IME keys do not, because repeating 半/全 would flip the IME on and off.
+    public var repeats: Bool {
+        guard case .key(let usage) = kind else { return false }
+        return !Self.nonRepeatingUsages.contains(usage)
+    }
+
+    private static let nonRepeatingUsages: Set<UInt16> = [
+        0x29, // Escape
+        0x35, // 半角/全角 on JIS, ` on US - the JIS meaning wins
+        0x39, // Caps Lock / 英数
+        0x88, // かな
+        0x8A, // 変換
+        0x8B, // 無変換
+    ]
+}
+
+public struct LaptopKeyboardRow: Hashable, Sendable {
+    public let keys: [LaptopKey]
+    /// Relative to an ordinary row; the function row is shorter.
+    public let height: Double
+
+    public init(_ keys: [LaptopKey], height: Double = 1) {
+        self.keys = keys
+        self.height = height
+    }
+
+    public var totalWidth: Double { keys.reduce(0) { $0 + $1.width } }
+}
+
+/// The rows of the laptop keyboard for the host's layout.
+///
+/// The layout follows the session's keyboard profile rather than the
+/// device's, for the same reason `ASCIIKeystrokeMapper` does: a usage is a
+/// position, and the label has to say what that position types on the host.
+public struct LaptopKeyboardLayout: Hashable, Sendable {
+    public static let unitsPerRow = 15.0
+
+    public let rows: [LaptopKeyboardRow]
+
+    public init(_ layout: KeyboardLayoutPreference) {
+        // Automatic draws US, as `ASCIIKeystrokeMapper` assumes it.
+        rows = [Self.functionRow] + (layout == .japanese ? Self.japaneseRows : Self.usRows)
+    }
+
+    public var keys: [LaptopKey] { rows.flatMap(\.keys) }
+
+    // MARK: - Shared rows
+
+    private static let functionRow = LaptopKeyboardRow(
+        [key("esc", "Esc", 0x29, width: 1.5)]
+            + (1...12).map { number in
+                key("f\(number)", "F\(number)", UInt16(0x3A + number - 1))
+            }
+            + [key("delete", "Del", 0x4C, width: 1.5)],
+        height: 0.7
+    )
+
+    private static func letters(_ string: String) -> [LaptopKey] {
+        string.map { character in
+            let scalar = character.unicodeScalars.first!.value
+            return key(
+                String(character).lowercased(),
+                String(character),
+                UInt16(0x04 + scalar - 0x41)
+            )
+        }
+    }
+
+    private static func digits() -> [LaptopKey] {
+        (1...10).map { index in
+            let digit = index % 10
+            return key("digit\(digit)", "\(digit)", UInt16(0x1E + index - 1))
+        }
+    }
+
+    private static func key(
+        _ id: String,
+        _ label: String,
+        _ usage: UInt16,
+        shifted: String? = nil,
+        width: Double = 1
+    ) -> LaptopKey {
+        LaptopKey(id: id, label: label, shiftedLabel: shifted, kind: .key(usage), width: width)
+    }
+
+    private static func modifier(
+        _ id: String,
+        _ label: String,
+        _ modifier: VirtualModifier,
+        width: Double
+    ) -> LaptopKey {
+        LaptopKey(id: id, label: label, kind: .modifier(modifier), width: width)
+    }
+
+    private static func withShifted(_ keys: [LaptopKey], _ shifted: [String?]) -> [LaptopKey] {
+        zip(keys, shifted).map { key, shifted in
+            LaptopKey(
+                id: key.id,
+                label: key.label,
+                shiftedLabel: shifted,
+                kind: key.kind,
+                width: key.width
+            )
+        }
+    }
+
+    private static let arrowsLeftDownRight = [
+        key("left", "←", 0x50),
+        key("down", "↓", 0x51),
+        key("right", "→", 0x4F),
+    ]
+
+    // MARK: - Windows 106/109
+
+    private static let japaneseRows: [LaptopKeyboardRow] = [
+        LaptopKeyboardRow(
+            [key("zenkaku", "半/全", 0x35)]
+                + withShifted(digits(), ["!", "\"", "#", "$", "%", "&", "'", "(", ")", nil])
+                + [
+                    key("minus", "-", 0x2D, shifted: "="),
+                    key("caret", "^", 0x2E, shifted: "~"),
+                    key("yen", "¥", 0x89, shifted: "|"),
+                    key("backspace", "⌫", 0x2A),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [key("tab", "Tab", 0x2B, width: 1.5)]
+                + letters("QWERTYUIOP")
+                + [
+                    key("at", "@", 0x2F, shifted: "`"),
+                    key("bracketleft", "[", 0x30, shifted: "{"),
+                    key("enter-upper", "⏎", 0x28, width: 1.5),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [key("eisu", "英数", 0x39, width: 1.75)]
+                + letters("ASDFGHJKL")
+                + [
+                    key("semicolon", ";", 0x33, shifted: "+"),
+                    key("colon", ":", 0x34, shifted: "*"),
+                    key("bracketright", "]", 0x32, shifted: "}"),
+                    key("enter", "⏎", 0x28, width: 1.25),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [modifier("shift-left", "Shift", .shift, width: 2)]
+                + letters("ZXCVBNM")
+                + [
+                    key("comma", ",", 0x36, shifted: "<"),
+                    key("period", ".", 0x37, shifted: ">"),
+                    key("slash", "/", 0x38, shifted: "?"),
+                    key("ro", "\\", 0x87, shifted: "_"),
+                    modifier("shift-right", "Shift", .shift, width: 1),
+                    key("up", "↑", 0x52),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [
+                modifier("control-left", "Ctrl", .control, width: 1.25),
+                modifier("windows", "Win", .windows, width: 1),
+                modifier("alt-left", "Alt", .alt, width: 1),
+                key("nonconvert", "無変換", 0x8B, width: 1.25),
+                key("space", "", 0x2C, width: 4),
+                key("convert", "変換", 0x8A, width: 1.25),
+                key("kana", "かな", 0x88, width: 1.25),
+                modifier("alt-right", "Alt", .alt, width: 1),
+            ] + arrowsLeftDownRight
+        ),
+    ]
+
+    // MARK: - Windows US 101/102
+
+    private static let usRows: [LaptopKeyboardRow] = [
+        LaptopKeyboardRow(
+            [key("grave", "`", 0x35, shifted: "~")]
+                + withShifted(digits(), ["!", "@", "#", "$", "%", "^", "&", "*", "(", ")"])
+                + [
+                    key("minus", "-", 0x2D, shifted: "_"),
+                    key("equal", "=", 0x2E, shifted: "+"),
+                    key("backspace", "⌫", 0x2A, width: 2),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [key("tab", "Tab", 0x2B, width: 1.5)]
+                + letters("QWERTYUIOP")
+                + [
+                    key("bracketleft", "[", 0x2F, shifted: "{"),
+                    key("bracketright", "]", 0x30, shifted: "}"),
+                    key("backslash", "\\", 0x31, shifted: "|", width: 1.5),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [key("capslock", "Caps", 0x39, width: 1.75)]
+                + letters("ASDFGHJKL")
+                + [
+                    key("semicolon", ";", 0x33, shifted: ":"),
+                    key("quote", "'", 0x34, shifted: "\""),
+                    key("enter", "⏎", 0x28, width: 2.25),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [modifier("shift-left", "Shift", .shift, width: 2.25)]
+                + letters("ZXCVBNM")
+                + [
+                    key("comma", ",", 0x36, shifted: "<"),
+                    key("period", ".", 0x37, shifted: ">"),
+                    key("slash", "/", 0x38, shifted: "?"),
+                    modifier("shift-right", "Shift", .shift, width: 1.75),
+                    key("up", "↑", 0x52),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [
+                modifier("control-left", "Ctrl", .control, width: 1.25),
+                modifier("windows", "Win", .windows, width: 1.25),
+                modifier("alt-left", "Alt", .alt, width: 1.25),
+                key("space", "", 0x2C, width: 5.75),
+                modifier("alt-right", "Alt", .alt, width: 1.25),
+                modifier("control-right", "Ctrl", .control, width: 1.25),
+            ] + arrowsLeftDownRight
+        ),
+    ]
+}
+
+/// Turns touches on the laptop keyboard into host key transitions.
+///
+/// A key is down on the host exactly as long as a finger is on it, which is
+/// what gives Backspace and the arrows their repeat and lets a game see a
+/// held key. Modifiers work two ways at once, because both are how people
+/// use a touch keyboard:
+///
+/// - held: a finger on Shift while another taps A is Shift+A, as on a real
+///   keyboard;
+/// - tapped: a modifier touched and released with no key in between latches
+///   (one-shot, then locked, then off), so Ctrl+Alt+Del can be typed with
+///   one finger.
+///
+/// A modifier is pressed on the host only around the keys it applies to and
+/// is reference-counted across overlapping keys, so releasing everything is
+/// always one well-defined list of ups.
+public struct LaptopKeyboardComposer: Sendable {
+    public private(set) var latches = VirtualModifierState()
+    /// Modifier keys under a finger, counted because Shift has two keys.
+    private var heldModifiers: [VirtualModifier: Int] = [:]
+    /// Held modifiers that applied to a key while held. Releasing one of
+    /// these is the end of a chord, not a tap, so it does not latch.
+    private var modifiersUsedWhileHeld: Set<VirtualModifier> = []
+    /// Non-modifier keys down on the host, with the modifiers sent with each.
+    private var downKeys: [UInt16: [VirtualModifier]] = [:]
+    /// How many down keys each host modifier is down for.
+    private var hostModifiers: [VirtualModifier: Int] = [:]
+
+    public init() {}
+
+    /// Held or latched: what the next key will be sent with, and what the
+    /// view lights up.
+    public func isActive(_ modifier: VirtualModifier) -> Bool {
+        heldModifiers[modifier, default: 0] > 0 || latches.latch(modifier) != .off
+    }
+
+    public var isAnyKeyDown: Bool { !downKeys.isEmpty }
+
+    public func isDown(usage: UInt16) -> Bool { downKeys[usage] != nil }
+
+    public mutating func touchDown(_ key: LaptopKey) -> [KeyboardInput] {
+        switch key.kind {
+        case .modifier(let modifier):
+            heldModifiers[modifier, default: 0] += 1
+            return []
+        case .key(let usage):
+            return keyDown(usage)
+        }
+    }
+
+    public mutating func touchUp(_ key: LaptopKey) -> [KeyboardInput] {
+        switch key.kind {
+        case .modifier(let modifier):
+            let count = heldModifiers[modifier, default: 0]
+            guard count > 0 else { return [] }
+            if count == 1 {
+                heldModifiers[modifier] = nil
+                if !modifiersUsedWhileHeld.contains(modifier) {
+                    latches.tap(modifier)
+                }
+                modifiersUsedWhileHeld.remove(modifier)
+            } else {
+                heldModifiers[modifier] = count - 1
+            }
+            return []
+        case .key(let usage):
+            return keyUp(usage)
+        }
+    }
+
+    /// The repeat for a key that is still down, or nil once it is not.
+    public func repeatDown(usage: UInt16) -> KeyboardInput? {
+        guard downKeys[usage] != nil else { return nil }
+        return KeyboardInput(usage: usage, transition: .down, isRepeat: true)
+    }
+
+    /// Every up the host is owed, and every latch dropped. For the gate
+    /// closing, the posture changing or the deck going away.
+    public mutating func releaseAll() -> [KeyboardInput] {
+        var events: [KeyboardInput] = []
+        for usage in downKeys.keys.sorted() {
+            events.append(KeyboardInput(usage: usage, transition: .up))
+        }
+        for modifier in VirtualModifier.allCases.reversed()
+            where hostModifiers[modifier, default: 0] > 0 {
+            events.append(KeyboardInput(usage: modifier.usage, transition: .up))
+        }
+        downKeys = [:]
+        hostModifiers = [:]
+        heldModifiers = [:]
+        modifiersUsedWhileHeld = []
+        latches.releaseAll()
+        return events
+    }
+
+    private mutating func keyDown(_ usage: UInt16) -> [KeyboardInput] {
+        // A second finger on a key already down is not a second press.
+        guard downKeys[usage] == nil else { return [] }
+        let modifiers = VirtualModifier.allCases.filter(isActive)
+        var events: [KeyboardInput] = []
+        for modifier in modifiers {
+            if hostModifiers[modifier, default: 0] == 0 {
+                events.append(KeyboardInput(usage: modifier.usage, transition: .down))
+            }
+            hostModifiers[modifier, default: 0] += 1
+            if heldModifiers[modifier, default: 0] > 0 {
+                modifiersUsedWhileHeld.insert(modifier)
+            }
+        }
+        downKeys[usage] = modifiers
+        latches.keyWasSent()
+        events.append(KeyboardInput(usage: usage, transition: .down))
+        return events
+    }
+
+    private mutating func keyUp(_ usage: UInt16) -> [KeyboardInput] {
+        guard let modifiers = downKeys.removeValue(forKey: usage) else { return [] }
+        var events = [KeyboardInput(usage: usage, transition: .up)]
+        for modifier in modifiers.reversed() {
+            let count = hostModifiers[modifier, default: 0] - 1
+            if count <= 0 {
+                hostModifiers[modifier] = nil
+                events.append(KeyboardInput(usage: modifier.usage, transition: .up))
+            } else {
+                hostModifiers[modifier] = count
+            }
+        }
+        return events
+    }
+}

@@ -113,4 +113,37 @@ final class ConnectionFlowUITests: XCTestCase {
             "closing removes the bar"
         )
     }
+
+    /// The laptop deck can be forced on from the menu, which is how it is
+    /// reached on a device - or a Simulator - that is not folded.
+    func testTheLaptopDeckCanBeShownFromTheMenu() {
+        element("profile-row-テスト接続先").tap()
+        _ = assertAppears("session-workspace", "connecting presents the workspace")
+        XCTAssertFalse(element("laptop-deck").exists, "an unfolded screen has no deck")
+
+        element("session-menu-button").tap()
+        _ = assertAppears("session-menu", "the floating menu opens")
+        let picker = element("session-laptop-deck-picker")
+        // The input section sits below the sheet's medium detent.
+        for _ in 0..<6 where !(picker.exists && picker.isHittable) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(picker.isHittable, "the menu offers the deck\n\(app.debugDescription)")
+        picker.tap()
+        let always = app.buttons["常に表示"].firstMatch
+        XCTAssertTrue(always.waitForExistence(timeout: 5), "the picker lists its options")
+        always.tap()
+        element("session-menu-close").tap()
+
+        _ = assertAppears("laptop-deck", "the deck takes the lower half")
+        XCTAssertTrue(element("laptop-trackpad").exists)
+        XCTAssertTrue(element("laptop-button-left").exists)
+        XCTAssertTrue(element("laptop-key-a").exists)
+        XCTAssertTrue(element("laptop-key-kana").exists, "the seeded profile is Japanese")
+        XCTAssertTrue(element("session-menu-button").isHittable, "the menu stays reachable above the deck")
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "laptop-deck"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
 }
