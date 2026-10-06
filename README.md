@@ -45,10 +45,13 @@ ones that need a machine rather than a test: thirty minutes against the
 Windows host, and the bridge sanitizer stress carried over from Phase 0. See
 [`docs/roadmap.md`](docs/roadmap.md).
 
-Pointer and keyboard input were pulled forward out of Phase 3, because none of
-Phase 2 can be tried on a real machine without them: the session sends physical
-scan codes, and 英数/かな reach Windows as 無変換/変換. `GCKeyboard`, the
-per-usage source arbitration and the KeyEcho measurement stay in Phase 3.
+Phases 3 to 6 are implemented ahead of their device checks, verified with
+automated tests and on the iPad simulator only: `GCKeyboard` arbitration with
+quarantine and the remote cursor (3), multiple sessions with a switcher and
+automatic reconnect (4), focused-session audio and two-way clipboard text (5),
+and the software keyboard with local/host IME modes and an extended key bar
+(6). Each phase's table in [`docs/roadmap.md`](docs/roadmap.md) marks what still
+needs the iPad and the Windows host.
 
 ## Build and test
 

@@ -126,6 +126,8 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// False until the surface is configured, so nothing is delivered before
     /// the workspace has said whether the session can carry it.
     private var isInputEnabled = false
+    /// True while the software keyboard's proxy is first responder.
+    private var isKeyboardCaptureSuppressed = false
 
     private(set) var viewportTransform: ViewportTransform
 
@@ -826,8 +828,15 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         }
     }
 
+    func setKeyboardCaptureSuppressed(_ suppressed: Bool) {
+        guard suppressed != isKeyboardCaptureSuppressed else { return }
+        isKeyboardCaptureSuppressed = suppressed
+        if !suppressed { captureKeyboardIfPossible() }
+    }
+
     private func captureKeyboardIfPossible() {
-        guard isInputEnabled, window != nil, !isFirstResponder else { return }
+        guard isInputEnabled, !isKeyboardCaptureSuppressed, window != nil,
+              !isFirstResponder else { return }
         _ = becomeFirstResponder()
     }
 

@@ -31,6 +31,24 @@ final class ProfileDocumentCodecTests: XCTestCase {
         XCTAssertEqual(decoded.schemaVersion, .current)
     }
 
+    func testAVersionOneDocumentGainsTheSoftwareKeyboardDefault() throws {
+        // A store written by the Phase 1 build: no softwareKeyboardMode key.
+        let encoded = try ProfileDocumentCodec().encode(sample)
+        var object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        var settings = try XCTUnwrap(object["globalSettings"] as? [String: Any])
+        settings.removeValue(forKey: "softwareKeyboardMode")
+        object["globalSettings"] = settings
+        object["schemaVersion"] = 1
+        let v1 = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try ProfileDocumentCodec().decode(v1)
+        XCTAssertEqual(decoded.schemaVersion, .v2)
+        XCTAssertEqual(decoded.globalSettings.softwareKeyboardMode, .localIME)
+        XCTAssertEqual(decoded.profiles, sample.profiles)
+    }
+
     func testEncodingIsStable() throws {
         let codec = ProfileDocumentCodec()
         XCTAssertEqual(try codec.encode(sample), try codec.encode(sample))

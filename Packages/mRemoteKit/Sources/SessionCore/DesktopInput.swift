@@ -72,4 +72,9 @@ public protocol DesktopInputSink: AnyObject, Sendable {
     /// upstream: which usages an RDP session can carry is the RDP layer's
     /// knowledge, not the surface's.
     func send(_ input: KeyboardInput)
+
+    /// One UTF-16 code unit of committed text, typed as a Unicode key event.
+    /// The software keyboard's local IME mode is the only producer: physical
+    /// keys always travel as `KeyboardInput`.
+    func send(unicode codeUnit: UInt16)
 }

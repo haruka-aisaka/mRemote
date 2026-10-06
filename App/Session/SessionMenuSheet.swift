@@ -71,6 +71,16 @@ struct SessionMenuSheet: View {
                     }
                 }
 
+                Section {
+                    Button {
+                        model.showSoftwareKeyboard()
+                    } label: {
+                        Label("キーボード / 拡張キー", systemImage: "keyboard")
+                    }
+                    .disabled(!model.state.acceptsInput)
+                    .accessibilityIdentifier("session-show-keyboard")
+                }
+
                 Section("表示") {
                     Picker("表示倍率", selection: Binding(
                         get: { model.runtime.scale },

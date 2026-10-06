@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import InputCore
 import SessionCore
 
 /// Drives the full-screen session: it mirrors the session's authoritative
@@ -40,6 +41,9 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// it coming back: pasting it straight back needs no new offer, because
     /// the remote still holds it (docs/architecture.md section 9).
     private var lastReceivedText: String?
+    /// Built once in `init`; never replaced, so observation is not needed on
+    /// the property itself - the controller is observable on its own.
+    @ObservationIgnored private(set) var softwareKeyboard: SoftwareKeyboardController!
     private var reconnectTask: Task<Void, Never>?
     private let reconnectSchedule = ReconnectSchedule()
 
@@ -74,6 +78,25 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         self.id = session.id
         self.displayName = configuration.displayName
         self.runtime = SessionRuntimeState(from: configuration)
+        self.softwareKeyboard = SoftwareKeyboardController(
+            mode: environment.globalSettings.softwareKeyboardMode,
+            layout: configuration.keyboardLayout,
+            canSend: { [weak self] in self?.acceptsInput ?? false },
+            send: { [weak self] output in
+                guard let sink = self?.inputSink else { return }
+                switch output {
+                case .key(let input): sink.send(input)
+                case .unicode(let unit): sink.send(unicode: unit)
+                }
+            }
+        )
+    }
+
+    /// From the menu: close it, then bring the keyboard up once the sheet is
+    /// gone and the gate is open again.
+    func showSoftwareKeyboard() {
+        isMenuPresented = false
+        softwareKeyboard.show()
     }
 
     nonisolated static func == (lhs: SessionWorkspaceModel, rhs: SessionWorkspaceModel) -> Bool {
@@ -417,12 +440,14 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// explicitly, so going back to the list must not tear it down.
     func returnToList() {
         isMenuPresented = false
+        softwareKeyboard.hide()
         environment.returnToList()
     }
 
     func disconnect() async {
         cancelReconnect()
         isMenuPresented = false
+        softwareKeyboard.hide()
         resizeTask?.cancel()
         resizeTask = nil
         await session.disconnect(reason: .userRequested)

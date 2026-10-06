@@ -17,6 +17,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     /// view releases whatever it thinks is held when this goes false, which is
     /// what keeps a button from staying down on the server.
     let isInputEnabled: Bool
+    let suppressesKeyboardCapture: Bool
     let isInputTraceEnabled: Bool
     let onRenderSizeChange: (Int, Int) -> Void
     let onDesktopSizeChange: (Int, Int) -> Void
@@ -44,6 +45,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
         view.onInputDiagnostics = onInputDiagnostics
         view.inputSink = inputSink
         view.setInputTraceEnabled(isInputTraceEnabled)
+        view.setKeyboardCaptureSuppressed(suppressesKeyboardCapture)
         view.setScrollDirection(scrollDirection)
         view.setInputEnabled(isInputEnabled)
     }

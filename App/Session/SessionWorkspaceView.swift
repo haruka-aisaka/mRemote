@@ -14,6 +14,10 @@ struct SessionWorkspaceView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             desktop
+            SoftwareKeyboardHost(controller: model.softwareKeyboard)
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             if !model.showsDesktop {
                 status
             }
@@ -88,6 +92,9 @@ struct SessionWorkspaceView: View {
                 // A third: the session must be the focused one, so a surface
                 // left behind during a switch can never type into it.
                 isInputEnabled: model.acceptsInput && scenePhase == .active,
+                // The proxy owns the keyboard while the software keyboard is
+                // up; the surface must not take it back on the next tap.
+                suppressesKeyboardCapture: model.softwareKeyboard.isVisible,
                 isInputTraceEnabled: environment.inputDiagnostics.isTraceRequested,
                 onRenderSizeChange: { width, height in
                     model.renderSizeChanged(width: width, height: height)

@@ -84,4 +84,33 @@ final class ConnectionFlowUITests: XCTestCase {
         element("profile-save-button").tap()
         _ = assertAppears("profile-row-新しい接続先", "the saved profile appears in the list")
     }
+
+    func testTheSoftwareKeyboardOpensFromTheMenuAndCloses() {
+        element("profile-row-テスト接続先").tap()
+        _ = assertAppears("session-workspace", "connecting presents the workspace")
+        element("session-menu-button").tap()
+        let show = assertAppears("session-show-keyboard", "the menu offers the keyboard")
+        show.tap()
+
+        // The extended key bar rides on the keyboard as its accessory view.
+        let escape = assertAppears("key-escape", "the extended key bar appears")
+        XCTAssertTrue(element("modifier-control").exists)
+        XCTAssertTrue(element("software-keyboard-mode").exists)
+        XCTAssertTrue(escape.isHittable)
+
+        element("modifier-control").tap()
+        XCTAssertEqual(element("modifier-control").value as? String, "次の1キー")
+        element("modifier-control").tap()
+        XCTAssertEqual(element("modifier-control").value as? String, "固定")
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "software-keyboard"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        element("software-keyboard-close").tap()
+        XCTAssertTrue(
+            element("key-escape").waitForNonExistence(timeout: 5),
+            "closing removes the bar"
+        )
+    }
 }

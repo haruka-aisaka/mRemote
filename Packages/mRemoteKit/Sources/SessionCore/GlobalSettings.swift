@@ -1,5 +1,15 @@
 import Foundation
 
+/// docs/input-design.md section 10: the two software keyboard modes.
+public enum SoftwareKeyboardMode: String, Hashable, Sendable, Codable, CaseIterable {
+    /// iPadOS converts; only committed text is sent, as Unicode. The host
+    /// IME should be off.
+    case localIME
+    /// An ASCII keyboard whose keys become scan codes, so the host IME does
+    /// the converting.
+    case hostIME
+}
+
 /// The values every `inherit` resolves against. Defaults live here and in the
 /// schema migration, never spread across the settings screens.
 public struct GlobalSettings: Hashable, Sendable, Codable {
@@ -11,6 +21,8 @@ public struct GlobalSettings: Hashable, Sendable, Codable {
     public var clipboardPolicy: ClipboardPolicy
     public var scrollDirection: ScrollDirection
     public var reconnectPolicy: ReconnectPolicy
+    /// Schema v2. Where the software keyboard starts; switchable per session.
+    public var softwareKeyboardMode: SoftwareKeyboardMode
 
     public init(
         resolutionPolicy: ResolutionPolicy = .adaptive,
@@ -20,7 +32,8 @@ public struct GlobalSettings: Hashable, Sendable, Codable {
         audioPlayback: Bool = true,
         clipboardPolicy: ClipboardPolicy = .bidirectional,
         scrollDirection: ScrollDirection = .normal,
-        reconnectPolicy: ReconnectPolicy = .automatic
+        reconnectPolicy: ReconnectPolicy = .automatic,
+        softwareKeyboardMode: SoftwareKeyboardMode = .localIME
     ) {
         self.resolutionPolicy = resolutionPolicy
         self.initialScale = initialScale
@@ -30,6 +43,7 @@ public struct GlobalSettings: Hashable, Sendable, Codable {
         self.clipboardPolicy = clipboardPolicy
         self.scrollDirection = scrollDirection
         self.reconnectPolicy = reconnectPolicy
+        self.softwareKeyboardMode = softwareKeyboardMode
     }
 
     public static let `default` = GlobalSettings()

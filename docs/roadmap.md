@@ -7,6 +7,9 @@
 検証の規模は [`README.md`](README.md) の「開発体制と試験スケール」に従う。個人開発なので、
 反復回数と端末マトリクスは現実的な水準に落とし、そのぶん自動テストと記録に寄せる。
 
+2026-10-07 時点の方針: 実機・Windows での確認を後回しにして Phase 6 まで実装を先行した。
+各 phase の「実装状況」表の **未実施** が、実機/Windows 環境で消化する残りである。
+
 期間ではなく exit criteria で phase を区切る。各 phase で未完の native resource、入力押下状態、秘密データが残らない teardown test を加える。Phase 0 の `GO` は個人基準で native core を採用する判断であり、製品/互換性/リリースの承認ではない。
 
 ## 2. Phase 0 — Go/No-Go スパイク
@@ -257,6 +260,20 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 - local IME mode で未確定文字が host へ漏れず、確定文字が一度だけ届く。
 - host IME mode で変換/無変換と Ctrl 等が正しい down/up になる。
 - mode 切替、keyboard close、session 切替で marked text/modifier が残らない。
+
+### 実装状況（2026-10-07、シミュレータ確認まで）
+
+| 項目 | 状態 |
+|---|---|
+| 拡張キーバー | 実装済み。Esc/Tab/Ctrl/Alt/Shift/Win/無変換/変換/矢印/Home/End/PgUp/PgDn/Del。システムキーボードの accessory view |
+| host IME mode | 実装済み。ASCII キーボードの打鍵を、接続時の配列（日本語 106/109 か US）に合わせたキー位置で送る（`ASCIIKeystrokeMapper`） |
+| virtual modifier の one-shot/lock | 実装済み。タップで 1 キー限定 → 固定 → オフ。表示は塗りと鍵アイコンで区別し色だけに頼らない。修飾キーは各キーの前後で down/up するため、リモートに押下状態が残らない |
+| local IME mode | 実装済み。隠した `UITextView` を proxy にし、iPadOS の marked text をそのまま使う。未確定文字はキーバー上に表示するだけで送らず、確定した文字を UTF-16 単位の Unicode イベントで送る（bridge ABI 2）。Enter はキーとして送る |
+| marked text 中の制約 | 実装済み。確定/キャンセルを表示し、修飾キー・拡張キー・モード切替を無効化。Esc は未確定文字のキャンセルに使う |
+| mode/global default、session 中の切替 | 実装済み。設定の初期モード（スキーマ v2、v1 からの移行付き）とキーバーの切替 |
+| keyboard close / session 切替で modifier を解放 | 実装済み |
+| 送れない文字の明示 clipboard paste | クリップボード送信（Phase 5）で代替可能。キーバーからの自動誘導は未実装 |
+| Windows 側で一度だけ届くこと、host IME での変換/無変換 | **未実施**。Windows が必要 |
 
 ## 9. Phase 7 — リリース仕上げ
 

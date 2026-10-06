@@ -114,6 +114,16 @@ final class RDPInputSink: DesktopInputSink, @unchecked Sendable {
         target.sendKey(&event)
     }
 
+    func send(unicode codeUnit: UInt16) {
+        lock.lock()
+        guard isAccepting, let target = native else {
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        target.sendUnicode(codeUnit)
+    }
+
     /// The bridge caps each axis and splits a larger delta across PDUs, but it
     /// rejects an out-of-range value outright, so the clamp happens here too.
     private static func clampWheel(_ value: Int32) -> Int32 {

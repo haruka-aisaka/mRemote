@@ -237,6 +237,7 @@ final class AppEnvironment {
     func switchTo(_ model: SessionWorkspaceModel) {
         guard presentedSession?.id != model.id else { return }
         presentedSession?.isMenuPresented = false
+        presentedSession?.softwareKeyboard.hide()
         present(model)
     }
 

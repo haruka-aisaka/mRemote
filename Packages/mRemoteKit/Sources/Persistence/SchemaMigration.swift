@@ -1,4 +1,5 @@
 import Foundation
+import SessionCore
 
 public struct SchemaVersion: RawRepresentable, Hashable, Comparable, Sendable, Codable {
     public let rawValue: Int
@@ -14,8 +15,10 @@ public struct SchemaVersion: RawRepresentable, Hashable, Comparable, Sendable, C
     public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 
     public static let v1 = SchemaVersion(1)
+    /// Adds `globalSettings.softwareKeyboardMode`.
+    public static let v2 = SchemaVersion(2)
     /// The version this build writes.
-    public static let current = v1
+    public static let current = v2
 }
 
 /// One step of the upgrade path. Steps are single-version so the chain can be
@@ -42,7 +45,15 @@ public struct SchemaMigrator: Sendable {
     private let migrations: [SchemaVersion: any SchemaMigration]
     private let target: SchemaVersion
 
-    public init(migrations: [any SchemaMigration] = [], target: SchemaVersion = .current) {
+    /// Every step this build knows, oldest first.
+    public static let standardMigrations: [any SchemaMigration] = [
+        AddSoftwareKeyboardModeMigration(),
+    ]
+
+    public init(
+        migrations: [any SchemaMigration] = SchemaMigrator.standardMigrations,
+        target: SchemaVersion = .current
+    ) {
         self.migrations = Dictionary(
             migrations.map { ($0.source, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -91,6 +102,28 @@ extension JSONValue {
     func settingSchemaVersion(_ version: SchemaVersion) -> JSONValue {
         guard var object = objectValue else { return self }
         object["schemaVersion"] = .number(Double(version.rawValue))
+        return .object(object)
+    }
+}
+
+/// v1 -> v2: the global default software keyboard mode. Written explicitly
+/// rather than defaulted at decode time, so the document says what it means
+/// and a later default change cannot silently reinterpret an old file.
+public struct AddSoftwareKeyboardModeMigration: SchemaMigration {
+    public let source = SchemaVersion.v1
+    public let destination = SchemaVersion.v2
+
+    public init() {}
+
+    public func migrate(_ document: JSONValue) throws -> JSONValue {
+        guard var object = document.objectValue,
+              var settings = object["globalSettings"]?.objectValue else {
+            throw StoreError.malformedDocument(detail: "globalSettings is missing")
+        }
+        if settings["softwareKeyboardMode"] == nil {
+            settings["softwareKeyboardMode"] = .string(SoftwareKeyboardMode.localIME.rawValue)
+        }
+        object["globalSettings"] = .object(settings)
         return .object(object)
     }
 }

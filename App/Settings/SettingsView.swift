@@ -36,6 +36,18 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("初期モード", selection: $settings.softwareKeyboardMode) {
+                        Text("手元IME").tag(SoftwareKeyboardMode.localIME)
+                        Text("ホストIME").tag(SoftwareKeyboardMode.hostIME)
+                    }
+                    .accessibilityIdentifier("settings-software-keyboard-mode")
+                } header: {
+                    Text("ソフトウェアキーボード")
+                } footer: {
+                    Text("手元IME は iPad で変換して確定した文字だけを送ります（Windows 側の IME はオフにしてください）。ホストIME は英数キーボードの打鍵をそのまま送り、Windows 側の IME で変換します。セッション中にキーバーで切り替えられます。")
+                }
+
+                Section {
                     Toggle("音声を再生", isOn: $settings.audioPlayback)
                     Picker("クリップボード", selection: $settings.clipboardPolicy) {
                         Text("無効").tag(ClipboardPolicy.disabled)
