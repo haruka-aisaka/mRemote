@@ -137,6 +137,40 @@ final class LatestDesktopFrameStoreTests: XCTestCase {
         XCTAssertNotNil(store.consume())
         XCTAssertEqual(store.statistics.submitted, 200)
     }
+
+    // MARK: - Retained surface
+
+    func testANewSurfaceIsSeededWithTheLastDrawnFrameAsAFullRepaint() {
+        let store = LatestDesktopFrameStore()
+        store.submit(frame(id: 1, dirty: [PixelRect(x: 0, y: 0, width: 1, height: 1)]))
+        _ = store.consume()
+        XCTAssertNil(store.consume())
+
+        store.reseedForNewSurface()
+        let seeded = store.consume()
+        XCTAssertEqual(seeded?.frameID, 1)
+        XCTAssertEqual(seeded?.dirtyRectangles, [])
+    }
+
+    func testReseedingNeverReplacesANewerPendingFrame() {
+        let store = LatestDesktopFrameStore()
+        store.submit(frame(id: 1, dirty: [PixelRect(x: 0, y: 0, width: 1, height: 1)]))
+        _ = store.consume()
+        store.submit(frame(id: 2, dirty: [PixelRect(x: 0, y: 0, width: 1, height: 1)]))
+        store.reseedForNewSurface()
+        XCTAssertEqual(store.consume()?.frameID, 2)
+    }
+
+    func testDiscardingTheRetainedSurfaceLeavesNothingToSeed() {
+        let store = LatestDesktopFrameStore()
+        store.submit(frame(id: 1, dirty: [PixelRect(x: 0, y: 0, width: 1, height: 1)]))
+        _ = store.consume()
+        XCTAssertTrue(store.hasRetainedSurface)
+        store.discardRetained()
+        store.reseedForNewSurface()
+        XCTAssertNil(store.consume())
+    }
+
 }
 
 /// A counter the store's `@Sendable` signal can close over.

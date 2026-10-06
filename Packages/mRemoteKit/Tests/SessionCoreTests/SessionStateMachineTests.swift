@@ -19,6 +19,16 @@ final class SessionStateMachineTests: XCTestCase {
         XCTAssertEqual(machine.transition(to: .disconnected), .disconnected)
     }
 
+    func testALiveConnectionCanFailAndBeRetried() {
+        var machine = SessionStateMachine()
+        machine.transition(to: .connecting)
+        machine.transition(to: .connected)
+        let generation = machine.generation
+        XCTAssertEqual(machine.transition(to: .failed), .failed)
+        XCTAssertEqual(machine.transition(to: .connecting), .connecting)
+        XCTAssertGreaterThan(machine.generation, generation)
+    }
+
     func testDisconnectedIsTerminal() {
         var machine = SessionStateMachine(state: .disconnected)
         for state in [SessionState.idle, .connecting, .connected, .failed, .disconnecting] {

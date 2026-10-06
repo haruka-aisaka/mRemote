@@ -94,9 +94,11 @@ struct ConnectionListView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(session.displayName).font(.headline)
-                                    Text(session.statusText)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.primary)
+                                    SessionStateBadge(
+                                        state: session.state,
+                                        statusText: session.statusText
+                                    )
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right")
@@ -105,6 +107,14 @@ struct ConnectionListView: View {
                             .contentShape(Rectangle())
                         }
                         .accessibilityIdentifier("running-session-\(session.displayName)")
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                Task { await session.disconnect() }
+                            } label: {
+                                Label(session.state.isActive ? "切断" : "閉じる",
+                                      systemImage: "xmark.circle")
+                            }
+                        }
                     }
                 }
             }
@@ -112,7 +122,14 @@ struct ConnectionListView: View {
             Section {
             ForEach(environment.profiles) { profile in
                 Button {
-                    Task { await environment.connect(to: profile) }
+                    // docs/ui-flow.md section 7: an ordinary tap returns to the
+                    // profile's running session; only the explicit action
+                    // below opens a second one.
+                    if let running = environment.runningSession(for: profile) {
+                        environment.present(running)
+                    } else {
+                        Task { await environment.connect(to: profile) }
+                    }
                 } label: {
                     ConnectionRow(profile: profile)
                 }
@@ -134,6 +151,10 @@ struct ConnectionListView: View {
                     .tint(.blue)
                 }
                 .contextMenu {
+                    Button("新しいセッションで接続") {
+                        Task { await environment.connect(to: profile) }
+                    }
+                    .accessibilityIdentifier("connect-new-session")
                     Button("編集") {
                         route = .editor(ProfileEditorModel(
                             mode: .edit(profile),

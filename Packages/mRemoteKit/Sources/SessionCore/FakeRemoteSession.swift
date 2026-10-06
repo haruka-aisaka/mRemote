@@ -142,6 +142,14 @@ public actor FakeRemoteSession: RemoteSession {
         self.visibility = visibility
     }
 
+    /// Drops a live connection the way a network loss would, so reconnect
+    /// handling can be exercised without a server.
+    public func simulateConnectionLoss(_ error: RemoteSessionError = .networkUnreachable) {
+        guard machine.transition(to: .failed) != nil else { return }
+        emit(.error(error))
+        emit(.stateChanged(machine.state, generation: machine.generation))
+    }
+
     private func finishConnecting() {
         machine.transition(to: .connected)
         emit(.stateChanged(machine.state, generation: machine.generation))

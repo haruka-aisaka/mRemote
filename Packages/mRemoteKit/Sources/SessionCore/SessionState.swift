@@ -51,7 +51,10 @@ public struct SessionStateMachine: Sendable {
         .idle: [.connecting],
         .connecting: [.awaitingUser, .connected, .failed, .disconnecting],
         .awaitingUser: [.connecting, .disconnecting, .failed],
-        .connected: [.reconnecting, .disconnecting],
+        // A live connection can fail outright: the network goes, the server
+        // drops the socket. Without this edge the state stayed `connected`
+        // after the worker had already ended, and nothing could retry it.
+        .connected: [.reconnecting, .disconnecting, .failed],
         .reconnecting: [.connected, .failed, .disconnecting],
         .disconnecting: [.disconnected],
         .failed: [.connecting, .disconnecting],

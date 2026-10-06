@@ -22,11 +22,19 @@ struct RootView: View {
 
     var body: some View {
         ConnectionListView()
-            .fullScreenCover(item: Binding(
-                get: { environment.presentedSession },
-                set: { if $0 == nil { environment.presentedSession = nil } }
-            )) { session in
-                SessionWorkspaceView(model: session)
+            // Presented by a flag rather than by item, so switching sessions
+            // swaps the content in place instead of dismissing and presenting
+            // a second cover. `.id` rebuilds the surface per session: each
+            // one draws a different frame store.
+            .fullScreenCover(isPresented: Binding(
+                get: { environment.presentedSession != nil },
+                set: { if !$0 { environment.returnToList() } }
+            )) {
+                if let session = environment.presentedSession {
+                    SessionWorkspaceView(model: session)
+                        .id(session.id)
+                        .environment(environment)
+                }
             }
     }
 }

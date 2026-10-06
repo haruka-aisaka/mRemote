@@ -194,6 +194,21 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 - 1 session の network stall/error が他 session/UI を止めない。
 - memory baseline に基づく supported session guidance を決める。
 
+### 実装状況（2026-10-07、シミュレータ確認まで）
+
+| 項目 | 状態 |
+|---|---|
+| session ごとの FreeRDP instance/worker/frame store | Phase 2 の構造のまま成立（セッションごとに `RDPRemoteSession` と専用 worker）。上限は `SessionManager.sessionLimit = 3` |
+| 実行中 section、session switcher、状態 badge | 実装済み。一覧の「実行中」、フローティングボタンのメニュー sheet の切替一覧、`SessionStateBadge`（色だけに頼らずアイコン付き） |
+| focused session の atomic switch と stale generation 排除 | 実装済み。`AppEnvironment.switchTo` で focus を移し、旧 surface は gate 閉で押下を解放、新 surface は `.id` で作り直す。generation は Phase 2 から session が保持 |
+| 非表示 session の presentation 縮退 | 実装済み。frame store が最後の全面フレームを保持し、戻ったときに即描画（従来は次の更新まで黒） |
+| memory warning policy | 実装済み。非 focus セッションの保持フレームだけを捨て、接続は切らない |
+| reconnect と scene restoration policy | 実装済み。接続済みだったセッションが再試行可能なエラーで落ちたら 1/2/4 秒で最大 3 回（`ReconnectSchedule`）。前景復帰時にも判定。認証失敗等は再試行しない。あわせて状態機械に `connected → failed` を追加した（従来は通信断後も `connected` のまま残っていた） |
+| 通常 tap は既存セッションへ戻る／明示操作だけが多重接続 | 実装済み。一覧の context menu「新しいセッションで接続」 |
+| 2×1080p で 30 分、切替・入力分離・個別切断 | 自動試験（`MultiSessionTests`）で focus・個別切断・再接続を確認。**実機 30 分は未実施** |
+| network stall が他 session/UI を止めない | 構造上はセッションごとの worker で隔離。**実測は未実施** |
+| memory baseline と supported session guidance | **未実施**。実機計測が必要 |
+
 ## 7. Phase 5 — 音声・クリップボード
 
 ### 実装

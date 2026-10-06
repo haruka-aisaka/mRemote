@@ -25,6 +25,15 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     private(set) var runtime: SessionRuntimeState
     private(set) var desktopSize: (width: Int, height: Int)?
     private(set) var supportsDynamicResolution = false
+    /// The floating menu is open. Input is gated while it is, so a key held
+    /// when it opened is released rather than left down behind the sheet.
+    var isMenuPresented = false
+    /// Non-nil while an automatic reconnect is waiting or running: the
+    /// attempt number out of `reconnectSchedule.maximumAttempts`.
+    private(set) var reconnectAttempt: Int?
+    private var hadConnected = false
+    private var reconnectTask: Task<Void, Never>?
+    private let reconnectSchedule = ReconnectSchedule()
 
     private unowned let environment: AppEnvironment
     private let session: any RemoteSession
@@ -67,11 +76,22 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         hasher.combine(id)
     }
 
-    var statusText: String { Formatting.stateLabel(state) }
+    var statusText: String {
+        if let reconnectAttempt {
+            return "再接続中 (\(reconnectAttempt)/\(reconnectSchedule.maximumAttempts))"
+        }
+        return Formatting.stateLabel(state)
+    }
 
-    var isBusy: Bool { state == .connecting || state == .reconnecting }
+    var isBusy: Bool {
+        state == .connecting || state == .reconnecting || reconnectAttempt != nil
+    }
 
-    var canRetry: Bool { state == .failed }
+    var canRetry: Bool { state == .failed && reconnectAttempt == nil }
+
+    /// The input gate, in one place: connected, focused, menu closed. The
+    /// scene half is added by the view, which owns `scenePhase`.
+    var acceptsInput: Bool { state.acceptsInput && isFocused && !isMenuPresented }
 
     /// Present only once the session has a desktop to draw. Until then the
     /// workspace shows its status rather than a black rectangle.
@@ -126,15 +146,57 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             }
             if state == .connected {
                 lastError = nil
+                hadConnected = true
+                reconnectAttempt = nil
                 if let desktop {
                     supportsDynamicResolution = await desktop.supportsDynamicResolution
                 }
             }
+            if state == .failed { scheduleReconnectIfNeeded() }
         case .userActionRequired(let challenge):
             pendingChallenge = challenge
+            // A reconnect that needs the user is no longer automatic.
+            reconnectAttempt = nil
         case .error(let error):
             lastError = error
+            if state == .failed { scheduleReconnectIfNeeded() }
         }
+    }
+
+    // MARK: - Reconnect
+
+    /// The failure and the error arrive as two events in either order, so
+    /// both call this and the task itself is the guard against a second
+    /// attempt for the same drop.
+    private func scheduleReconnectIfNeeded() {
+        guard reconnectTask == nil, state == .failed else { return }
+        let attempt = (reconnectAttempt ?? 0) + 1
+        guard let delay = reconnectSchedule.delay(
+            beforeAttempt: attempt,
+            after: lastError,
+            policy: configuration.reconnectPolicy,
+            hadConnected: hadConnected
+        ) else {
+            reconnectAttempt = nil
+            return
+        }
+        reconnectAttempt = attempt
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.reconnectTask = nil
+            guard self.state == .failed else { return }
+            await self.retry()
+            // A failed attempt arrives as another `.failed`, which schedules
+            // the next one; a success clears `reconnectAttempt`.
+            if self.state == .failed { self.scheduleReconnectIfNeeded() }
+        }
+    }
+
+    private func cancelReconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectAttempt = nil
     }
 
     // MARK: - Presentation
@@ -219,6 +281,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     }
 
     func retry() async {
+        if reconnectAttempt == nil { cancelReconnect() }
         do {
             try await session.connect()
             await refresh()
@@ -237,18 +300,24 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     }
 
     func sceneBecameActive() async {
-        await session.setVisibility(.focused)
+        await session.setVisibility(isFocused ? .focused : .background)
         await refresh()
+        // docs/architecture.md section 10: a connection that died while the
+        // app was away is found on the way back, and handled by policy.
+        if state == .failed { scheduleReconnectIfNeeded() }
     }
 
     /// Leaves the workspace without disconnecting. docs/requirements.md SES-02
     /// keeps a foreground connection alive until the user disconnects
     /// explicitly, so going back to the list must not tear it down.
     func returnToList() {
-        environment.presentedSession = nil
+        isMenuPresented = false
+        environment.returnToList()
     }
 
     func disconnect() async {
+        cancelReconnect()
+        isMenuPresented = false
         resizeTask?.cancel()
         resizeTask = nil
         await session.disconnect(reason: .userRequested)

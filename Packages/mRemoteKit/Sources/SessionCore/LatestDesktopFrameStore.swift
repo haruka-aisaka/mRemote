@@ -12,6 +12,11 @@ public final class LatestDesktopFrameStore: @unchecked Sendable {
 
     private let lock = NSLock()
     private var pending: DesktopFrame?
+    /// The last frame a renderer took. Every frame carries the whole surface,
+    /// so this is what a surface built later - the user coming back to this
+    /// session - draws first instead of black until the server next paints.
+    /// Holding it costs no copy: `Data` shares the bytes with the frame.
+    private var retained: DesktopFrame?
     private var signal: Signal?
     /// True between raising a signal and the consume that answers it. It is
     /// what makes a burst of frames wake the renderer once instead of once
@@ -61,8 +66,38 @@ public final class LatestDesktopFrameStore: @unchecked Sendable {
         let frame = pending
         pending = nil
         signalPending = false
+        if let frame { retained = frame }
         lock.unlock()
         return frame
+    }
+
+    /// Called by a newly attached renderer. Queues the retained surface as a
+    /// full repaint when nothing newer is pending, and signals.
+    public func reseedForNewSurface() {
+        lock.lock()
+        if pending == nil, let retained {
+            pending = retained.withDamage([])
+        }
+        let shouldRaise = pending != nil
+        signalPending = signalPending || shouldRaise
+        let signal = self.signal
+        lock.unlock()
+        if shouldRaise { signal?() }
+    }
+
+    /// Releases the retained surface, e.g. for a background session on a
+    /// memory warning. The cost is a dark surface until the server next
+    /// paints when the user returns to it.
+    public func discardRetained() {
+        lock.lock()
+        retained = nil
+        lock.unlock()
+    }
+
+    public var hasRetainedSurface: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return retained != nil
     }
 
     /// Drops the pending frame without drawing it. Used when a session is put
@@ -72,6 +107,7 @@ public final class LatestDesktopFrameStore: @unchecked Sendable {
     public func discardPending() {
         lock.lock()
         pending = nil
+        retained = nil
         signalPending = false
         lock.unlock()
     }

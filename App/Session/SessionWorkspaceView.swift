@@ -8,6 +8,7 @@ struct SessionWorkspaceView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.scenePhase) private var scenePhase
     @Bindable var model: SessionWorkspaceModel
+    @State private var toastText: String?
 
     var body: some View {
         ZStack {
@@ -17,14 +18,18 @@ struct SessionWorkspaceView: View {
                 status
             }
             floatingMenu
+            toast
             privacyCover
         }
+        .onAppear { showToast() }
         // Naming the container must not hide what is inside it: the status
         // text and the floating menu have to stay individually reachable.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("session-workspace")
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+        // Only the presented session raises its challenge here; one waiting in
+        // the background shows as 確認待ち in the list and the switcher.
         .sheet(item: challengeBinding) { identified in
             SessionChallengeSheet(
                 challenge: identified.challenge,
@@ -73,8 +78,7 @@ struct SessionWorkspaceView: View {
                 // scene must be the one the user is looking at.
                 // A third: the session must be the focused one, so a surface
                 // left behind during a switch can never type into it.
-                isInputEnabled: model.state.acceptsInput && scenePhase == .active
-                    && model.isFocused,
+                isInputEnabled: model.acceptsInput && scenePhase == .active,
                 isInputTraceEnabled: environment.inputDiagnostics.isTraceRequested,
                 onRenderSizeChange: { width, height in
                     model.renderSizeChanged(width: width, height: height)
@@ -147,69 +151,42 @@ struct SessionWorkspaceView: View {
     }
 
     private var floatingMenu: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Menu {
-                    Picker("表示倍率", selection: scaleBinding) {
-                        Text("画面に合わせる").tag(InitialScale.fit)
-                        Text("100%").tag(InitialScale.oneToOne)
-                    }
-                    .accessibilityIdentifier("session-scale-picker")
-
-                    Picker("スクロール方向", selection: scrollBinding) {
-                        Text("標準").tag(ScrollDirection.normal)
-                        Text("反転").tag(ScrollDirection.reversed)
-                    }
-                    .accessibilityIdentifier("session-scroll-picker")
-
-                    if let size = model.desktopSizeText {
-                        Section("リモート解像度") {
-                            Text(model.supportsDynamicResolution ? "\(size)（可変）" : size)
-                        }
-                    }
-
-                    Button {
-                        model.returnToList()
-                    } label: {
-                        Label("接続先一覧へ戻る", systemImage: "list.bullet")
-                    }
-                    .accessibilityIdentifier("session-return-to-list")
-
-                    Button(role: .destructive) {
-                        Task { await model.disconnect() }
-                    } label: {
-                        Label("切断", systemImage: "xmark.circle")
-                    }
-                    .accessibilityIdentifier("session-disconnect")
-                } label: {
-                    Image(systemName: "ellipsis.circle.fill")
-                        .font(.system(size: 44))
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, .black.opacity(0.6))
-                }
-                .accessibilityIdentifier("session-menu-button")
-                .padding(24)
-            }
+        FloatingMenuButton {
+            model.isMenuPresented = true
+        }
+        // On the button rather than the workspace: the workspace already
+        // carries the challenge sheet, and two sheets on one view do not both
+        // present.
+        .sheet(isPresented: $model.isMenuPresented) {
+            SessionMenuSheet(model: model)
+                .presentationDetents([.medium, .large])
         }
     }
 
-    private var scaleBinding: Binding<InitialScale> {
-        Binding(
-            get: { model.runtime.scale },
-            set: { model.setScaleMode($0) }
-        )
+    @ViewBuilder
+    private var toast: some View {
+        if let toastText {
+            Text(toastText)
+                .font(.headline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.thinMaterial, in: Capsule())
+                .padding(.top, 24)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("session-toast")
+        }
     }
 
-    /// Live rather than a profile edit: which way a trackpad should scroll a
-    /// remote desktop is the kind of thing a user settles by trying it, and
-    /// making them leave the session to change it would be absurd.
-    private var scrollBinding: Binding<ScrollDirection> {
-        Binding(
-            get: { model.runtime.scrollDirection },
-            set: { model.setScrollDirection($0) }
-        )
+    /// docs/ui-flow.md section 6: the session's name, briefly, when it is
+    /// connected to or switched to.
+    private func showToast() {
+        withAnimation { toastText = "\(model.displayName) ・ \(model.statusText)" }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { toastText = nil }
+        }
     }
 
     private var challengeBinding: Binding<IdentifiedChallenge?> {

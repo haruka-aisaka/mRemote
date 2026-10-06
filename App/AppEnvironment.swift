@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
 import AppleAdapters
 import Persistence
 import SessionCore
@@ -34,6 +35,7 @@ final class AppEnvironment {
     let inputDiagnostics = InputDiagnosticsCenter()
 
     private let logger = AppLog.logger(.app)
+    @ObservationIgnored private var memoryWarningObserver: NSObjectProtocol?
 
     init(
         store: any ProfileStore,
@@ -46,6 +48,13 @@ final class AppEnvironment {
         self.trust = trust
         self.factories = factories
         self.sessions = SessionManager()
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleMemoryWarning() }
+        }
     }
 
     /// The shipping graph. The only place that knows RDP exists: everything
@@ -218,6 +227,36 @@ final class AppEnvironment {
     func present(_ model: SessionWorkspaceModel) {
         presentedSession = model
         Task { await focus(model.id) }
+    }
+
+    /// docs/ui-flow.md section 7: switching sessions. The old surface's gate
+    /// closes when focus moves, which releases whatever it held, and the new
+    /// one is built fresh from its session's retained frame.
+    func switchTo(_ model: SessionWorkspaceModel) {
+        guard presentedSession?.id != model.id else { return }
+        presentedSession?.isMenuPresented = false
+        present(model)
+    }
+
+    /// Back to the list with every connection kept (SES-02). Input focus goes
+    /// with the workspace: nothing on the list may type into a session.
+    func returnToList() {
+        presentedSession = nil
+        Task { await focus(nil) }
+    }
+
+    func runningSession(for profile: ConnectionProfile) -> SessionWorkspaceModel? {
+        runningSessions.last { $0.configuration.profileID == profile.id }
+    }
+
+    /// docs/architecture.md section 7.2: memory pressure sheds what can be
+    /// rebuilt - the retained surfaces of sessions nobody is looking at - and
+    /// never a connection.
+    func handleMemoryWarning() {
+        for model in runningSessions where model.id != focusedSessionID {
+            model.frameStore?.discardRetained()
+        }
+        logger.notice("memory warning: released background surfaces")
     }
 
     /// Moves input focus. The view of the previous session sees its gate

@@ -60,6 +60,10 @@ final class ConnectionFlowUITests: XCTestCase {
         element("session-menu-button").tap()
         _ = assertAppears("session-disconnect", "the floating menu opens")
         element("session-disconnect").tap()
+        // Disconnecting names the session and asks first; returning does not.
+        let confirm = app.buttons["切断"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "disconnect asks for confirmation")
+        confirm.tap()
 
         _ = assertAppears("profile-row-テスト接続先", "disconnecting returns to the list")
         XCTAssertFalse(

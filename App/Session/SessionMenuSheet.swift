@@ -1,0 +1,157 @@
+import SwiftUI
+import SessionCore
+
+/// The floating button's menu (docs/ui-flow.md section 6.1).
+///
+/// Opening it closes the input gate - `SessionWorkspaceModel.acceptsInput` -
+/// so whatever was held is released before the sheet appears, and closing it
+/// gives the keyboard back to the surface.
+struct SessionMenuSheet: View {
+    @Environment(AppEnvironment.self) private var environment
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var model: SessionWorkspaceModel
+    @State private var confirmingDisconnect = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    HStack {
+                        Text(model.displayName).font(.headline)
+                        Spacer()
+                        SessionStateBadge(state: model.state, statusText: model.statusText)
+                    }
+                }
+
+                if environment.runningSessions.count > 1 {
+                    Section("セッションを切り替える") {
+                        ForEach(environment.runningSessions) { session in
+                            Button {
+                                environment.switchTo(session)
+                            } label: {
+                                HStack {
+                                    Image(systemName: session.id == model.id
+                                          ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(session.id == model.id ? Color.accentColor : .secondary)
+                                    Text(session.displayName)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    SessionStateBadge(state: session.state, statusText: session.statusText)
+                                }
+                            }
+                            .disabled(session.id == model.id)
+                            .accessibilityIdentifier("switch-to-\(session.displayName)")
+                        }
+                    }
+                }
+
+                Section("表示") {
+                    Picker("表示倍率", selection: Binding(
+                        get: { model.runtime.scale },
+                        set: { model.setScaleMode($0) }
+                    )) {
+                        Text("画面に合わせる").tag(InitialScale.fit)
+                        Text("100%").tag(InitialScale.oneToOne)
+                    }
+                    .accessibilityIdentifier("session-scale-picker")
+                    if let size = model.desktopSizeText {
+                        LabeledContent(
+                            "リモート解像度",
+                            value: model.supportsDynamicResolution ? "\(size)（可変）" : size
+                        )
+                    }
+                }
+
+                Section("入力") {
+                    // Live rather than a profile edit: which way a trackpad
+                    // should scroll a remote desktop is settled by trying it.
+                    Picker("スクロール方向", selection: Binding(
+                        get: { model.runtime.scrollDirection },
+                        set: { model.setScrollDirection($0) }
+                    )) {
+                        Text("標準").tag(ScrollDirection.normal)
+                        Text("反転").tag(ScrollDirection.reversed)
+                    }
+                    .accessibilityIdentifier("session-scroll-picker")
+                }
+
+                Section {
+                    Button {
+                        model.returnToList()
+                    } label: {
+                        Label("接続先一覧へ戻る（接続を維持）", systemImage: "list.bullet")
+                    }
+                    .accessibilityIdentifier("session-return-to-list")
+
+                    if model.canRetry || model.state == .disconnected {
+                        Button {
+                            dismiss()
+                            Task { await model.retry() }
+                        } label: {
+                            Label("再接続", systemImage: "arrow.clockwise")
+                        }
+                        .accessibilityIdentifier("session-reconnect")
+                    }
+
+                    Button(role: .destructive) {
+                        confirmingDisconnect = true
+                    } label: {
+                        Label("このセッションを切断", systemImage: "xmark.circle")
+                    }
+                    .accessibilityIdentifier("session-disconnect")
+                }
+            }
+            .navigationTitle("セッション")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("閉じる") { dismiss() }
+                        .accessibilityIdentifier("session-menu-close")
+                }
+            }
+            .confirmationDialog(
+                "\(model.displayName) を切断しますか？",
+                isPresented: $confirmingDisconnect,
+                titleVisibility: .visible
+            ) {
+                Button("切断", role: .destructive) {
+                    Task { await model.disconnect() }
+                }
+                .accessibilityIdentifier("session-disconnect-confirm")
+            }
+        }
+        .accessibilityIdentifier("session-menu")
+    }
+}
+
+/// State with an icon as well as a colour, so it is not carried by colour
+/// alone (docs/ui-flow.md section 10).
+struct SessionStateBadge: View {
+    let state: SessionState
+    let statusText: String
+
+    var body: some View {
+        Label(statusText, systemImage: symbol)
+            .font(.subheadline)
+            .foregroundStyle(color)
+    }
+
+    private var symbol: String {
+        switch state {
+        case .connected: return "checkmark.circle"
+        case .connecting, .reconnecting, .disconnecting: return "arrow.triangle.2.circlepath"
+        case .awaitingUser: return "person.crop.circle.badge.questionmark"
+        case .failed: return "exclamationmark.triangle"
+        case .idle, .disconnected: return "minus.circle"
+        }
+    }
+
+    private var color: Color {
+        switch state {
+        case .connected: return .green
+        case .awaitingUser: return .orange
+        case .failed: return .red
+        default: return .secondary
+        }
+    }
+}
