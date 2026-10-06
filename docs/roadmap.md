@@ -136,7 +136,6 @@ Address+UndefinedBehavior と Thread の両 sanitizer で実行し、いずれ�
   shape の transport はそこで ABI 追加として設計する。現状はサーバー側描画に依存する。
 - 自動再接続 (`ReconnectPolicy.automatic`) は設定値としては存在するが、再接続の実行は
   Phase 4 の scene restoration と同じ policy で扱う。
-- 入力（キー/ポインター）は送らない。Phase 3。
 
 ## 5. Phase 3 — 物理入力とポインター
 
