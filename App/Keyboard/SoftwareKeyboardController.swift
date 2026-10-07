@@ -16,21 +16,31 @@ final class SoftwareKeyboardController {
     private(set) var mode: SoftwareKeyboardMode
     /// Local IME composition not yet committed. Shown in the bar, never sent.
     var markedText: String?
+    /// docs/input-design.md section 10.2: a character a Windows app does not
+    /// take as a Unicode key event can go by clipboard paste instead, with
+    /// the user's say-so. Armed, the next committed text - a confirmed
+    /// composition, an emoji - is pasted rather than typed. One shot.
+    private(set) var pastesNextCommit = false
     private var composer: SoftwareKeyboardComposer
 
     @ObservationIgnored weak var proxy: SoftwareKeyboardProxy?
     @ObservationIgnored private let send: (SoftwareKeyboardOutput) -> Void
     @ObservationIgnored private let canSend: () -> Bool
+    /// Nil when the profile does not allow sending the clipboard; the bar
+    /// then offers no paste.
+    @ObservationIgnored private let paste: ((String) -> Void)?
 
     init(
         mode: SoftwareKeyboardMode,
         layout: KeyboardLayoutPreference,
         canSend: @escaping () -> Bool,
+        paste: ((String) -> Void)? = nil,
         send: @escaping (SoftwareKeyboardOutput) -> Void
     ) {
         self.mode = mode
         self.composer = SoftwareKeyboardComposer(mode: mode, layout: layout)
         self.canSend = canSend
+        self.paste = paste
         self.send = send
     }
 
@@ -47,6 +57,7 @@ final class SoftwareKeyboardController {
     /// docs/ui-flow.md section 9: closing releases every virtual modifier
     /// and gives the keyboard back to the physical surface.
     func hide() {
+        pastesNextCommit = false
         cancelComposition()
         composer.releaseModifiers()
         isVisible = false
@@ -62,7 +73,22 @@ final class SoftwareKeyboardController {
         proxy?.applyMode(newMode)
     }
 
+    var canPaste: Bool { paste != nil }
+
+    func togglePasteNextCommit() {
+        guard canPaste else { return }
+        pastesNextCommit.toggle()
+    }
+
     func commit(_ text: String) {
+        if pastesNextCommit, let paste {
+            pastesNextCommit = false
+            // Modifiers latched for this text do not apply to a paste.
+            composer.releaseModifiers()
+            guard canSend() else { return }
+            paste(text)
+            return
+        }
         deliver(composer.commit(text))
     }
 

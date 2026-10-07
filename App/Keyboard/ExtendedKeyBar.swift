@@ -33,6 +33,9 @@ struct ExtendedKeyBar: View {
                         key("PgUp", .pageUp)
                         key("PgDn", .pageDown)
                         key("Del", .deleteForward)
+                        if controller.canPaste {
+                            pasteToggle
+                        }
                     }
                     .padding(.horizontal, 8)
                 }
@@ -59,6 +62,23 @@ struct ExtendedKeyBar: View {
             }
         }
         .padding(.vertical, 6)
+    }
+
+    /// Arming is the consent the paste fallback asks for, so the label says
+    /// what it does to the remote clipboard.
+    private var pasteToggle: some View {
+        Button {
+            controller.togglePasteNextCommit()
+        } label: {
+            Label(
+                controller.pastesNextCommit ? "次の入力を貼り付けで送る（クリップボード上書き）" : "貼り付けで送る",
+                systemImage: "doc.on.clipboard"
+            )
+        }
+        .modifierStyle(isOn: controller.pastesNextCommit)
+        .accessibilityHint("次に確定した文字を、リモートのクリップボードを上書きして貼り付けで送ります。Unicode 入力を受け付けないアプリ向け")
+        .accessibilityValue(controller.pastesNextCommit ? "オン" : "オフ")
+        .accessibilityIdentifier("software-keyboard-paste-next")
     }
 
     private func compositionBar(_ marked: String) -> some View {

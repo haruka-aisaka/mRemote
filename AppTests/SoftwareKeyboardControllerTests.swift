@@ -17,6 +17,42 @@ final class SoftwareKeyboardControllerTests: XCTestCase {
         )
     }
 
+    func testAnArmedPasteSendsTheNextCommitByPasteOnce() {
+        var pasted: [String] = []
+        let controller = SoftwareKeyboardController(
+            mode: .localIME,
+            layout: .japanese,
+            canSend: { [unowned self] in gateOpen },
+            paste: { pasted.append($0) },
+            send: { [unowned self] in sent.append($0) }
+        )
+        XCTAssertTrue(controller.canPaste)
+        controller.togglePasteNextCommit()
+        controller.commit("😀")
+        XCTAssertEqual(pasted, ["😀"])
+        XCTAssertEqual(sent, [], "pasted, not typed")
+        XCTAssertFalse(controller.pastesNextCommit, "one shot")
+        controller.commit("a")
+        XCTAssertEqual(sent, [.unicode(0x61)])
+        XCTAssertEqual(pasted.count, 1)
+    }
+
+    func testNoPasteWithoutAClipboardThatMaySend() {
+        let controller = makeController()
+        XCTAssertFalse(controller.canPaste)
+        controller.togglePasteNextCommit()
+        XCTAssertFalse(controller.pastesNextCommit)
+    }
+
+    func testHidingDisarmsThePaste() {
+        let controller = SoftwareKeyboardController(
+            mode: .localIME, layout: .japanese, canSend: { true }, paste: { _ in }, send: { _ in }
+        )
+        controller.togglePasteNextCommit()
+        controller.hide()
+        XCTAssertFalse(controller.pastesNextCommit)
+    }
+
     func testCommittedTextIsSentAndNothingWhileTheGateIsClosed() {
         let controller = makeController()
         controller.commit("あ")
