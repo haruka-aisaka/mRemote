@@ -13,7 +13,7 @@ struct HelpView: View {
                 row("Globe（地球儀）キー", "iPadOS のショートカットに使われ、Windows へは送りません。")
                 row("Control+Space", "iPadOS の入力切替に設定されていると届きません。キーバーの Ctrl を押してから Space。")
                 row("Caps Lock", "iPadOS の「ハードウェアキーボード」設定で Caps Lock による入力切替がオンだと、英字入力の切替に使われます。")
-                row("Ctrl+Alt+Del", "RDP では Windows がセキュリティ画面を出しません。代わりにキーバーで Ctrl と Alt を押してから End（Ctrl+Alt+End）。")
+                row("Ctrl+Alt+Del", "キーバーで Ctrl と Alt を押してから Del を押すと、Windows のセキュリティ画面（ロック、サインアウト、タスク マネージャーなど）が出ます。")
             } header: {
                 Text("iPadOS が先に使うキー")
             }

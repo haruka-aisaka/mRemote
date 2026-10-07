@@ -100,7 +100,7 @@ GCKeyboard は UIKit に届かないキーの補完と互換性診断に使う�
 
 ### 4.3 システム予約キー
 
-`UIKeyCommand.wantsPriorityOverSystemBehavior` は利用可能なコマンドに使えるが key-up を取得できず、raw keyboard 転送の代替にはしない。Home、App 切替、Spotlight 等、iPadOS が予約する全操作を横取りできるとは仮定しない。取れない組み合わせは画面内の Ctrl/Alt/Win、Alt+Tab、リモートのセキュリティ画面操作等で代替する。secure attention は raw Ctrl+Alt+Delete ではなく、通常 Ctrl+Alt+End または採用 FreeRDP 版の専用 helper を Phase 0 で検証して実装する。
+`UIKeyCommand.wantsPriorityOverSystemBehavior` は利用可能なコマンドに使えるが key-up を取得できず、raw keyboard 転送の代替にはしない。Home、App 切替、Spotlight 等、iPadOS が予約する全操作を横取りできるとは仮定しない。取れない組み合わせは画面内の Ctrl/Alt/Win、Alt+Tab、リモートのセキュリティ画面操作等で代替する。secure attention は raw Ctrl+Alt+Delete の scan code 送信で足りる（2026-10-07、Windows 11 でキーバーの Ctrl → Alt → Del からセキュリティ画面が出ることを確認）。Ctrl+Alt+End は mstsc が手元で Ctrl+Alt+Delete に置き換えるショートカットで、サーバーへ送っても効かない。
 
 ## 5. 二経路の調停と押下状態
 

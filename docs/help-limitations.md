@@ -25,9 +25,10 @@ Windows へも送れない。iPad の Command キーは Windows キーとして�
   増減することがある。手元の実機で網羅的に記録したものではない（test-plan.md の KEY-RESERVED-01 が未了）。
 - 「英数」「かな」はアプリが受け取り、それぞれ Windows の「無変換」「変換」として送る。
   Windows 側でこの 2 つに IME のオフ/オンを割り当てる設定は、4 節を参照。
-- Ctrl+Alt+Del は、RDP で送っても Windows はリモートのセキュリティ画面を出さない（Windows の仕様）。
-  代わりに RDP で同じ意味を持つ **Ctrl+Alt+End** を送る（キーバーの Ctrl と Alt を押してから End）。
-  この代替は Windows 側の標準動作で、mRemote の実機試験はまだ記録していない。
+- Ctrl+Alt+Del は、キーバーの Ctrl と Alt を押してから Del を押すとリモートへ送られ、Windows の
+  セキュリティ画面（ロック、サインアウト、パスワードの変更、タスク マネージャー）が出る（2026-10-07、Windows 11 で確認）。
+  Windows の「リモート デスクトップ接続」で知られる Ctrl+Alt+End は、そのクライアントが手元で Ctrl+Alt+Del に
+  置き換えるショートカットで、mRemote から送ってもセキュリティ画面は出ない。
 
 ### キーバーの修飾キー
 
