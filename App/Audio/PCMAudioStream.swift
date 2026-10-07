@@ -17,9 +17,15 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
         let channels: Int
     }
 
-    /// Half a second of 48 kHz stereo: enough to ride out scheduling jitter,
-    /// short enough that a backlog is never mistaken for live audio.
-    static let capacityBytes = 48_000 * 2 * 2 / 2
+    /// One second of 48 kHz stereo. FreeRDP confirms each wave the moment it
+    /// arrives, so a sound starts with the server's pre-buffer sent ahead of
+    /// real time - and it arrives before the audio node exists, since the
+    /// node is built from the first packet's format. Half a second dropped a
+    /// packet of the first sound in every session (seen against Windows 11);
+    /// the pre-buffer is latency the server intends either way, so holding
+    /// it costs nothing, and the bound still keeps a stalled engine from
+    /// queueing without end.
+    static let capacityBytes = 48_000 * 2 * 2
     /// The most frames one render call is expected to ask for; the scratch
     /// buffer is sized once so rendering never allocates.
     static let maximumRenderFrames = 4_096
