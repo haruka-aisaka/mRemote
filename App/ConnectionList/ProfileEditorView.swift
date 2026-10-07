@@ -104,6 +104,7 @@ struct ProfileEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("キャンセル") { dismiss() }
+                        .accessibilityIdentifier("profile-cancel-button")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {

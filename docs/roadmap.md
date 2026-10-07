@@ -298,7 +298,7 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 | 実際に折り曲げたときの自動切替 | 確認済み（2026-10-07、シミュレータ）。縦向き + Partially Open で自動表示、Open で全画面に戻り、横向き + Partially Open では出ない |
 | 実ホストでのキー・ポインター | 確認済み（2026-10-07、Windows 11 Pro ARM64 VM、シミュレータ）。Win+R、英字と Shift の one-shot、Ctrl+N、半/全 → ローマ字 → 変換 → 確定、トラックパッドの移動・カーソル描画・タップで左クリック・右ボタン・長押しドラッグ、キーボードのみでの画面トラックパッド（カーソル位置でクリック）。2 本指タップとスクロールは XCUITest で合成できず **未確認** |
 
-| Mac 配列（JIS / US） | 準備のみ。`LaptopKeyboardPlatform.mac` で Magic Keyboard（テンキー無し）相当の配列を出せる。⌘ は GUI（Win）、⌥ は Alt、英数/かな は LANG2/LANG1 として送る。fn は送れる usage が無いため置かず、前方削除を最上段に置く。矢印は逆 T 字。UI からは選べず、Windows ホストでは常に Windows 配列（`LaptopDeck` の `platform` 既定値）。Mac ホスト（画面共有/VNC 等）のセッションができたら渡す。左下の Caps キーは macOS の「修飾キー」設定と同じく `CapsLockRole`（Caps Lock / control / option / command / escape / 何もしない）で役割を変えられる（Mac JIS / US とも。UI 未接続。Windows 配列でも同じ仕組みで、メニューから Caps Lock / Ctrl を選べる） |
+| Mac 配列（JIS / US） | セッションメニューの「キーボードの見た目」で Windows / Mac を選べる（全セッション共通の設定、既定は Windows）。`LaptopKeyboardPlatform.mac` は Magic Keyboard（テンキー無し）相当の配列。⌘ は GUI（Win）、⌥ は Alt、英数/かな は LANG2/LANG1 として送るので、Windows ホストでも Mac の手癖で使える。fn は送れる usage が無いため置かず、前方削除を最上段に置く。矢印は逆 T 字。左下の Caps キーは「Caps キー」で役割を変えられ、Mac では macOS の「修飾キー」設定と同じ 6 つ（Caps Lock / Control / Option / Command / Escape / アクションなし）、Windows では Caps Lock / Ctrl。Mac だけの役割を選んだまま Windows に戻すと Caps Lock に戻す |
 
 接続方式（2026-10-07）: プロファイルの「接続方式」は以前から UI と警告だけがあり、接続には反映されていなかった（bridge が NLA 固定、PostConnect も HYBRID 以外を拒否）。bridge ABI 3 の `security_policy` で反映し、自動=NLA+TLS、NLA 必須、TLS 必須、レガシー=NLA+TLS+RDP。レガシーは選ぶと確認ダイアログを出し、許可した場合だけ設定され、接続時のトーストとセッションメニューに監査表示を出す。RDP Security Layer のみを受け付ける実機 Windows（X.224 で SSL_NOT_ALLOWED_BY_SERVER）に、許可後に接続できることを確認。TLS 失敗の文言にこの原因と設定場所を足した。
 
@@ -314,7 +314,7 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 
 - 2 本指タップ／2 本指スクロールを手で触って確かめる。ジェスチャー判定は単体試験（`TrackpadGestureTrackerTests`）、右クリックとホイールが Windows に届くことは実ホストで確認済みだが、2 本の指を同時に置く操作そのものは XCUITest（twoFingerTap、内部の event synthesizer とも）が iPhone Duo シミュレータで合成できない。
 - （2026-10-07 対応済み）同じ Windows ユーザーへ 2 本つなぐとセッションを奪い合い、自動再接続で取り返し続けていた。bridge がサーバーの ErrorInfo を読んでいなかったのが原因で、今は FreeRDP の last error を常に渡し、サーバーが意図して終えた切断（引き継ぎ・切断・サインアウト・アイドル）は「切断済み」にして自動再接続しない。Windows 11 は同一ユーザーの引き継ぎを 0x5 ではなく 0x1（RPC_INITIATED_DISCONNECT）で送る。最後の画面の上に理由と「再接続」を出し、再接続は同じ接続先の新しいセッションを開く（切断済みのセッションは戻せないため。セッションメニューの「再接続」も切断済みでは何もしていなかったので同じ動作にした）。Windows 11 VM へ Duo と iPad の 2 台から同一ユーザーで接続して、奪い合いが起きないことを確認。
-- レガシー RDP セキュリティで接続中かどうか（サーバーが実際に選んだ方式）は bridge が報告しないため、監査表示は「許可した接続先」までにとどまる。
+- （2026-10-07 対応済み）サーバーが実際に選んだ方式は bridge ABI 3 の `transport_security` で受け取り、セッションメニューの「通信の保護」に出す。
 - （2026-10-07 対応済み）セッション最初の音声 packet が node 構築前に届いて捨てられていた。ring を 1 秒にして解消。
 - session 切替で音声が混ざらないこと: 確認済み（2026-10-07）。実機 Windows を表示中は VM の音を再生せず（audio node も作らない）、VM に切り替えると「audio follows」が出てから再生する。
 - clipboard/audio 本文が log/disk に残らないこと: 確認済み（2026-10-07）。当日のアプリのログ約 8 万行とアプリのデータ領域（Duo/iPad）に、クリップボード・入力文字・パスワードが 0 件。info レベルのログはメモリにしか残らず数分で消えるため、試験中に取るには `log stream` を使う。
@@ -328,11 +328,14 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 - 拡大率: bridge ABI 3 で DesktopScaleFactor / DeviceScaleFactor を接続時と各 layout で送る。メニューの「Windows の拡大率」（既定は自動＝端末の倍率、iPhone で 300%）。
 - 折り曲げたときの解像度: 「画面に合わせて変える」（既定、上半分の大きさを要求）か「変えずに縮小表示」（画面全体の大きさを要求し上半分に縮小）。
 - 音声: 実ホストの音で落ちていた render block の isolation を修正。
+- アクセシビリティ監査（`AppUITests/AccessibilityAuditUITests.swift`、約 1 分）: 一覧・編集・設定・ヘルプ・セッション・セッションメニュー・手元キーボードに Xcode の監査をかけ、通過。デッキのキー表示を Dynamic Type に追従させた（キーの大きさは変わらないので、拡大は元の大きさまで。上限なしにすると見切れる）。受け入れた指摘はテスト内の `knownIssues` に理由付きで残す: リモート画面のコントラスト/見切れ、ナビゲーションバーのキャンセル、キー表示、ヘルプの行（監査がその場で文字を大きくするため画面下に押し出された行が「一部未対応」になる。最大サイズでの目視は未実施）。
+- エラー文言: 接続とクリップボードの失敗を「何が起きたか＋何を確かめるか」に書き直した。バックエンドの英語の詳細は末尾の括弧に残す。
+- 予約ショートカットとバックグラウンドの制約: [help-limitations.md](help-limitations.md) と、設定の「ヘルプ > 送れないキーとバックグラウンド」。予約ショートカットの表は iPadOS の既定割当に基づくもので、実機での取得可否の記録（KEY-RESERVED-01）は未了。
 
 ## 9. Phase 7 — リリース仕上げ
 
 - accessibility、String Catalog、日本語/英語文言
-- エラー/help、予約 shortcut と background 制約の説明
+- エラー/help、予約 shortcut と background 制約の説明（文言と help 画面は 2026-10-07 に用意。予約 shortcut の実機記録と英語化が残り）
 - performance/energy/thermal tuning、network condition test
 - security review、fuzz/negative test、privacy manifest/用途説明
 - dependency vulnerability/license/SBOM、暗号輸出申告

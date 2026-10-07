@@ -6,6 +6,7 @@ struct HelpView: View {
     var body: some View {
         List {
             Section {
+                Text("iPad の Command キーは Windows キーとして送るため、Windows キーを含むショートカットの一部が届きません。キーバーの修飾キーは 1 回押すと次の 1 キーだけ、2 回押すと固定、3 回目で解除です。")
                 row("Command+Tab", "App 切り替えに使われます。Win+Tab はキーバーの Win を押してから Tab。")
                 row("Command+Space", "Spotlight に使われます。Win+Space はキーバーの Win を押してから Space。")
                 row("Command+H", "ホーム画面に使われます。Win+H はキーバーの Win を押してから H。")
@@ -15,8 +16,6 @@ struct HelpView: View {
                 row("Ctrl+Alt+Del", "RDP では Windows がセキュリティ画面を出しません。代わりにキーバーで Ctrl と Alt を押してから End（Ctrl+Alt+End）。")
             } header: {
                 Text("iPadOS が先に使うキー")
-            } footer: {
-                Text("iPad の Command キーは Windows キーとして送るため、Windows キーを含むショートカットの一部が届きません。キーバーの修飾キーは 1 回押すと次の 1 キーだけ、2 回押すと固定、3 回目で解除です。")
             }
 
             Section {
@@ -28,23 +27,20 @@ struct HelpView: View {
             }
 
             Section {
+                Text("英数は無変換、かなは変換として送ります。")
                 Text("Windows の「設定 > 時刻と言語 > 言語と地域」で日本語の「言語のオプション」を開き、Microsoft IME の「キーボード オプション > キーとタッチのカスタマイズ」で「キーの割り当て」をオンにし、無変換キーを「IME-オフ」、変換キーを「IME-オン」にします。サインインし直すと効きます。")
             } header: {
                 Text("英数/かなで Windows の IME を切り替える")
-            } footer: {
-                Text("英数は無変換、かなは変換として送ります。")
             }
         }
-        .navigationTitle("送れないキーとバックグラウンド")
+        .navigationTitle("ヘルプ")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("help-screen")
     }
 
     private func row(_ key: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(key).font(.headline)
-            Text(text).font(.subheadline).foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
+        // One Text, so it wraps and grows as one piece and is read as one.
+        Text("\(Text(key).bold())\n\(Text(text).foregroundStyle(.secondary))")
+            .accessibilityIdentifier("help-row")
     }
 }

@@ -522,12 +522,18 @@ private final class KeyCapView: UIView {
         label.textAlignment = .center
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.5
+        label.adjustsFontForContentSizeCategory = true
+        // Named for the accessibility audit, which finds the text inside
+        // the key rather than the key (AccessibilityAuditUITests).
+        label.accessibilityIdentifier = "laptop-key-cap"
         addSubview(label)
 
         shiftedLabel.text = key.shiftedLabel
         shiftedLabel.textColor = UIColor(white: 0.7, alpha: 1)
         shiftedLabel.textAlignment = .center
         shiftedLabel.isHidden = key.shiftedLabel == nil
+        shiftedLabel.adjustsFontForContentSizeCategory = true
+        shiftedLabel.accessibilityIdentifier = "laptop-key-cap"
         addSubview(shiftedLabel)
 
         lockIndicator.backgroundColor = .systemGreen
@@ -580,8 +586,19 @@ private final class KeyCapView: UIView {
         let area = labelArea.isEmpty ? bounds : labelArea
         let small = area.height < 30
         let size = min(area.height * (small ? 0.42 : 0.4), 17)
-        label.font = .systemFont(ofSize: size, weight: key.label.count > 2 ? .regular : .medium)
-        shiftedLabel.font = .systemFont(ofSize: size * 0.62)
+        // Dynamic Type, within the key: a key cap cannot grow past its key
+        // (the system keyboard does not either), so the size the key allows
+        // is the ceiling, and a smaller text setting makes the label smaller.
+        // Letting it grow only clips it. VoiceOver reads the key's name.
+        let metrics = UIFontMetrics(forTextStyle: .body)
+        label.font = metrics.scaledFont(
+            for: .systemFont(ofSize: size, weight: key.label.count > 2 ? .regular : .medium),
+            maximumPointSize: size
+        )
+        shiftedLabel.font = metrics.scaledFont(
+            for: .systemFont(ofSize: size * 0.62),
+            maximumPointSize: size * 0.62
+        )
         if shiftedLabel.isHidden {
             label.frame = area.insetBy(dx: 2, dy: 1)
         } else {
