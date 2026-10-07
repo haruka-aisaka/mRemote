@@ -35,6 +35,7 @@ typedef struct mr_rdp_owned_config {
     mr_rdp_channel_flags channel_flags;
     uint32_t desktop_scale_factor;
     uint32_t device_scale_factor;
+    mr_rdp_security_policy security_policy;
 } mr_rdp_owned_config;
 
 typedef struct mr_rdp_backend_clipboard_offer {

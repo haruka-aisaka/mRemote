@@ -33,7 +33,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MR_FREERDP_PROTOCOL_RDP 0x00000000u
+#define MR_FREERDP_PROTOCOL_SSL 0x00000001u
 #define MR_FREERDP_PROTOCOL_HYBRID 0x00000002u
+
+static BOOL mr_freerdp_protocol_allowed(mr_rdp_security_policy policy, uint32_t selected);
 #define MR_FREERDP_CLIPBOARD_PROBE_TIMEOUT_MS 10000u
 #define MR_FREERDP_COMMAND_BATCH_LIMIT 64u
 #define MR_FREERDP_RDPSND_SUBSYSTEM "mremote"
@@ -91,6 +95,7 @@ struct mr_freerdp_backend {
     /* ABI 2 */
     mr_rdp_keyboard_profile keyboard_profile;
     mr_rdp_channel_flags channel_flags;
+    mr_rdp_security_policy security_policy;
     int audio_focused;
     mr_rdpsnd_device *audio_sinks[MR_FREERDP_MAX_AUDIO_SINKS];
     /* Announced on the next drain; then owned as current_offer. */
@@ -1443,13 +1448,14 @@ static BOOL mr_freerdp_post_connect(freerdp *instance)
      * support automatic reconnect, so retaining FreeRDP's credential copy for
      * the rest of the desktop session serves no purpose. */
     mr_freerdp_clear_password(context->settings);
-    /* PROTOCOL_HYBRID is deliberately adapter-local: protocol constants are
-     * internal in pinned FreeRDP 3.31.1. NLA uses TLS as its transport, but a
-     * server selecting TLS-only, classic RDP, HYBRID_EX, RDSTLS, or AAD must
-     * never reach GDI/input activation. */
-    if (freerdp_settings_get_uint32(
-            context->settings, FreeRDP_SelectedProtocol) !=
-        MR_FREERDP_PROTOCOL_HYBRID) {
+    /* The protocol constants are adapter-local: they are internal in pinned
+     * FreeRDP 3.31.1. Whatever the server selected has to be one the
+     * session's policy allows - the negotiation offered only those, so this
+     * is the check that it held - and HYBRID_EX, RDSTLS and AAD never reach
+     * GDI/input activation under any policy. */
+    if (!mr_freerdp_protocol_allowed(
+            backend->security_policy,
+            freerdp_settings_get_uint32(context->settings, FreeRDP_SelectedProtocol))) {
         mr_freerdp_record_status(backend, MR_RDP_ERROR_UNSUPPORTED);
         return FALSE;
     }
@@ -2459,6 +2465,36 @@ static const mr_rdp_backend_vtable mr_freerdp_vtable = {
 /* The layout/type pair the server is told at connect. Japanese is the only
  * profile under which Eisu/Kana reaching Windows as NonConvert/Convert is
  * promised; automatic leaves FreeRDP's own defaults untouched. */
+static BOOL mr_freerdp_protocol_allowed(mr_rdp_security_policy policy, uint32_t selected)
+{
+    switch (selected) {
+    case MR_FREERDP_PROTOCOL_HYBRID:
+        return policy != MR_RDP_SECURITY_TLS_REQUIRED;
+    case MR_FREERDP_PROTOCOL_SSL:
+        return policy != MR_RDP_SECURITY_NLA_REQUIRED;
+    case MR_FREERDP_PROTOCOL_RDP:
+        return policy == MR_RDP_SECURITY_LEGACY_ALLOWED;
+    default:
+        return FALSE;
+    }
+}
+
+/* What the client offers in the X.224 negotiation. NLA is always tried
+ * first where it is allowed; the legacy RDP Security Layer is offered only
+ * under MR_RDP_SECURITY_LEGACY_ALLOWED, which the app sets only after the
+ * user has explicitly consented for that one profile. */
+static BOOL mr_freerdp_configure_security(
+    rdpSettings *settings,
+    mr_rdp_security_policy policy)
+{
+    BOOL nla = policy != MR_RDP_SECURITY_TLS_REQUIRED;
+    BOOL tls = policy != MR_RDP_SECURITY_NLA_REQUIRED;
+    BOOL rdp = policy == MR_RDP_SECURITY_LEGACY_ALLOWED;
+    return freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, nla) &&
+        freerdp_settings_set_bool(settings, FreeRDP_TlsSecurity, tls) &&
+        freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, rdp);
+}
+
 static BOOL mr_freerdp_configure_keyboard(
     rdpSettings *settings,
     mr_rdp_keyboard_profile profile)
@@ -2523,9 +2559,7 @@ static mr_rdp_status mr_freerdp_configure_settings(
         !freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, FALSE) ||
         !freerdp_settings_set_bool(settings, FreeRDP_AutoAcceptCertificate, FALSE) ||
         !freerdp_settings_set_bool(settings, FreeRDP_AutoDenyCertificate, FALSE) ||
-        !freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, TRUE) ||
-        !freerdp_settings_set_bool(settings, FreeRDP_TlsSecurity, FALSE) ||
-        !freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, FALSE) ||
+        !mr_freerdp_configure_security(settings, config->security_policy) ||
         !freerdp_settings_set_bool(settings, FreeRDP_ExtSecurity, FALSE) ||
         !freerdp_settings_set_bool(settings, FreeRDP_RdstlsSecurity, FALSE) ||
         !freerdp_settings_set_bool(settings, FreeRDP_AadSecurity, FALSE) ||
@@ -2584,6 +2618,7 @@ mr_rdp_status mr_rdp_backend_create_default(
     backend->callback_status = MR_RDP_STATUS_OK;
     backend->input_failure_status = MR_RDP_STATUS_OK;
     backend->keyboard_profile = config->keyboard_profile;
+    backend->security_policy = config->security_policy;
     backend->channel_flags = config->channel_flags;
     if (!mr_input_command_queue_init(
             &backend->command_queue, MR_INPUT_COMMAND_QUEUE_CAPACITY)) {

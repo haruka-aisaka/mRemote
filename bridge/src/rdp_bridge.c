@@ -1009,6 +1009,7 @@ void mr_rdp_config_init(mr_rdp_config *config)
     config->channel_flags = MR_RDP_CHANNEL_FLAG_AUDIO | MR_RDP_CHANNEL_FLAG_CLIPBOARD;
     config->desktop_scale_factor = MR_RDP_DEFAULT_SCALE_FACTOR;
     config->device_scale_factor = MR_RDP_DEFAULT_SCALE_FACTOR;
+    config->security_policy = MR_RDP_SECURITY_SECURE_AUTOMATIC;
 }
 
 void mr_rdp_callbacks_init(mr_rdp_callbacks *callbacks)
@@ -1101,7 +1102,10 @@ static mr_rdp_status mr_validate_config(const mr_rdp_config *config, size_t *out
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     if (!mr_valid_desktop_scale_factor(config->desktop_scale_factor) ||
-        !mr_valid_device_scale_factor(config->device_scale_factor)) {
+        !mr_valid_device_scale_factor(config->device_scale_factor) ||
+        config->security_policy < MR_RDP_SECURITY_SECURE_AUTOMATIC ||
+        config->security_policy > MR_RDP_SECURITY_LEGACY_ALLOWED ||
+        config->reserved_abi3 != 0u) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     if (config->desktop_width < MR_RDP_MIN_DESKTOP_DIMENSION ||
@@ -1204,6 +1208,7 @@ mr_rdp_status mr_rdp_session_create_internal(
     session->config.channel_flags = config->channel_flags;
     session->config.desktop_scale_factor = config->desktop_scale_factor;
     session->config.device_scale_factor = config->device_scale_factor;
+    session->config.security_policy = config->security_policy;
     session->config.username_length = config->username_length;
     status = mr_copy_string_span(
         config->username, config->username_length, &session->config.username);

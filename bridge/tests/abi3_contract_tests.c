@@ -22,6 +22,8 @@ typedef struct abi3_context {
     uint32_t desktop_scale;
     uint32_t device_scale;
     int resize_seen;
+    int security_seen;
+    mr_rdp_security_policy security_policy;
     mr_rdp_display_resize_request resize;
 } abi3_context;
 
@@ -71,6 +73,15 @@ static void observe_scale(void *opaque, uint32_t desktop, uint32_t device)
     ++context->scale_seen;
     context->desktop_scale = desktop;
     context->device_scale = device;
+    signal_locked(context);
+}
+
+static void observe_security(void *opaque, mr_rdp_security_policy policy)
+{
+    abi3_context *context = (abi3_context *)opaque;
+    (void)pthread_mutex_lock(&context->mutex);
+    ++context->security_seen;
+    context->security_policy = policy;
     signal_locked(context);
 }
 
@@ -137,6 +148,22 @@ static int test_config_scale_defaults_and_validation(void)
     return 1;
 }
 
+static int test_security_policy_defaults_and_validation(void)
+{
+    mr_rdp_config config;
+    initialize_config(&config, 2u);
+    REQUIRE(config.security_policy == MR_RDP_SECURITY_SECURE_AUTOMATIC);
+    REQUIRE(config.reserved_abi3 == 0u);
+    config.security_policy = 0u;
+    REQUIRE(rejected(&config));
+    config.security_policy = MR_RDP_SECURITY_LEGACY_ALLOWED + 1u;
+    REQUIRE(rejected(&config));
+    config.security_policy = MR_RDP_SECURITY_TLS_REQUIRED;
+    config.reserved_abi3 = 1u;
+    REQUIRE(rejected(&config));
+    return 1;
+}
+
 static int test_scale_reaches_the_backend(void)
 {
     abi3_context context;
@@ -152,12 +179,14 @@ static int test_scale_reaches_the_backend(void)
     initialize_config(&config, 9u);
     config.desktop_scale_factor = 300u;
     config.device_scale_factor = 180u;
+    config.security_policy = MR_RDP_SECURITY_LEGACY_ALLOWED;
     mr_rdp_callbacks_init(&callbacks);
     callbacks.on_state_changed = on_state;
     mr_rdp_mock_script_init(&script);
     script.observer_context = &context;
     script.on_scale_config = observe_scale;
     script.on_request_display_resize = observe_resize;
+    script.on_security_policy = observe_security;
 
     REQUIRE(mr_rdp_session_create_mock(
                 &config, &callbacks, &context, &script, &context.session) ==
@@ -167,6 +196,8 @@ static int test_scale_reaches_the_backend(void)
     REQUIRE(wait_for(&context, &context.scale_seen, 1));
     REQUIRE(context.desktop_scale == 300u);
     REQUIRE(context.device_scale == 180u);
+    REQUIRE(wait_for(&context, &context.security_seen, 1));
+    REQUIRE(context.security_policy == MR_RDP_SECURITY_LEGACY_ALLOWED);
 
     /* An out-of-range factor is refused before it reaches the backend; zero
      * means "keep", and a valid one travels with the size. */
@@ -202,6 +233,7 @@ int main(void)
     int passed = 1;
     passed &= test_config_scale_defaults_and_validation();
     passed &= test_scale_reaches_the_backend();
+    passed &= test_security_policy_defaults_and_validation();
     if (!passed) {
         return 1;
     }

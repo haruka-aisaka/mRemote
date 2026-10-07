@@ -65,6 +65,18 @@ enum {
     MR_RDP_SESSION_FAILED = 6
 };
 
+/* ABI 3. Which transport security the client may agree to. */
+typedef uint32_t mr_rdp_security_policy;
+enum {
+    /* NLA (CredSSP over TLS), or TLS with the server's own logon screen. */
+    MR_RDP_SECURITY_SECURE_AUTOMATIC = 1,
+    MR_RDP_SECURITY_NLA_REQUIRED = 2,
+    MR_RDP_SECURITY_TLS_REQUIRED = 3,
+    /* Also the legacy RDP Security Layer: weak encryption and no server
+     * certificate to verify. Only ever by explicit per-profile consent. */
+    MR_RDP_SECURITY_LEGACY_ALLOWED = 4
+};
+
 typedef uint32_t mr_rdp_keyboard_profile;
 enum {
     /* Windows Japanese layout 0x411, keyboard type 7 (106/109). The only
@@ -103,12 +115,15 @@ typedef struct mr_rdp_config {
     /* ABI 3. */
     uint32_t desktop_scale_factor;
     uint32_t device_scale_factor;
+    mr_rdp_security_policy security_policy;
+    uint32_t reserved_abi3;
 } mr_rdp_config;
 
 /* desktop_scale_factor and device_scale_factor are ABI 3: how large the
  * server should draw, sent with the core data at connect and with every
  * monitor layout. config_init selects 100 for both, the size servers assume
- * without them. */
+ * without them. security_policy is ABI 3 too; config_init selects
+ * MR_RDP_SECURITY_SECURE_AUTOMATIC, and reserved_abi3 must be zero. */
 
 /* keyboard_profile and channel_flags are ABI 2. config_init selects the
  * Japanese profile and enables audio and clipboard; a cleared flag keeps that
