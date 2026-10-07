@@ -2134,7 +2134,13 @@ static mr_rdp_status mr_freerdp_run(mr_rdp_backend *base)
     if (status == MR_RDP_STATUS_OK) {
         status = mr_freerdp_current_status(backend);
     }
-    if (status != MR_RDP_STATUS_OK) {
+    /* Read whenever this side did not ask for the stop, not only after an
+     * adapter error. A server that ends the session - another connection
+     * taking it over, a sign-out, an idle timeout - sends Set Error Info,
+     * which FreeRDP keeps as its last error (ERRINFO class) while the loop
+     * itself ends cleanly. Reading it only on a failed status reported all
+     * of those as a failure with no cause, which the app then retried. */
+    if (!mr_freerdp_is_stopped(backend)) {
         base->last_native_error = (int32_t)freerdp_get_last_error(backend->context);
     }
     if (mr_freerdp_is_stopped(backend)) {
