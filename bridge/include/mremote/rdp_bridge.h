@@ -165,10 +165,24 @@ enum {
     MR_RDP_CERTIFICATE_ACCEPT_PIN = 3
 };
 
+/* ABI 3. What protects the connection, as the server selected it. */
+typedef uint32_t mr_rdp_transport_security;
+enum {
+    MR_RDP_TRANSPORT_UNKNOWN = 0,
+    MR_RDP_TRANSPORT_NLA = 1,
+    MR_RDP_TRANSPORT_TLS = 2,
+    /* The legacy RDP Security Layer: only ever under
+     * MR_RDP_SECURITY_LEGACY_ALLOWED. */
+    MR_RDP_TRANSPORT_LEGACY_RDP = 3
+};
+
 typedef struct mr_rdp_state_event {
     uint32_t struct_size;
     mr_rdp_session_state state;
     uint64_t generation;
+    /* ABI 3. Set with MR_RDP_SESSION_CONNECTED, UNKNOWN otherwise. */
+    mr_rdp_transport_security transport_security;
+    uint32_t reserved;
 } mr_rdp_state_event;
 
 typedef struct mr_rdp_error_event {

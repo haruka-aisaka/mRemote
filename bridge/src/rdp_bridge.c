@@ -16,6 +16,7 @@ struct mr_rdp_session {
     mr_rdp_backend *backend;
 
     mr_rdp_session_state state;
+    mr_rdp_transport_security transport_security;
     unsigned int api_calls_in_flight;
     int has_run;
     int run_active;
@@ -394,6 +395,9 @@ static void mr_emit_state(mr_rdp_session *session, mr_rdp_session_state state)
         event.struct_size = (uint32_t)sizeof(event);
         event.state = state;
         event.generation = session->config.generation;
+        event.transport_security = state == MR_RDP_SESSION_CONNECTED
+            ? session->transport_security
+            : MR_RDP_TRANSPORT_UNKNOWN;
         callback(session->callback_context, &event);
     }
 }
@@ -508,11 +512,12 @@ static mr_rdp_status mr_bridge_present_certificate(
     return status;
 }
 
-static mr_rdp_status mr_bridge_connected(void *context)
+static mr_rdp_status mr_bridge_connected(void *context, mr_rdp_transport_security transport)
 {
     mr_rdp_session *session = (mr_rdp_session *)context;
     int stopped;
     (void)pthread_mutex_lock(&session->mutex);
+    session->transport_security = transport;
     stopped = session->stop_requested || session->destroying;
     (void)pthread_mutex_unlock(&session->mutex);
     if (stopped) {

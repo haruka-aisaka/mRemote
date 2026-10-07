@@ -50,7 +50,7 @@ typedef struct mr_rdp_backend_host {
         void *context,
         const mr_rdp_der_blob *chain,
         size_t chain_count);
-    mr_rdp_status (*connected)(void *context);
+    mr_rdp_status (*connected)(void *context, mr_rdp_transport_security transport);
     mr_rdp_status (*present_frame)(
         void *context,
         const mr_rdp_desktop_frame *frame);

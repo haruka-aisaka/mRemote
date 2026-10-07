@@ -368,7 +368,8 @@ static mr_rdp_status mr_mock_run(mr_rdp_backend *base)
         }
     }
 
-    status = backend->host.connected(backend->host.context);
+    /* The mock speaks NLA, as the policy's default would have it. */
+    status = backend->host.connected(backend->host.context, MR_RDP_TRANSPORT_NLA);
     if (status != MR_RDP_STATUS_OK) {
         return status;
     }

@@ -38,6 +38,7 @@
 #define MR_FREERDP_PROTOCOL_HYBRID 0x00000002u
 
 static BOOL mr_freerdp_protocol_allowed(mr_rdp_security_policy policy, uint32_t selected);
+static mr_rdp_transport_security mr_freerdp_transport_security(uint32_t selected);
 #define MR_FREERDP_CLIPBOARD_PROBE_TIMEOUT_MS 10000u
 #define MR_FREERDP_COMMAND_BATCH_LIMIT 64u
 #define MR_FREERDP_RDPSND_SUBSYSTEM "mremote"
@@ -1497,7 +1498,10 @@ static BOOL mr_freerdp_post_connect(freerdp *instance)
     (void)pthread_mutex_lock(&backend->mutex);
     backend->accepting_input = !backend->stop_requested;
     (void)pthread_mutex_unlock(&backend->mutex);
-    status = backend->host.connected(backend->host.context);
+    status = backend->host.connected(
+        backend->host.context,
+        mr_freerdp_transport_security(
+            freerdp_settings_get_uint32(context->settings, FreeRDP_SelectedProtocol)));
     if (status != MR_RDP_STATUS_OK) {
         (void)pthread_mutex_lock(&backend->mutex);
         backend->accepting_input = 0;
@@ -2471,6 +2475,17 @@ static const mr_rdp_backend_vtable mr_freerdp_vtable = {
 /* The layout/type pair the server is told at connect. Japanese is the only
  * profile under which Eisu/Kana reaching Windows as NonConvert/Convert is
  * promised; automatic leaves FreeRDP's own defaults untouched. */
+/* Only ever called for a protocol mr_freerdp_protocol_allowed accepted. */
+static mr_rdp_transport_security mr_freerdp_transport_security(uint32_t selected)
+{
+    switch (selected) {
+    case MR_FREERDP_PROTOCOL_HYBRID: return MR_RDP_TRANSPORT_NLA;
+    case MR_FREERDP_PROTOCOL_SSL: return MR_RDP_TRANSPORT_TLS;
+    case MR_FREERDP_PROTOCOL_RDP: return MR_RDP_TRANSPORT_LEGACY_RDP;
+    default: return MR_RDP_TRANSPORT_UNKNOWN;
+    }
+}
+
 static BOOL mr_freerdp_protocol_allowed(mr_rdp_security_policy policy, uint32_t selected)
 {
     switch (selected) {

@@ -17,6 +17,7 @@ typedef struct abi3_context {
     pthread_cond_t condition;
     mr_rdp_session *session;
     int connected;
+    mr_rdp_transport_security transport;
     int run_done;
     int scale_seen;
     uint32_t desktop_scale;
@@ -62,6 +63,7 @@ static void on_state(void *opaque, const mr_rdp_state_event *event)
     if (event->state == MR_RDP_SESSION_CONNECTED) {
         (void)pthread_mutex_lock(&context->mutex);
         context->connected = 1;
+        context->transport = event->transport_security;
         signal_locked(context);
     }
 }
@@ -194,6 +196,7 @@ static int test_scale_reaches_the_backend(void)
     REQUIRE(pthread_create(&thread, NULL, run_thread, &context) == 0);
     REQUIRE(wait_for(&context, &context.connected, 1));
     REQUIRE(wait_for(&context, &context.scale_seen, 1));
+    REQUIRE(context.transport == MR_RDP_TRANSPORT_NLA);
     REQUIRE(context.desktop_scale == 300u);
     REQUIRE(context.device_scale == 180u);
     REQUIRE(wait_for(&context, &context.security_seen, 1));
