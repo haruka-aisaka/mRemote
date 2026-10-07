@@ -34,15 +34,33 @@ enum LaptopDeckArrangement: String, CaseIterable {
 extension CapsLockRole {
     static let storageKey = "laptop-caps-lock-role"
 
-    /// For the menu, in the host's words.
+    /// For the menu, in the words of the keyboard the deck draws: a Mac's
+    /// as macOS's Modifier Keys names them, with what reaches Windows.
+    func title(on platform: LaptopKeyboardPlatform) -> String {
+        switch (self, platform) {
+        case (.capsLock, .windows): return "Caps Lock"
+        case (.control, .windows): return "Ctrl"
+        case (.option, .windows): return "Alt"
+        case (.command, .windows): return "Win"
+        case (.escape, .windows): return "Esc"
+        case (.noAction, .windows): return "何もしない"
+        case (.capsLock, .mac): return "⇪ Caps Lock"
+        case (.control, .mac): return "^ Control（Ctrl）"
+        case (.option, .mac): return "⌥ Option（Alt）"
+        case (.command, .mac): return "⌘ Command（Win）"
+        case (.escape, .mac): return "⎋ Escape"
+        case (.noAction, .mac): return "アクションなし"
+        }
+    }
+}
+
+extension LaptopKeyboardPlatform {
+    static let storageKey = "laptop-keyboard-platform"
+
     var title: String {
         switch self {
-        case .capsLock: return "Caps Lock"
-        case .control: return "Ctrl"
-        case .option: return "Option"
-        case .command: return "Command"
-        case .escape: return "Esc"
-        case .noAction: return "何もしない"
+        case .windows: return "Windows"
+        case .mac: return "Mac"
         }
     }
 }

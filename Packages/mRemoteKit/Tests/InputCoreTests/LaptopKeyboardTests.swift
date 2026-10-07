@@ -183,6 +183,8 @@ final class LaptopKeyboardTests: XCTestCase {
             XCTAssertEqual(control?.label, "Ctrl", "\(preference)")
         }
         XCTAssertEqual(CapsLockRole.windowsRoles, [.capsLock, .control])
+        XCTAssertEqual(CapsLockRole.roles(on: .windows), [.capsLock, .control])
+        XCTAssertEqual(CapsLockRole.roles(on: .mac), CapsLockRole.allCases)
     }
 
     func testANoActionKeySendsNothingAndDoesNotLatch() {

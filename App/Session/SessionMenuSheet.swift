@@ -16,6 +16,7 @@ struct SessionMenuSheet: View {
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
+    @AppStorage(LaptopKeyboardPlatform.storageKey) private var deckPlatform = LaptopKeyboardPlatform.windows
     @AppStorage(RemoteScalePreference.storageKey)
     private var scalePreference = RemoteScalePreference.automatic
     @AppStorage(FoldResolutionPolicy.storageKey)
@@ -175,9 +176,24 @@ struct SessionMenuSheet: View {
                     }
                     .disabled(model.laptopDeckPreference == .never)
                     .accessibilityIdentifier("session-laptop-deck-arrangement")
+                    // Only the picture and a few keys change: Command is sent
+                    // as Win and Option as Alt either way.
+                    Picker("キーボードの見た目", selection: $deckPlatform) {
+                        ForEach(LaptopKeyboardPlatform.allCases, id: \.self) { platform in
+                            Text(platform.title).tag(platform)
+                        }
+                    }
+                    .disabled(model.laptopDeckPreference == .never)
+                    .accessibilityIdentifier("session-laptop-platform")
+                    .onChange(of: deckPlatform) { _, platform in
+                        // A Mac-only role does not carry over to a PC's keys.
+                        if !CapsLockRole.roles(on: platform).contains(capsLockRole) {
+                            capsLockRole = .capsLock
+                        }
+                    }
                     Picker("Caps キー", selection: $capsLockRole) {
-                        ForEach(CapsLockRole.windowsRoles, id: \.self) { role in
-                            Text(role.title).tag(role)
+                        ForEach(CapsLockRole.roles(on: deckPlatform), id: \.self) { role in
+                            Text(role.title(on: deckPlatform)).tag(role)
                         }
                     }
                     .disabled(model.laptopDeckPreference == .never)

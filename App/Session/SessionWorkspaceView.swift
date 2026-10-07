@@ -20,6 +20,7 @@ struct SessionWorkspaceView: View {
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
+    @AppStorage(LaptopKeyboardPlatform.storageKey) private var deckPlatform = LaptopKeyboardPlatform.windows
     @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
 
     var body: some View {
@@ -147,7 +148,8 @@ struct SessionWorkspaceView: View {
                     channel: laptopChannel,
                     isInputEnabled: model.acceptsInput && scenePhase == .active,
                     capsLockRole: capsLockRole,
-                    showsTrackpadButtons: showsTrackpadButtons
+                    showsTrackpadButtons: showsTrackpadButtons,
+                    platform: deckPlatform
                 )
                 .transition(.move(edge: .bottom))
             }

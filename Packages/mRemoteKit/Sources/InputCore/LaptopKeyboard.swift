@@ -115,6 +115,12 @@ public enum CapsLockRole: String, Hashable, Sendable, CaseIterable {
     /// The roles worth offering on a Windows host; the rest are Mac habits.
     public static let windowsRoles: [CapsLockRole] = [.capsLock, .control]
 
+    /// The roles offered for a deck drawn as `platform`'s keyboard: on a
+    /// Mac's, every choice macOS's Modifier Keys has.
+    public static func roles(on platform: LaptopKeyboardPlatform) -> [CapsLockRole] {
+        platform == .mac ? allCases : windowsRoles
+    }
+
     fileprivate func key(width: Double, platform: LaptopKeyboardPlatform) -> LaptopKey {
         let id = "capslock"
         let mac = platform == .mac
