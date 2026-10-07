@@ -38,6 +38,7 @@ import XCTest
 ///     scroll <id> <dx> <dy>            a pointer scroll over an element
 ///     key <label>                      tap a key of the iOS software keyboard
 ///     textfield <label>                tap the text field with this label
+///     orient <portrait|left|right>     rotate the device
 ///
 /// The password is typed into the credential prompt and not saved.
 final class LiveRDPUITests: XCTestCase {
@@ -182,6 +183,12 @@ final class LiveRDPUITests: XCTestCase {
             let target = element(arguments.joined(separator: " "))
             guard target.waitForExistence(timeout: 3) else { return "missing" }
             return "value=\(target.value.map { "\($0)" } ?? "nil") label=\(target.label)"
+        case "orient":
+            let orientations: [String: UIDeviceOrientation] = [
+                "portrait": .portrait, "left": .landscapeLeft, "right": .landscapeRight,
+            ]
+            guard let orientation = orientations[arguments.first ?? ""] else { return "unknown orientation" }
+            XCUIDevice.shared.orientation = orientation
         case "sleep":
             Thread.sleep(forTimeInterval: TimeInterval(number(0)))
         default:
