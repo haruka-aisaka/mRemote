@@ -160,7 +160,7 @@ Windows 10 等、サポート終了 OS を互換対象にするかは product po
 | KEY-CHORD-01 | Ctrl/Alt/Shift を含む組合せ | 左右/extended を含め順序と解放が正しい |
 | KEY-FOCUS-01 | modifier 押下中にメニュー/切替 | local state は即時 clear、writable な旧 session へ up を enqueue、他 session へ漏れなし |
 | KEY-LIFE-01 | 押下中に background/keyboard 切断 | 復帰後に押下残りなし |
-| KEY-RESERVED-01 | iPadOS 予約 shortcut | 取得可否を記録し、取得不可操作に UI 代替がある |
+| KEY-RESERVED-01 | iPadOS 予約 shortcut | 取得可否を記録し、取得不可操作に UI 代替がある（2026-10-07: UI 代替とヘルプは用意済み、取得可否の実機記録は未実施） |
 | KEY-PCJIS-01 | PC JIS の変換/無変換/かな/半角全角 | HID usage と Windows scan code/IME 動作を記録し、候補 mapping を確定 |
 | KEY-LAYOUT-01 | 接続時の Client Core Data を trace | `keyboardLayout=0x00000411`、type `7` と関連 subtype/function-key field を確認 |
 
