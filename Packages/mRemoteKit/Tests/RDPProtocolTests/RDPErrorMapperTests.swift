@@ -126,7 +126,6 @@ final class RDPErrorMapperTests: XCTestCase {
 final class RDPBridgePhaseTests: XCTestCase {
     func testPhasesMapOntoTheSessionStateMachine() {
         XCTAssertEqual(RDPBridgePhase.connecting.sessionState, .connecting)
-        XCTAssertEqual(RDPBridgePhase.awaitingCertificate.sessionState, .awaitingUser)
         XCTAssertEqual(RDPBridgePhase.connected.sessionState, .connected)
         XCTAssertEqual(RDPBridgePhase.stopping.sessionState, .disconnecting)
         XCTAssertEqual(RDPBridgePhase.failed.sessionState, .failed)
@@ -138,6 +137,13 @@ final class RDPBridgePhaseTests: XCTestCase {
         // to publish it.
         XCTAssertNil(RDPBridgePhase.stopped.sessionState)
         XCTAssertNil(RDPBridgePhase.created.sessionState)
+    }
+
+    func testCheckingACertificateIsNotWaitingForTheUser() {
+        // A certificate accepted from a stored approval never asks, so the
+        // backend's phase must not put the session where only an answer
+        // would take it out: connecting -> connected has to stay open.
+        XCTAssertNil(RDPBridgePhase.awaitingCertificate.sessionState)
     }
 
     func testEveryMappedPhaseIsAStateTheMachineCanReach() {

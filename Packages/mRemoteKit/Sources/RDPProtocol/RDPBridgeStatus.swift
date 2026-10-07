@@ -61,7 +61,12 @@ public enum RDPBridgePhase: UInt32, Hashable, Sendable, CaseIterable {
         switch self {
         case .created: return nil
         case .connecting: return .connecting
-        case .awaitingCertificate: return .awaitingUser
+        // The backend reaches this for every certificate, including one the
+        // app accepts on its own - a stored approval or system trust - and
+        // nothing would then take the session out of awaitingUser, whose
+        // only exit is back to connecting. Only a question actually put to
+        // the user means awaitingUser, and the session raises that itself.
+        case .awaitingCertificate: return nil
         case .connected: return .connected
         case .stopping: return .disconnecting
         case .stopped: return nil
