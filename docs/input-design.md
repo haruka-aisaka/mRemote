@@ -238,15 +238,15 @@ effectiveDelta = deviceDelta × sensitivity × (isReversed ? -1 : 1)
 
 ## 9. タッチ操作
 
-要件の中心はマウスだが、iPhone を含むため最低限次を提供する。
+要件の中心はマウスだが、iPhone やポインターのない iPad でも操作できるよう、画面へのタッチの扱いを三方式から選べる（セッションメニュー「画面のタッチ」、全セッション共通、既定は直接タッチ）。いずれもマウスと同じ `PointerInputRouter` を通る。マウス・トラックパッドの入力は方式に関係なくリモートポインターを動かす。
 
-- 1 本指 tap: 左 click
-- 1 本指 double tap: リモートへ左 double click
-- 長押し: 右 click
-- pinch: ローカル zoom
-- zoom 中の pan: ローカル viewport 移動
+| 方式 | 1 本指 | 2 本指 | ローカル表示 |
+|---|---|---|---|
+| 直接タッチ（`DirectTouchGestureTracker`） | tap: その位置で左 click。0.5 秒以内・24pt 以内の 2 回目の tap は 1 回目と同じ位置を押し、double click として届く。長押し 0.5 秒: 右 click。なぞる: 押した位置から左ドラッグ | 移動: スクロール。tap: 右 click | pinch で zoom。zoom 中は pinch したまま動かすと viewport 移動 |
+| トラックパッド（`TrackpadGestureTracker`） | なぞる: 相対移動。tap: 左 click。押さえてから動かす: ドラッグ | 移動: スクロール。tap: 右 click | 同上。ポインターが端に寄ると表示が追従 |
+| 表示の移動だけ | viewport 移動。double tap: Fit/100% 切替 | — | pinch で zoom |
 
-「直接タッチ」と「トラックパッド風相対操作」の二方式は後続候補とし、マウス event と同じ `PointerEvent` へ正規化する。
+pinch が成立すると UIKit が touch を cancel するため、途中のドラッグはボタンを離して終わり、click は送らない。折りたたみ端末で手元デッキをキーボードのみにしたときは、選択に関係なくトラックパッド方式になる。
 
 ## 10. ソフトウェアキーボード（終盤実装）
 

@@ -272,7 +272,7 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 | marked text 中の制約 | 実装済み。確定/キャンセルを表示し、修飾キー・拡張キー・モード切替を無効化。Esc は未確定文字のキャンセルに使う |
 | mode/global default、session 中の切替 | 実装済み。設定の初期モード（スキーマ v2、v1 からの移行付き）とキーバーの切替 |
 | keyboard close / session 切替で modifier を解放 | 実装済み |
-| 送れない文字の明示 clipboard paste | クリップボード送信（Phase 5）で代替可能。キーバーからの自動誘導は未実装 |
+| 送れない文字の明示 clipboard paste | 実装済み。キーバーの 📋 で次の確定文字（確定した未確定文字、または絵文字）を 1 回だけ貼り付けで送る。リモートのクリップボードを上書きすると表示し、接続先がクリップボード送信を許すときだけ出す。キーボードを閉じると解除。Unicode イベントが効かないかはクライアントから判別できないため、自動ではなく利用者が選ぶ |
 | Windows 側で一度だけ届くこと、host IME での変換/無変換 | 確認済み（2026-10-07、iPad シミュレータ + Windows 11 VM）: 手元 IME で ASCII/日本語/絵文字が一度だけ届く。marked text 中は Windows に 0 イベント（KeyEcho）、確定で「かな」が一度だけ、キャンセルでは何も届かない。ホスト IME で 変換→aiu→Enter→無変換→abc が「あいうabc」 |
 
 ### 追加: 折りたたみ端末のラップトップ姿勢（2026-10-07、シミュレータ確認まで）
@@ -316,6 +316,9 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
   - iPadOS 予約ショートカットの表（[help-limitations.md](help-limitations.md) 1 節とアプリ内ヘルプ）は iPadOS の既定割当から書いたもの。実機 iPad と物理キーボードで各組み合わせがアプリに届くかを記録する（KEY-RESERVED-01）。iPadOS 設定（Caps Lock での入力切替、Control+Space、修飾キーの入れ替え）による差も含める。
   - （2026-10-07 確認、ヘルプを訂正）キーバーの Ctrl → Alt → Del で Windows 11 VM にセキュリティ画面が出る（LogonUI がセッション 1 に起動）。当初ヘルプに書いた Ctrl+Alt+End は mstsc が手元で置き換えるショートカットで、mRemote から送っても何も起きなかった。
   - （2026-10-07 確認済み）最大の文字サイズ（AccessibilityXXXL、iPhone Duo シミュレータ）で、ヘルプ画面の行は大きくなって折り返し、見切れない。監査の「一部未対応」は誤検出と判断してよい。手元キーボードのキー表示はキーの大きさで止まり、見切れない。
+- （2026-10-07 対応）画面のタッチを「タッチした場所を操作」（既定）／「トラックパッドとして使う」／「表示の移動だけ」から選べるようにした（docs/input-design.md 9 章）。従来はポインターのない iPad・iPhone でクリックする手段がなかった。直接タッチの tap で GNOME のログイン画面のユーザーを選べることを確認（iPad シミュレータ）。長押し・ドラッグ・2 本指は単体試験（`DirectTouchGestureTrackerTests`）のみ。
+- （2026-10-07 確認、GNOME Remote Desktop 50.2 / Ubuntu 26.04、iPad シミュレータ）システムモード（GDM リモートログイン）へ接続。自己署名証明書（CN=GNOME）は「iOS の要件外」の警告付きで承認でき、NLA、1 段目のサーバーリダイレクト（GDM のログイン画面へ）、ホスト IME でのキー入力が通った。ログイン後の 2 段目の引き渡しは、当初ホスト側の handover 不具合で成立しなかったが、ホスト修正後（同日 23:03）はユーザーセッションまで到達した。直接タッチのクリック（通知を閉じる）と音声の受信（44.1 kHz x2 の node 構築）を確認。2 段目のリダイレクト後に解像度と拡大率が送り直されず、ユーザーセッションが 1920x1080 のまま縮小表示される不具合を見つけて直した（disp チャネルが開き直すたびにレイアウトを送る）。続けて GTK の入力記録ウィンドウで確認した（同日 23:10〜23:27、iPad シミュレータ）。ホスト IME の英数字・JIS 記号、拡張キーバーと手元キーボードの 無変換/変換/半全/かな/¥/ろ（Muhenkan/Henkan/Zenkaku_Hankaku/Hiragana_Katakana、ホスト側の補正シム込み）、Shift/Ctrl のワンショット、直接タッチの長押しで右クリックとドラッグでの範囲選択、手元キーボードのトラックパッド（移動・タップ・右ボタン）、ホイール、クリップボード双方向（日本語・絵文字・𠮷、複数行）、手元キーボードのキーでの GDM ログイン。手元 IME の Unicode イベントは配列にある文字（ASCII）しか届かない: GNOME Remote Desktop が配列に無い keysym（é、漢字、絵文字）を「No keycode found」で捨てる。キーバーの 📋（次の確定文字を貼り付けで送る）で回避できるが 1 回の確定分だけ。あわせて、メニューから手元キーボードを出すと下からのスライドが解像度変更で止まり、キーが画面外に残る不具合を直した（スライドをやめてその場に置く）。あわせて、証明書確認が時間切れで失敗した後もシートが残る不具合を直した。
+- （2026-10-07 対応）手元キーボード（デッキ）を折りたたみでない端末でも使いやすくした。表示設定を端末に保存して全セッション共通にし（従来はセッション単位で保存せず、毎回「常に表示」を選び直す必要があった）、メニューに出し入れのボタンを置き、項目名から折りたたみ前提の言い方を外した。
 - 2 本指タップ／2 本指スクロールを手で触って確かめる。ジェスチャー判定は単体試験（`TrackpadGestureTrackerTests`）、右クリックとホイールが Windows に届くことは実ホストで確認済みだが、2 本の指を同時に置く操作そのものは XCUITest（twoFingerTap、内部の event synthesizer とも）が iPhone Duo シミュレータで合成できない。
 - （2026-10-07 対応済み）同じ Windows ユーザーへ 2 本つなぐとセッションを奪い合い、自動再接続で取り返し続けていた。bridge がサーバーの ErrorInfo を読んでいなかったのが原因で、今は FreeRDP の last error を常に渡し、サーバーが意図して終えた切断（引き継ぎ・切断・サインアウト・アイドル）は「切断済み」にして自動再接続しない。Windows 11 は同一ユーザーの引き継ぎを 0x5 ではなく 0x1（RPC_INITIATED_DISCONNECT）で送る。最後の画面の上に理由と「再接続」を出し、再接続は同じ接続先の新しいセッションを開く（切断済みのセッションは戻せないため。セッションメニューの「再接続」も切断済みでは何もしていなかったので同じ動作にした）。Windows 11 VM へ Duo と iPad の 2 台から同一ユーザーで接続して、奪い合いが起きないことを確認。
 - （2026-10-07 対応済み）サーバーが実際に選んだ方式は bridge ABI 3 の `transport_security` で受け取り、セッションメニューの「通信の保護」に出す。
@@ -339,7 +342,7 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 ## 9. Phase 7 — リリース仕上げ
 
 - accessibility、String Catalog、日本語/英語文言（2026-10-07: `App/Localizable.xcstrings` を追加。開発言語は日本語のまま、画面の文言 271 件に英訳。`String` で組み立てる文言は `String(localized:)` にした。手元キーボードのキー表示（半/全・無変換など）は物理キーの刻印に合わせて訳さない。ログ用の文字列は対象外。コマンドラインのビルドはカタログへキーを足さないので、`tools/l10n/missing-keys.py <DerivedData>/Build/Intermediates.noindex` で漏れを確認する。英訳はネイティブ確認前）
-- エラー/help、予約 shortcut と background 制約の説明（文言と help 画面は 2026-10-07 に用意。予約 shortcut の実機記録と英語化が残り）
+- エラー/help、予約 shortcut と background 制約の説明（文言と help 画面は 2026-10-07 に用意し、同日 String Catalog で英訳。予約 shortcut の実機記録が残り。`docs/help-limitations.md` は日本語のみ）
 - performance/energy/thermal tuning、network condition test
 - security review、fuzz/negative test、privacy manifest/用途説明
 - dependency vulnerability/license/SBOM、暗号輸出申告
