@@ -35,6 +35,14 @@ final class RDPErrorMapperTests: XCTestCase {
         )
     }
 
+    func testAServerThatRefusesTLSIsASecurityNegotiationFailure() {
+        // 0x2000C: what a real Windows listener set to the RDP Security Layer
+        // only produced (SSL_NOT_ALLOWED_BY_SERVER in FreeRDP's log).
+        let cause = RDPErrorMapper.classify(status: .backend, nativeCode: 0x0002_000C)
+        XCTAssertEqual(cause, .failed(.securityNegotiationFailed))
+        XCTAssertEqual(cause.error?.isRetriable, false)
+    }
+
     func testAWrongPasswordIsNotReportedAsAnAccountRestriction() {
         // The categories differ because `isRetriable` differs: retrying a
         // locked-out account is how an account stays locked out.

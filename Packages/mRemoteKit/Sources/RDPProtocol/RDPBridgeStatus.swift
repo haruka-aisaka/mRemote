@@ -189,9 +189,13 @@ public enum RDPErrorMapper {
         case 0x06, 0x0D:
             // ERRCONNECT_CONNECT_FAILED, ERRCONNECT_CONNECT_TRANSPORT_FAILED
             return .failed(.connectionRefused)
-        case 0x08, 0x0C, 0x1E:
+        case 0x0C:
+            // ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED: the X.224 negotiation
+            // found nothing both sides allow, e.g. SSL_NOT_ALLOWED_BY_SERVER
+            // from a listener set to the RDP Security Layer only.
+            return .failed(.securityNegotiationFailed)
+        case 0x08, 0x1E:
             // ERRCONNECT_TLS_CONNECT_FAILED,
-            // ERRCONNECT_SECURITY_NEGO_CONNECT_FAILED,
             // ERRCONNECT_HYBRID_REQUIRED_BY_SERVER
             return .failed(.tlsHandshakeFailed)
         case 0x09, 0x0E, 0x0F, 0x13, 0x14, 0x15, 0x16, 0x1B:

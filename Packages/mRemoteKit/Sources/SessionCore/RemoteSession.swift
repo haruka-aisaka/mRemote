@@ -11,6 +11,18 @@ public enum SessionControlEvent: Sendable {
     /// reason to reconnect: reconnecting after another connection took the
     /// session over takes it back, and the two then fight over it.
     case endedByServer(RemoteEndReason)
+    /// What protects the connection, as the server selected it. Sent once,
+    /// when the session connects.
+    case transportSecurity(TransportSecurity)
+}
+
+public enum TransportSecurity: Hashable, Sendable {
+    /// Network Level Authentication: CredSSP over TLS.
+    case nla
+    /// TLS, with the server's own sign-in.
+    case tls
+    /// The legacy RDP Security Layer: weak encryption, no server identity.
+    case legacyRDP
 }
 
 /// Why the server ended a session, in terms the UI can explain.

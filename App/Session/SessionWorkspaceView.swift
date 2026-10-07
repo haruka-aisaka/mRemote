@@ -40,6 +40,15 @@ struct SessionWorkspaceView: View {
             privacyCover
         }
         .onAppear { showToast() }
+        .onChange(of: model.transportSecurity) { _, security in
+            // The audit display, at the moment it becomes true.
+            guard security == .legacyRDP else { return }
+            withAnimation { toastText = "⚠︎ \(model.displayName) は古い RDP セキュリティで接続しています" }
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation { if toastText?.hasPrefix("⚠︎") == true { toastText = nil } }
+            }
+        }
         .onChange(of: scalePreference.resolved(screenScale: screenScale), initial: true) { _, scale in
             model.setDisplayScale(scale)
         }
@@ -255,24 +264,34 @@ struct SessionWorkspaceView: View {
         }
     }
 
-    /// Why the server ended the session, over the desktop it left behind:
-    /// the last frame stays on screen after a disconnect, so without this a
-    /// session taken over by another device would just look frozen.
-    /// Reconnecting is offered, not done - it would take the session back.
+    /// The session's state over the desktop it left behind. The last frame
+    /// stays on screen after the connection goes, and the status text above
+    /// only shows when there is no desktop - so without this, a dropped
+    /// connection, a reconnect in progress, or a session taken over by another
+    /// device would all just look like a frozen desktop.
     @ViewBuilder
     private var endBanner: some View {
-        if let reason = model.endReason, model.state == .disconnected {
+        if model.showsDesktop, let banner = model.stateBanner {
             VStack(spacing: 10) {
-                Label("切断されました", systemImage: "rectangle.portrait.and.arrow.right")
-                    .font(.headline)
-                Text(Formatting.endReasonLabel(reason))
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                Button("再接続") {
-                    Task { await model.reconnect() }
+                if banner.busy {
+                    ProgressView()
                 }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("session-end-reconnect")
+                Label(banner.title, systemImage: banner.symbol)
+                    .font(.headline)
+                if let detail = banner.detail {
+                    Text(detail)
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                }
+                if banner.offersReconnect {
+                    // Offered, not done: after a takeover it would take the
+                    // session back from whoever has it now.
+                    Button("再接続") {
+                        Task { await model.reconnect() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("session-end-reconnect")
+                }
             }
             .padding(16)
             .frame(maxWidth: 420)
@@ -303,8 +322,7 @@ struct SessionWorkspaceView: View {
     /// docs/ui-flow.md section 6: the session's name, briefly, when it is
     /// connected to or switched to.
     private func showToast() {
-        let warning = model.allowsLegacySecurity ? "\n⚠︎ 古い RDP セキュリティを許可した接続先です" : ""
-        withAnimation { toastText = "\(model.displayName) ・ \(model.statusText)\(warning)" }
+        withAnimation { toastText = "\(model.displayName) ・ \(model.statusText)" }
         Task {
             try? await Task.sleep(for: .seconds(2))
             withAnimation { toastText = nil }

@@ -68,6 +68,7 @@ struct RDPNativeConnection: Sendable {
 /// One already-classified event from the native session, delivered in order.
 enum RDPNativeEvent: Sendable {
     case phase(RDPBridgePhase, generation: UInt64)
+    case transportSecurity(TransportSecurity, generation: UInt64)
     case failure(RDPBridgeStatus, nativeCode: Int32, generation: UInt64)
     case channel(RDPBridgeChannel, isConnected: Bool)
     /// The certificate needs the user. Trust evaluation already ran and said
@@ -449,6 +450,17 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
 
     // MARK: - Callback entry points
 
+    func receiveTransport(_ raw: mr_rdp_transport_security, generation: UInt64) {
+        let security: TransportSecurity
+        switch Int(raw) {
+        case Int(MR_RDP_TRANSPORT_NLA): security = .nla
+        case Int(MR_RDP_TRANSPORT_TLS): security = .tls
+        case Int(MR_RDP_TRANSPORT_LEGACY_RDP): security = .legacyRDP
+        default: return
+        }
+        continuation.yield(.transportSecurity(security, generation: generation))
+    }
+
     func receivePhase(_ raw: mr_rdp_session_state, generation: UInt64) {
         guard let phase = RDPBridgePhase(rawValue: raw) else { return }
         continuation.yield(.phase(phase, generation: generation))
@@ -716,6 +728,9 @@ private func rdpStateCallback(
           eventPointer.pointee.struct_size >= UInt32(MemoryLayout<mr_rdp_state_event>.size)
     else { return }
     let event = eventPointer.pointee
+    // Before the phase, so the session knows how it is protected by the time
+    // it reports itself connected.
+    context.receiveTransport(event.transport_security, generation: event.generation)
     context.receivePhase(event.state, generation: event.generation)
 }
 

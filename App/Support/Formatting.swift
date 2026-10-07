@@ -34,6 +34,14 @@ enum Formatting {
         }
     }
 
+    static func transportLabel(_ security: TransportSecurity) -> String {
+        switch security {
+        case .nla: return "NLA（TLS）"
+        case .tls: return "TLS"
+        case .legacyRDP: return "古い RDP セキュリティ"
+        }
+    }
+
     static func endReasonLabel(_ reason: RemoteEndReason) -> String {
         switch reason {
         case .anotherConnection:
@@ -55,8 +63,9 @@ enum Formatting {
         case .networkUnreachable: return "ネットワークに到達できません。"
         case .connectionRefused: return "接続を拒否されました。ポートとリモートデスクトップの設定を確認してください。"
         case .connectionTimedOut: return "接続がタイムアウトしました。"
-        case .tlsHandshakeFailed:
-            return "TLS ハンドシェイクに失敗しました。サーバーが TLS/NLA を許可せず古い RDP セキュリティのみを受け付けている場合は、接続設定の「接続方式」で明示的に許可できます。"
+        case .securityNegotiationFailed:
+            return "サーバーと共通のセキュリティ方式がありません。サーバーが TLS/NLA を許可せず古い RDP セキュリティのみを受け付けている可能性があります。必要なら接続設定の「接続方式」で明示的に許可できます。"
+        case .tlsHandshakeFailed: return "TLS ハンドシェイクに失敗しました。"
         case .authenticationFailed: return "認証に失敗しました。ユーザー名とパスワードを確認してください。"
         case .accountRestricted: return "このアカウントはリモート接続を許可されていません。"
         case .certificateRejected: return "サーバー証明書を信頼しませんでした。"

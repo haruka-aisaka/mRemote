@@ -99,6 +99,44 @@ final class MultiSessionTests: XCTestCase {
         XCTAssertEqual(model.state, .disconnected)
     }
 
+    func testTheBannerFollowsADropThroughItsReconnect() async throws {
+        let environment = await makeEnvironment()
+        let office = try XCTUnwrap(environment.profiles.first { $0.displayName == "office" })
+        await environment.connect(to: office)
+        let model = try XCTUnwrap(environment.runningSession(for: office))
+        let found = await environment.sessions.session(for: model.id)
+        let fake = try XCTUnwrap(found as? FakeRemoteSession)
+        await waitUntil { model.state == .connected }
+        XCTAssertNil(model.stateBanner, "a live desktop needs no banner")
+
+        await fake.simulateConnectionLoss(.networkUnreachable)
+        await waitUntil { model.reconnectAttempt != nil }
+        let reconnecting = try XCTUnwrap(model.stateBanner)
+        XCTAssertTrue(reconnecting.busy)
+        XCTAssertTrue(reconnecting.title.hasPrefix("再接続中"))
+        XCTAssertFalse(reconnecting.offersReconnect, "it is already reconnecting")
+
+        await waitUntil(timeout: 5) { model.state == .connected }
+        XCTAssertNil(model.stateBanner)
+    }
+
+    func testAFailureThatIsNotRetriedOffersReconnect() async throws {
+        let environment = await makeEnvironment()
+        let office = try XCTUnwrap(environment.profiles.first { $0.displayName == "office" })
+        await environment.connect(to: office)
+        let model = try XCTUnwrap(environment.runningSession(for: office))
+        let found = await environment.sessions.session(for: model.id)
+        let fake = try XCTUnwrap(found as? FakeRemoteSession)
+        await waitUntil { model.state == .connected }
+
+        await fake.simulateConnectionLoss(.authenticationFailed)
+        await waitUntil { model.state == .failed }
+        let banner = try XCTUnwrap(model.stateBanner)
+        XCTAssertEqual(banner.title, "接続が切れました")
+        XCTAssertEqual(banner.detail, Formatting.errorLabel(.authenticationFailed))
+        XCTAssertTrue(banner.offersReconnect)
+    }
+
     func testReconnectingAFinishedSessionOpensANewOne() async throws {
         let environment = await makeEnvironment()
         let office = try XCTUnwrap(environment.profiles.first { $0.displayName == "office" })

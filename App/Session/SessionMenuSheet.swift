@@ -31,13 +31,30 @@ struct SessionMenuSheet: View {
                         Spacer()
                         SessionStateBadge(state: model.state, statusText: model.statusText)
                     }
-                    if model.allowsLegacySecurity {
+                    if let security = model.transportSecurity {
+                        LabeledContent("通信の保護", value: Formatting.transportLabel(security))
+                            .accessibilityIdentifier("session-transport-security")
+                    }
+                    // docs/data-and-security.md section 4: the audit display.
+                    // Strong when the server actually chose legacy security,
+                    // a note when it was only allowed.
+                    if model.isUsingLegacySecurity {
                         Label(
-                            "古い RDP セキュリティを許可した接続先です。暗号は弱く、サーバーの確認もできません。",
+                            "この接続は古い RDP セキュリティで通信しています。暗号は弱く、サーバーの確認もできません。",
                             systemImage: "exclamationmark.shield"
                         )
                         .font(.footnote)
                         .foregroundStyle(.orange)
+                        .accessibilityIdentifier("session-legacy-security")
+                    } else if model.allowsLegacySecurity {
+                        Label(
+                            model.transportSecurity == nil
+                                ? "古い RDP セキュリティを許可した接続先です。"
+                                : "古い RDP セキュリティを許可した接続先ですが、この接続では使われていません。",
+                            systemImage: "shield.lefthalf.filled"
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                         .accessibilityIdentifier("session-legacy-security")
                     }
                 }

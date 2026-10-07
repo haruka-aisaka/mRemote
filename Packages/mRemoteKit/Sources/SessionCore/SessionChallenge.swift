@@ -155,6 +155,9 @@ public enum RemoteSessionError: Hashable, Sendable, Error {
     case connectionRefused
     case connectionTimedOut
     case tlsHandshakeFailed
+    /// The client and server share no transport security both allow - in
+    /// practice a server that accepts only the legacy RDP Security Layer.
+    case securityNegotiationFailed
     case authenticationFailed
     case accountRestricted
     case certificateRejected
@@ -170,7 +173,7 @@ public enum RemoteSessionError: Hashable, Sendable, Error {
         switch self {
         case .networkUnreachable, .connectionTimedOut, .protocolFailure:
             return true
-        case .nameResolutionFailed, .connectionRefused, .tlsHandshakeFailed,
+        case .nameResolutionFailed, .connectionRefused, .tlsHandshakeFailed, .securityNegotiationFailed,
              .authenticationFailed, .accountRestricted, .certificateRejected,
              .userCancelled, .resourceUnavailable, .internalFailure:
             return false

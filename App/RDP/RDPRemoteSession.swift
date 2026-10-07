@@ -541,6 +541,11 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
                 if machine.state == .connected { sendDesiredDesktopSize() }
             }
 
+        case let .transportSecurity(security, generation):
+            guard generation == machine.generation.rawValue else { return }
+            logger.session("transport security \(security)")
+            emit(.transportSecurity(security))
+
         case let .failure(status, nativeCode, generation):
             guard generation == machine.generation.rawValue else { return }
             let cause = RDPErrorMapper.classify(status: status, nativeCode: nativeCode)

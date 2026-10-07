@@ -21,6 +21,8 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     private(set) var lastError: RemoteSessionError?
     /// Why the server ended the session, when it did so on purpose.
     private(set) var endReason: RemoteEndReason?
+    /// What protects the connection, as the server selected it.
+    private(set) var transportSecurity: TransportSecurity?
     private(set) var pendingChallenge: SessionChallenge?
     /// Zoom, scale mode and the like: not part of the handshake, so they live
     /// here and may change while the session runs without writing back to the
@@ -88,6 +90,9 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             mode: environment.globalSettings.softwareKeyboardMode,
             layout: configuration.keyboardLayout,
             canSend: { [weak self] in self?.acceptsInput ?? false },
+            paste: configuration.clipboardPolicy.allowsSend
+                ? { [weak self] text in Task { await self?.pasteToRemote(text) } }
+                : nil,
             send: { [weak self] output in
                 guard let sink = self?.inputSink else { return }
                 switch output {
@@ -150,6 +155,49 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// it is not reported by the bridge, so this says what was allowed.
     var allowsLegacySecurity: Bool { configuration.securityPolicy == .legacyExplicit }
 
+    /// What to say over a desktop that is no longer live: the last frame
+    /// stays on screen after the connection goes, so a drop, a reconnect in
+    /// progress or a takeover would otherwise look like a frozen desktop.
+    struct StateBanner: Equatable {
+        var title: String
+        var symbol: String
+        var detail: String?
+        var busy = false
+        var offersReconnect = false
+    }
+
+    var stateBanner: StateBanner? {
+        if reconnectAttempt != nil || state == .reconnecting {
+            return StateBanner(
+                title: statusText,
+                symbol: "arrow.triangle.2.circlepath",
+                detail: lastError.map(Formatting.errorLabel),
+                busy: true
+            )
+        }
+        switch state {
+        case .failed:
+            return StateBanner(
+                title: "接続が切れました",
+                symbol: "exclamationmark.triangle",
+                detail: lastError.map(Formatting.errorLabel),
+                offersReconnect: true
+            )
+        case .disconnected:
+            return StateBanner(
+                title: "切断されました",
+                symbol: "rectangle.portrait.and.arrow.right",
+                detail: endReason.map(Formatting.endReasonLabel),
+                offersReconnect: true
+            )
+        default:
+            return nil
+        }
+    }
+
+    /// The server actually chose the legacy RDP Security Layer.
+    var isUsingLegacySecurity: Bool { transportSecurity == .legacyRDP }
+
     var showsDesktop: Bool { desktop != nil && (state == .connected || desktopSize != nil) }
 
     func start() async {
@@ -187,6 +235,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
                 pendingChallenge = nil
                 endReason = nil
             }
+            if state == .connecting { transportSecurity = nil }
             if state == .connected {
                 lastError = nil
                 hadConnected = true
@@ -203,6 +252,8 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         case .error(let error):
             lastError = error
             if state == .failed { scheduleReconnectIfNeeded() }
+        case .transportSecurity(let security):
+            transportSecurity = security
         case .endedByServer(let reason):
             // Shown instead of an error; the state is already on its way to
             // disconnected, which never reconnects on its own.

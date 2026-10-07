@@ -13,6 +13,7 @@ import XCTest
 ///     TEST_RUNNER_MREMOTE_LIVE_PASSWORD=...
 ///     TEST_RUNNER_MREMOTE_LIVE_HOLD=600      # seconds to keep the session
 ///     TEST_RUNNER_MREMOTE_LIVE_COMMANDS=/path/commands.txt   # optional
+///     TEST_RUNNER_MREMOTE_APP_<NAME>=<value>                  # app environment
 ///
 /// With a command file, lines appended to it while the session is held are
 /// carried out in order, and `<file>.done` gets one line per finished
@@ -56,6 +57,11 @@ final class LiveRDPUITests: XCTestCase {
         let hold = TimeInterval(environment["MREMOTE_LIVE_HOLD"] ?? "") ?? 300
         continueAfterFailure = false
         app = XCUIApplication()
+        // TEST_RUNNER_MREMOTE_APP_<NAME>=value reaches the app as <NAME>:
+        // FreeRDP's WLOG_LEVEL and WLOG_APPENDER, for instance.
+        for (key, value) in environment where key.hasPrefix("MREMOTE_APP_") {
+            app.launchEnvironment[String(key.dropFirst("MREMOTE_APP_".count))] = value
+        }
         app.launch()
 
         let row = element("profile-row-\(profileName)")
@@ -163,8 +169,10 @@ final class LiveRDPUITests: XCTestCase {
             guard let target = target() else { return "missing" }
             target.scroll(byDeltaX: number(1), deltaY: number(2))
         case "type":
-            // "\n" in the command is the return key.
-            app.typeText(arguments.joined(separator: " ").replacingOccurrences(of: "\\n", with: "\n"))
+            // "\n" in the command is the return key, "\b" backspace.
+            app.typeText(arguments.joined(separator: " ")
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\b", with: XCUIKeyboardKey.delete.rawValue))
         case "value":
             let target = element(arguments.joined(separator: " "))
             guard target.waitForExistence(timeout: 3) else { return "missing" }
