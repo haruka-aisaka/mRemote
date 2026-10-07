@@ -34,6 +34,7 @@ import XCTest
 ///     pasteboard                       report the pasteboard text, base64
 ///     type <text>                      type into the focused field
 ///     scroll <id> <dx> <dy>            a pointer scroll over an element
+///     key <label>                      tap a key of the iOS software keyboard
 ///
 /// The password is typed into the credential prompt and not saved.
 final class LiveRDPUITests: XCTestCase {
@@ -147,11 +148,16 @@ final class LiveRDPUITests: XCTestCase {
         case "pasteboard":
             let text = UIPasteboard.general.string ?? ""
             return "pasteboard=" + Data(text.utf8).base64EncodedString()
+        case "key":
+            let key = app.keys[arguments.joined(separator: " ")].firstMatch
+            guard key.waitForExistence(timeout: 3) else { return "missing" }
+            key.tap()
         case "scroll":
             guard let target = target() else { return "missing" }
             target.scroll(byDeltaX: number(1), deltaY: number(2))
         case "type":
-            app.typeText(arguments.joined(separator: " "))
+            // "\n" in the command is the return key.
+            app.typeText(arguments.joined(separator: " ").replacingOccurrences(of: "\\n", with: "\n"))
         case "value":
             let target = element(arguments.joined(separator: " "))
             guard target.waitForExistence(timeout: 3) else { return "missing" }

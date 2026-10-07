@@ -178,8 +178,8 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 | remote cursor shape | 実装済み。bridge の pointer class が BGRA へ変換し、surface はリモート倍率で描いたレイヤーをローカルポインタに追従させ、システムポインタを隠す。サーバーからの位置ワープは iPadOS が許さないため無視する |
 | redacted input diagnostics | 実装済み。設定 > 入力診断。常時の集計と、非文字キー限定・メモリのみ・10 分で自動停止する記録 |
 | GCMouse | 採用しない。Phase 0 で UIKit の indirect pointer が左右ボタン・ドラッグ・ホイールを取れており、二経路を混ぜない原則（入力設計 8.1）に従う |
-| KEY-EISU-01/KEY-KANA-01 各 10 回（KeyEcho） | **未実施**。実機と Windows が必要 |
-| 押下残りの実機確認（focus/lifecycle） | **未実施**。自動試験（`KeyboardEventArbiterTests`）のみ |
+| KEY-EISU-01/KEY-KANA-01 各 10 回（KeyEcho） | Windows 側は確認済み（2026-10-07、Windows 11 VM）: 無変換/変換（英数/かなと同じ scan code 0x7B/0x79）を各 10 回、`analyze-keyecho.sh` で pass（VK_NONCONVERT/VK_CONVERT、repeat/mismatch/押下残り 0）。物理の英数/かなキーは DeviceHub・シミュレータがアプリへ渡さない（Shift は届くがアプリの入力診断に 0 件）ため **実機で未実施** |
+| 押下残りの実機確認（focus/lifecycle） | **未実施**。自動試験（`KeyboardEventArbiterTests`）のみ。物理キーボードを使う実機試験 |
 
 ## 6. Phase 4 — 複数セッション
 
@@ -240,8 +240,8 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 | NUL 終端 UTF-16LE `CF_UNICODETEXT` | 実装済み。`ClipboardTextCodec`（CRLF 変換、埋め込み NUL 拒否、受信は最初の NUL まで、不正サロゲートは U+FFFD） |
 | clipboard direction、user-initiated paste/copy | 実装済み。メニューの `PasteButton`（OS の貼り付け許可ダイアログを出さない）と「端末へコピー」。貼り付け chord（Ctrl+V）はこの操作のときだけ送る |
 | loop/size protection | 実装済み。4 MiB 上限、10 秒タイムアウト、受信直後の同一テキストは再 offer しない |
-| 44.1/48 kHz test tone、route 変更後の復帰 | **未実施**。Windows からの実音が必要 |
-| ASCII/日本語/絵文字の双方向 copy | codec と fake session での自動試験のみ。**Windows との往復は未実施** |
+| 44.1/48 kHz test tone、route 変更後の復帰 | test tone は確認済み（2026-10-07）: 44.1/48 kHz の 1.5 s tone を RDP セッション内で再生し、44100 Hz x2 の node で再生、ring overflow は最初の 1 packet（node 構築前）のみ。DeviceHub の出力切替（System ↔ MacBook スピーカー）中も再生継続。iOS 側の route change（AVAudioEngine の再構築）はシミュレータで発生しないため **実機で未実施**。耳での確認も未実施 |
+| ASCII/日本語/絵文字の双方向 copy | 確認済み（2026-10-07、Windows 11 VM）: ASCII、日本語、絵文字（肌色修飾・国旗・𠮷 のサロゲートペア）の 3 種を端末→Windows、Windows→端末の両方向で完全一致 |
 
 ## 8. Phase 6 — ソフトウェアキーボード
 
@@ -273,7 +273,7 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 | mode/global default、session 中の切替 | 実装済み。設定の初期モード（スキーマ v2、v1 からの移行付き）とキーバーの切替 |
 | keyboard close / session 切替で modifier を解放 | 実装済み |
 | 送れない文字の明示 clipboard paste | クリップボード送信（Phase 5）で代替可能。キーバーからの自動誘導は未実装 |
-| Windows 側で一度だけ届くこと、host IME での変換/無変換 | **未実施**。Windows が必要 |
+| Windows 側で一度だけ届くこと、host IME での変換/無変換 | 確認済み（2026-10-07、iPad シミュレータ + Windows 11 VM）: 手元 IME で ASCII/日本語/絵文字が一度だけ届く。marked text 中は Windows に 0 イベント（KeyEcho）、確定で「かな」が一度だけ、キャンセルでは何も届かない。ホスト IME で 変換→aiu→Enter→無変換→abc が「あいうabc」 |
 
 ### 追加: 折りたたみ端末のラップトップ姿勢（2026-10-07、シミュレータ確認まで）
 
@@ -293,7 +293,7 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 | トラックパッド | 実装済み（`RelativePointerMotion`）。相対移動と加速、タップで左、2 本指タップで右、2 本指スクロール、左右ボタン、ズーム時の追従、トラックパッド移動時のカーソル描画 |
 | 解放 | 実装済み。gate が閉じたとき、デッキが消えたときにキーとボタンをすべて解放 |
 | メニューの表示切替 | 実装済み。折り曲げたとき / 常に表示 / 表示しない（セッション単位、保存しない） |
-| 手元側の配置 | 実装済み。キーボード / トラックパッド、トラックパッド / キーボード、キーボードのみ（上側の画面をトラックパッドとして使う）。`@AppStorage` に保存。長押しドラッグを追加。シミュレータで 3 配置の表示を確認。画面をトラックパッドにする操作は surface のある実接続でのみ確認可能で **未確認** |
+| 手元側の配置 | 実装済み。キーボード / トラックパッド、トラックパッド / キーボード、キーボードのみ（上側の画面をトラックパッドとして使う）。`@AppStorage` に保存。長押しドラッグを追加。3 配置の表示と、キーボードのみでの画面トラックパッド（カーソル位置でクリック）を Windows 11 で確認 |
 | テスト | 単体テスト（配列幅、scan code の有無、合成、相対移動）と UI テスト（常に表示でデッキが出る）が通過 |
 | 実際に折り曲げたときの自動切替 | 確認済み（2026-10-07、シミュレータ）。縦向き + Partially Open で自動表示、Open で全画面に戻り、横向き + Partially Open では出ない |
 | 実ホストでのキー・ポインター | 確認済み（2026-10-07、Windows 11 Pro ARM64 VM、シミュレータ）。Win+R、英字と Shift の one-shot、Ctrl+N、半/全 → ローマ字 → 変換 → 確定、トラックパッドの移動・カーソル描画・タップで左クリック・右ボタン・長押しドラッグ、キーボードのみでの画面トラックパッド（カーソル位置でクリック）。2 本指タップとスクロールは XCUITest で合成できず **未確認** |
@@ -310,7 +310,10 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 
 次にやること:
 
-- 2 本指タップ（右クリック）と 2 本指スクロールを実ホストで確かめる。XCUITest では合成できないため、手で触るか別の手段が要る。
+- 2 本指タップ／2 本指スクロールを手で触って確かめる。ジェスチャー判定は単体試験（`TrackpadGestureTrackerTests`）、右クリックとホイールが Windows に届くことは実ホストで確認済みだが、2 本の指を同時に置く操作そのものは XCUITest（twoFingerTap、内部の event synthesizer とも）が iPhone Duo シミュレータで合成できない。
+- 複数セッションの切替・入力分離・個別切断を実ホストで確かめる。Windows 11 Pro は同一ユーザーの 2 本目の接続で 1 本目を切るため、2 人目のユーザーが要る。
+- セッション最初の音声 packet が node 構築前に届いて 1 つ捨てられる（最初の音の頭が欠ける）。
+- Microsoft IME の「変換=IME-オン / 無変換=IME-オフ」は `HKCU\Software\Microsoft\IME\15.0\IMEJP\MSIME` の `IsKeyAssignmentEnabled=1`、`KeyAssignmentHenkan=0`（IME-オン）、`KeyAssignmentMuhenkan=1`（IME-オフ）。設定画面で変えた差分から確認。この割当で英数/かな相当のキーが IME オフ/オンになり、連打しても切り替わらないこと（KEY-IME-01B）を確認済み。
 
 2026-10-07 に対応済み（Windows 11 で確認）:
 
