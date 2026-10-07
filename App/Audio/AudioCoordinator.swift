@@ -38,7 +38,10 @@ final class AudioCoordinator {
         observers.append(center.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.rebuild(force: true) }
+            MainActor.assumeIsolated {
+                self?.logger.info("audio engine configuration changed; rebuilding")
+                self?.rebuild(force: true)
+            }
         })
     }
 
@@ -95,6 +98,7 @@ final class AudioCoordinator {
                 let node = Self.makeSourceNode(format: avFormat, stream: stream, channels: format.channels)
                 engine.attach(node)
                 engine.connect(node, to: engine.mainMixerNode, format: avFormat)
+                logger.info("audio node for \(Int(format.sampleRate), privacy: .public) Hz x\(format.channels, privacy: .public)")
                 sourceNode = node
                 nodeFormat = format
                 nodeStream = stream

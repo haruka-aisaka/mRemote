@@ -1,3 +1,4 @@
+import AppleAdapters
 import CoreAudio
 import Foundation
 import SessionCore
@@ -29,6 +30,12 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
     private var currentFormat: Format?
     private var formatObserver: (@Sendable (Format) -> Void)?
     private(set) var droppedPackets = 0
+    /// Whether the last push was dropped. A full ring means the render side
+    /// stopped pulling - a stalled engine, or one that never started - which
+    /// is silent by nature, so the transitions are logged. Producer thread
+    /// only, never the render thread.
+    private var isDropping = false
+    private let logger = AppLog.logger(.app)
 
     init() {
         guard let ring = mr_pcm_ring_create(Self.capacityBytes) else {
@@ -71,9 +78,18 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
               mr_pcm_ring_write(ring, base, bytes.count) == 1 else {
             lock.lock()
             droppedPackets += 1
+            let started = !isDropping
+            isDropping = true
+            let total = droppedPackets
             lock.unlock()
+            if started { logger.info("audio ring full; dropping (total \(total, privacy: .public))") }
             return false
         }
+        lock.lock()
+        let recovered = isDropping
+        isDropping = false
+        lock.unlock()
+        if recovered { logger.info("audio ring draining again") }
         return true
     }
 
