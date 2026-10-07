@@ -47,6 +47,7 @@ typedef struct mr_rdp_mock_backend {
     mr_rdp_mock_audio_focus_observer on_set_audio_focused;
     mr_rdp_mock_session_config_observer on_session_config;
     mr_rdp_mock_clipboard_offer_observer on_offer_clipboard_text;
+    mr_rdp_mock_scale_observer on_scale_config;
     const mr_rdp_cursor_event *cursor_event;
     const mr_rdp_audio_packet *audio_packet;
     const uint8_t *remote_clipboard_utf16le;
@@ -307,6 +308,12 @@ static mr_rdp_status mr_mock_run(mr_rdp_backend *base)
             backend->observer_context,
             backend->config.keyboard_profile,
             backend->config.channel_flags);
+    }
+    if (backend->on_scale_config != NULL) {
+        backend->on_scale_config(
+            backend->observer_context,
+            backend->config.desktop_scale_factor,
+            backend->config.device_scale_factor);
     }
     if (backend->on_config != NULL) {
         backend->on_config(
@@ -794,6 +801,7 @@ static mr_rdp_status mr_mock_backend_create(
     backend->on_set_audio_focused = script->on_set_audio_focused;
     backend->on_session_config = script->on_session_config;
     backend->on_offer_clipboard_text = script->on_offer_clipboard_text;
+    backend->on_scale_config = script->on_scale_config;
     backend->cursor_event = script->cursor_event;
     backend->audio_packet = script->audio_packet;
     backend->remote_clipboard_utf16le = script->remote_clipboard_utf16le;

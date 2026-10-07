@@ -42,6 +42,10 @@ typedef void (*mr_rdp_mock_session_config_observer)(
     void *context,
     mr_rdp_keyboard_profile keyboard_profile,
     mr_rdp_channel_flags channel_flags);
+typedef void (*mr_rdp_mock_scale_observer)(
+    void *context,
+    uint32_t desktop_scale_factor,
+    uint32_t device_scale_factor);
 typedef void (*mr_rdp_mock_clipboard_offer_observer)(
     void *context,
     uint64_t offer_id,
@@ -81,6 +85,9 @@ typedef struct mr_rdp_mock_script {
     const mr_rdp_audio_packet *audio_packet;
     const uint8_t *remote_clipboard_utf16le;
     size_t remote_clipboard_utf16le_byte_count;
+    /* ABI 3. Called at run with the scale factors the session was created
+     * with. */
+    mr_rdp_mock_scale_observer on_scale_config;
 } mr_rdp_mock_script;
 
 void mr_rdp_mock_script_init(mr_rdp_mock_script *script);

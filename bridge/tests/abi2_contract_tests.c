@@ -242,7 +242,7 @@ static int test_config_defaults_and_validation(void)
     mr_rdp_config config;
     mr_rdp_session *session = NULL;
     initialize_config(&config, 1u);
-    REQUIRE(config.abi_version == 2u);
+    REQUIRE(config.abi_version == MR_RDP_BRIDGE_ABI_VERSION);
     REQUIRE(config.keyboard_profile == MR_RDP_KEYBOARD_JAPANESE);
     REQUIRE(config.channel_flags ==
             (MR_RDP_CHANNEL_FLAG_AUDIO | MR_RDP_CHANNEL_FLAG_CLIPBOARD));

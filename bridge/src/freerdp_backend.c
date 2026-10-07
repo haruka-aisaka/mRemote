@@ -1750,12 +1750,27 @@ static mr_rdp_status mr_freerdp_process_control_command(
         layout.Width = resize_request.width;
         layout.Height = resize_request.height;
         if (backend->context != NULL && backend->context->settings != NULL) {
+            rdpSettings *settings = backend->context->settings;
+            /* ABI 3: a request's own factors replace the session's, here and
+             * for every later layout, so a resize that only changes the size
+             * does not quietly drop a scale chosen earlier. This runs on the
+             * run thread, which owns the settings. */
+            if (resize_request.desktop_scale_factor != 0u) {
+                (void)freerdp_settings_set_uint32(
+                    settings, FreeRDP_DesktopScaleFactor,
+                    resize_request.desktop_scale_factor);
+            }
+            if (resize_request.device_scale_factor != 0u) {
+                (void)freerdp_settings_set_uint32(
+                    settings, FreeRDP_DeviceScaleFactor,
+                    resize_request.device_scale_factor);
+            }
             layout.Orientation = freerdp_settings_get_uint16(
-                backend->context->settings, FreeRDP_DesktopOrientation);
+                settings, FreeRDP_DesktopOrientation);
             layout.DesktopScaleFactor = freerdp_settings_get_uint32(
-                backend->context->settings, FreeRDP_DesktopScaleFactor);
+                settings, FreeRDP_DesktopScaleFactor);
             layout.DeviceScaleFactor = freerdp_settings_get_uint32(
-                backend->context->settings, FreeRDP_DeviceScaleFactor);
+                settings, FreeRDP_DeviceScaleFactor);
         }
         channel_status = disp == NULL || disp->SendMonitorLayout == NULL
             ? CHANNEL_RC_NOT_CONNECTED
@@ -2494,6 +2509,10 @@ static mr_rdp_status mr_freerdp_configure_settings(
             settings, FreeRDP_DesktopWidth, config->desktop_width) ||
         !freerdp_settings_set_uint32(
             settings, FreeRDP_DesktopHeight, config->desktop_height) ||
+        !freerdp_settings_set_uint32(
+            settings, FreeRDP_DesktopScaleFactor, config->desktop_scale_factor) ||
+        !freerdp_settings_set_uint32(
+            settings, FreeRDP_DeviceScaleFactor, config->device_scale_factor) ||
         !freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32u) ||
         !mr_freerdp_configure_keyboard(settings, config->keyboard_profile) ||
         !freerdp_settings_set_bool(settings, FreeRDP_SoftwareGdi, TRUE) ||

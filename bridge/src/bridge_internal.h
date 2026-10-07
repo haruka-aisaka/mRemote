@@ -33,6 +33,8 @@ typedef struct mr_rdp_owned_config {
     size_t password_length;
     mr_rdp_keyboard_profile keyboard_profile;
     mr_rdp_channel_flags channel_flags;
+    uint32_t desktop_scale_factor;
+    uint32_t device_scale_factor;
 } mr_rdp_owned_config;
 
 typedef struct mr_rdp_backend_clipboard_offer {

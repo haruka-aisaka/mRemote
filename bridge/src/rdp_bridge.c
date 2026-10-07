@@ -717,6 +717,18 @@ static mr_rdp_status mr_bridge_clipboard_probe_event(
     return MR_RDP_STATUS_OK;
 }
 
+/* MS-RDPBCGR 2.2.1.3.2 allows exactly these device scale factors. */
+static int mr_valid_device_scale_factor(uint32_t factor)
+{
+    return factor == 100u || factor == 140u || factor == 180u;
+}
+
+static int mr_valid_desktop_scale_factor(uint32_t factor)
+{
+    return factor >= MR_RDP_MIN_DESKTOP_SCALE_FACTOR &&
+           factor <= MR_RDP_MAX_DESKTOP_SCALE_FACTOR;
+}
+
 static mr_rdp_status mr_validate_display_resize_request(
     const mr_rdp_display_resize_request *request)
 {
@@ -726,7 +738,11 @@ static mr_rdp_status mr_validate_display_resize_request(
         request->width > MR_RDP_MAX_DESKTOP_DIMENSION ||
         (request->width & 1u) != 0u ||
         request->height < MR_RDP_MIN_DESKTOP_DIMENSION ||
-        request->height > MR_RDP_MAX_DESKTOP_DIMENSION) {
+        request->height > MR_RDP_MAX_DESKTOP_DIMENSION ||
+        (request->desktop_scale_factor != 0u &&
+         !mr_valid_desktop_scale_factor(request->desktop_scale_factor)) ||
+        (request->device_scale_factor != 0u &&
+         !mr_valid_device_scale_factor(request->device_scale_factor))) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     return MR_RDP_STATUS_OK;
@@ -991,6 +1007,8 @@ void mr_rdp_config_init(mr_rdp_config *config)
     config->desktop_height = MR_RDP_DEFAULT_DESKTOP_HEIGHT;
     config->keyboard_profile = MR_RDP_KEYBOARD_JAPANESE;
     config->channel_flags = MR_RDP_CHANNEL_FLAG_AUDIO | MR_RDP_CHANNEL_FLAG_CLIPBOARD;
+    config->desktop_scale_factor = MR_RDP_DEFAULT_SCALE_FACTOR;
+    config->device_scale_factor = MR_RDP_DEFAULT_SCALE_FACTOR;
 }
 
 void mr_rdp_callbacks_init(mr_rdp_callbacks *callbacks)
@@ -1080,6 +1098,10 @@ static mr_rdp_status mr_validate_config(const mr_rdp_config *config, size_t *out
         (config->channel_flags &
          ~(mr_rdp_channel_flags)(MR_RDP_CHANNEL_FLAG_AUDIO |
                                  MR_RDP_CHANNEL_FLAG_CLIPBOARD)) != 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if (!mr_valid_desktop_scale_factor(config->desktop_scale_factor) ||
+        !mr_valid_device_scale_factor(config->device_scale_factor)) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     if (config->desktop_width < MR_RDP_MIN_DESKTOP_DIMENSION ||
@@ -1180,6 +1202,8 @@ mr_rdp_status mr_rdp_session_create_internal(
     session->config.desktop_height = config->desktop_height;
     session->config.keyboard_profile = config->keyboard_profile;
     session->config.channel_flags = config->channel_flags;
+    session->config.desktop_scale_factor = config->desktop_scale_factor;
+    session->config.device_scale_factor = config->device_scale_factor;
     session->config.username_length = config->username_length;
     status = mr_copy_string_span(
         config->username, config->username_length, &session->config.username);

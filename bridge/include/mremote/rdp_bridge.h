@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define MR_RDP_BRIDGE_ABI_VERSION 2u
+#define MR_RDP_BRIDGE_ABI_VERSION 3u
 #define MR_RDP_DEFAULT_PORT 3389u
 #define MR_RDP_DEFAULT_CERTIFICATE_TIMEOUT_MS 30000u
 #define MR_RDP_MAX_CERTIFICATE_CHAIN 16u
@@ -21,6 +21,11 @@ extern "C" {
 #define MR_RDP_DEFAULT_DESKTOP_HEIGHT 720u
 #define MR_RDP_MIN_DESKTOP_DIMENSION 200u
 #define MR_RDP_MAX_DESKTOP_DIMENSION 8192u
+/* MS-RDPBCGR 2.2.1.3.2: the desktop scale factor is a percentage in
+ * [100, 500] and the device scale factor one of 100, 140 or 180. */
+#define MR_RDP_DEFAULT_SCALE_FACTOR 100u
+#define MR_RDP_MIN_DESKTOP_SCALE_FACTOR 100u
+#define MR_RDP_MAX_DESKTOP_SCALE_FACTOR 500u
 #define MR_RDP_MAX_DESKTOP_FRAME_BYTES (512u * 1024u * 1024u)
 #define MR_RDP_MAX_DESKTOP_DIRTY_RECTS 512u
 #define MR_RDP_MAX_CLIPBOARD_PROBE_UTF16LE_BYTES (64u * 1024u)
@@ -95,7 +100,15 @@ typedef struct mr_rdp_config {
     size_t password_length;
     mr_rdp_keyboard_profile keyboard_profile;
     mr_rdp_channel_flags channel_flags;
+    /* ABI 3. */
+    uint32_t desktop_scale_factor;
+    uint32_t device_scale_factor;
 } mr_rdp_config;
+
+/* desktop_scale_factor and device_scale_factor are ABI 3: how large the
+ * server should draw, sent with the core data at connect and with every
+ * monitor layout. config_init selects 100 for both, the size servers assume
+ * without them. */
 
 /* keyboard_profile and channel_flags are ABI 2. config_init selects the
  * Japanese profile and enables audio and clipboard; a cleared flag keeps that
@@ -239,6 +252,10 @@ typedef struct mr_rdp_display_resize_request {
     uint64_t request_id;
     uint32_t width;
     uint32_t height;
+    /* ABI 3. Zero keeps the factor the session connected with; otherwise
+     * the same ranges as mr_rdp_config. */
+    uint32_t desktop_scale_factor;
+    uint32_t device_scale_factor;
 } mr_rdp_display_resize_request;
 
 typedef struct mr_rdp_display_resize_event {
