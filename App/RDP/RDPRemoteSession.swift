@@ -564,6 +564,14 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             if isConnected {
                 negotiatedChannels.insert(channel)
                 if channel == .disp {
+                    // A display channel that opens again belongs to a new
+                    // desktop: a server redirection (GNOME's login screen
+                    // handing over to the user's session) starts one at its
+                    // own size and scale. Its first frame may come after the
+                    // settle, so the old frames would make the size look
+                    // right already; the layout is sent regardless.
+                    displayScaleIsPending = true
+                    resizeAttempts = 0
                     Task { [weak self] in
                         try? await Task.sleep(for: Self.displayChannelSettle)
                         await self?.sendDesiredDesktopSize()
