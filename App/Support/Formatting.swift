@@ -57,22 +57,36 @@ enum Formatting {
         }
     }
 
+    /// What went wrong and what to try, in that order. Technical detail
+    /// from the backend stays in English and goes last, for reports.
     static func errorLabel(_ error: RemoteSessionError) -> String {
         switch error {
-        case .nameResolutionFailed: return "ホスト名を解決できません。"
-        case .networkUnreachable: return "ネットワークに到達できません。"
-        case .connectionRefused: return "接続を拒否されました。ポートとリモートデスクトップの設定を確認してください。"
-        case .connectionTimedOut: return "接続がタイムアウトしました。"
+        case .nameResolutionFailed:
+            return "ホスト名が見つかりません。ホスト名のつづりを確認するか、IP アドレスで指定してください。"
+        case .networkUnreachable:
+            return "ネットワークに到達できません。iPhone/iPad のネットワーク接続と、VPN が必要な接続先ならその接続を確認してください。"
+        case .connectionRefused:
+            return "接続を拒否されました。ポート番号と、リモート側でリモートデスクトップが有効になっているかを確認してください。"
+        case .connectionTimedOut:
+            return "応答がないまま時間切れになりました。リモートの電源とネットワーク、ファイアウォールで RDP（通常 3389）が許可されているかを確認してください。"
         case .securityNegotiationFailed:
             return "サーバーと共通のセキュリティ方式がありません。サーバーが TLS/NLA を許可せず古い RDP セキュリティのみを受け付けている可能性があります。必要なら接続設定の「接続方式」で明示的に許可できます。"
-        case .tlsHandshakeFailed: return "TLS ハンドシェイクに失敗しました。"
-        case .authenticationFailed: return "認証に失敗しました。ユーザー名とパスワードを確認してください。"
-        case .accountRestricted: return "このアカウントはリモート接続を許可されていません。"
-        case .certificateRejected: return "サーバー証明書を信頼しませんでした。"
-        case .userCancelled: return "接続を中止しました。"
-        case .protocolFailure(let detail): return "プロトコルエラー: \(detail)"
-        case .resourceUnavailable: return "接続に必要なリソースを確保できません。"
-        case .internalFailure(let detail): return "内部エラー: \(detail)"
+        case .tlsHandshakeFailed:
+            return "暗号化した通信を始められませんでした。接続設定の「接続方式」がサーバーの設定と合っているか確認してください。"
+        case .authenticationFailed:
+            return "認証に失敗しました。ユーザー名・パスワード・ドメインを確認してください。Microsoft アカウントはメールアドレスをユーザー名にします。"
+        case .accountRestricted:
+            return "このアカウントはリモート接続を許可されていません。リモート側で「リモートデスクトップ ユーザー」に加えるか、管理者に確認してください。"
+        case .certificateRejected:
+            return "サーバー証明書を信頼しなかったため中止しました。接続し直すと、もう一度確認できます。"
+        case .userCancelled:
+            return "接続を中止しました。"
+        case .protocolFailure(let detail):
+            return "サーバーとの通信が想定外の形で終わりました。もう一度接続してください。続く場合は、この詳細を添えて報告してください。（\(detail)）"
+        case .resourceUnavailable:
+            return "メモリなどが足りず接続を始められませんでした。ほかのセッションを閉じてからもう一度試してください。"
+        case .internalFailure(let detail):
+            return "アプリ内部のエラーです。もう一度接続してください。続く場合は、この詳細を添えて報告してください。（\(detail)）"
         }
     }
 }

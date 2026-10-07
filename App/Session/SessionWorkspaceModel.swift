@@ -337,11 +337,11 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     private static func clipboardFailureText(_ error: Error) -> String {
         switch error as? ClipboardTransferError {
-        case .unavailable: return "クリップボードを利用できません"
-        case .timedOut: return "リモートが応答しませんでした"
-        case .unsupportedContent: return "このテキストは送れません（大きすぎるか NUL を含みます）"
-        case .nothingToCopy: return "リモートにテキストがありません"
-        case .failed, .none: return "クリップボードの転送に失敗しました"
+        case .unavailable: return "クリップボードを使えません。接続設定の「クリップボード」で許可されているか、リモート側でクリップボードのリダイレクトが許可されているかを確認してください"
+        case .timedOut: return "リモートが応答しませんでした。少し待ってからもう一度試してください"
+        case .unsupportedContent: return "このテキストは送れません（大きすぎるか NUL を含みます）。長いテキストは分けて送ってください"
+        case .nothingToCopy: return "リモートにコピーされたテキストがありません。リモート側で先にコピーしてください"
+        case .failed, .none: return "クリップボードの転送に失敗しました。もう一度試してください"
         }
     }
 
