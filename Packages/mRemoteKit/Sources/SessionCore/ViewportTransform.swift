@@ -131,19 +131,17 @@ public struct ViewportTransform: Hashable, Sendable {
 
     public var scale: Double { baseScale * zoom }
 
-    /// Where the desktop is drawn inside the viewport. Centred on any axis
-    /// that has room to spare, so a desktop narrower than the screen does not
-    /// sit in a corner.
+    /// Where the desktop is drawn inside the viewport: centred, then panned.
+    /// A desktop narrower than the screen does not sit in a corner, and one
+    /// zoomed past it grows from the middle and pans as far as each edge.
     public var contentRect: ViewportRect {
         guard desktopWidth > 0, desktopHeight > 0, !viewport.isEmpty else { return .zero }
         let scale = scale
         let width = Double(desktopWidth) * scale
         let height = Double(desktopHeight) * scale
-        let centredX = (viewport.width - width) / 2
-        let centredY = (viewport.height - height) / 2
         return ViewportRect(
-            x: (width <= viewport.width ? centredX : 0) + pan.x,
-            y: (height <= viewport.height ? centredY : 0) + pan.y,
+            x: (viewport.width - width) / 2 + pan.x,
+            y: (viewport.height - height) / 2 + pan.y,
             width: width,
             height: height
         )

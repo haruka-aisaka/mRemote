@@ -88,6 +88,18 @@ final class ViewportTransformTests: XCTestCase {
         XCTAssertEqual(panned.pan.y, 250, accuracy: 0.001)
     }
 
+    func testAZoomedDesktopGrowsFromTheMiddleAndPansToEachEdgeButNoFurther() {
+        let zoomed = transform(zoom: 2)
+        // Twice the fitted 888.9x500: centred, then panned.
+        XCTAssertEqual(zoomed.contentRect.y, -250, accuracy: 0.001)
+        let top = transform(zoom: 2, pan: ViewportPoint(x: 0, y: 10_000)).contentRect
+        XCTAssertEqual(top.y, 0, accuracy: 0.001, "the top edge, not the ground above it")
+        let bottom = transform(zoom: 2, pan: ViewportPoint(x: 0, y: -10_000)).contentRect
+        XCTAssertEqual(bottom.maxY, 500, accuracy: 0.001)
+        let left = transform(zoom: 4, pan: ViewportPoint(x: 10_000, y: 0)).contentRect
+        XCTAssertEqual(left.x, 0, accuracy: 0.001)
+    }
+
     func testZoomIsClampedToTheSupportedRange() {
         XCTAssertEqual(transform(zoom: 0.1).zoom, 1)
         XCTAssertEqual(transform(zoom: 100).zoom, 8)
