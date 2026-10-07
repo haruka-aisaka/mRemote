@@ -9,6 +9,33 @@ final class SessionStateMachineTests: XCTestCase {
         XCTAssertEqual(machine.generation, SessionGeneration(1))
     }
 
+    func testAnsweringACertificateResumesTheSameAttempt() {
+        var machine = SessionStateMachine()
+        machine.transition(to: .connecting)
+        let attempt = machine.generation
+        machine.transition(to: .awaitingUser)
+        XCTAssertEqual(machine.resumeAttempt(), .connecting)
+        XCTAssertEqual(machine.generation, attempt, "the attempt's own events must still apply")
+        XCTAssertEqual(machine.transition(to: .connected), .connected)
+    }
+
+    func testResumingIsOnlyFromAwaitingUser() {
+        var machine = SessionStateMachine()
+        XCTAssertNil(machine.resumeAttempt())
+        machine.transition(to: .connecting)
+        XCTAssertNil(machine.resumeAttempt())
+        XCTAssertEqual(machine.state, .connecting)
+    }
+
+    func testAnsweringWithCredentialsStartsANewAttempt() {
+        var machine = SessionStateMachine()
+        machine.transition(to: .connecting)
+        let attempt = machine.generation
+        machine.transition(to: .awaitingUser)
+        machine.transition(to: .connecting)
+        XCTAssertGreaterThan(machine.generation, attempt)
+    }
+
     func testDisconnectedIsOnlyReachableThroughDisconnecting() {
         var machine = SessionStateMachine()
         machine.transition(to: .connecting)

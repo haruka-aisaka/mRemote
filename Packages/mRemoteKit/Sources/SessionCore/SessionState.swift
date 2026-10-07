@@ -81,4 +81,17 @@ public struct SessionStateMachine: Sendable {
         state = next
         return next
     }
+
+    /// Back from awaitingUser to connecting within the same attempt: the
+    /// user answered a question the running attempt is waiting on - a
+    /// certificate review - and that attempt carries on. The generation stays,
+    /// or every later event of the attempt, `connected` included, would be
+    /// dropped as stale. An answer that starts a new attempt (credentials)
+    /// uses `transition(to: .connecting)` instead.
+    @discardableResult
+    public mutating func resumeAttempt() -> SessionState? {
+        guard state == .awaitingUser else { return nil }
+        state = .connecting
+        return state
+    }
 }

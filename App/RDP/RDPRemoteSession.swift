@@ -226,7 +226,11 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
                 "user approved \(Redaction.fingerprint(review.challenge.leafSHA256)) "
                 + (response == .trustPersistently ? "persistently" : "once")
             )
-            resumeConnecting()
+            // The attempt that asked carries on, under its own generation:
+            // a new one here dropped its `connected` as stale.
+            if machine.resumeAttempt() != nil {
+                emit(.stateChanged(machine.state, generation: machine.generation))
+            }
         }
     }
 
