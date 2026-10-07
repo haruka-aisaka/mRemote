@@ -35,6 +35,7 @@ import XCTest
 ///     type <text>                      type into the focused field
 ///     scroll <id> <dx> <dy>            a pointer scroll over an element
 ///     key <label>                      tap a key of the iOS software keyboard
+///     textfield <label>                tap the text field with this label
 ///
 /// The password is typed into the credential prompt and not saved.
 final class LiveRDPUITests: XCTestCase {
@@ -118,8 +119,10 @@ final class LiveRDPUITests: XCTestCase {
             guard let target = target() else { return "missing" }
             target.twoFingerTap()
         case "hold":
-            guard let target = target() else { return "missing" }
-            target.press(forDuration: TimeInterval(number(1)))
+            // Everything before the duration is the identifier.
+            let held = element(arguments.dropLast().joined(separator: " "))
+            guard held.waitForExistence(timeout: 3) else { return "missing" }
+            held.press(forDuration: TimeInterval(Double(arguments.last ?? "") ?? 1))
         case "tapat":
             guard let target = target() else { return "missing" }
             target.coordinate(withNormalizedOffset: CGVector(dx: number(1), dy: number(2))).tap()
@@ -148,6 +151,10 @@ final class LiveRDPUITests: XCTestCase {
         case "pasteboard":
             let text = UIPasteboard.general.string ?? ""
             return "pasteboard=" + Data(text.utf8).base64EncodedString()
+        case "textfield":
+            let field = app.textFields[arguments.joined(separator: " ")].firstMatch
+            guard field.waitForExistence(timeout: 3) else { return "missing" }
+            field.tap()
         case "key":
             let key = app.keys[arguments.joined(separator: " ")].firstMatch
             guard key.waitForExistence(timeout: 3) else { return "missing" }

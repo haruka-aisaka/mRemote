@@ -208,7 +208,7 @@ Phase 2 で前倒し済み: `RemoteInputView` の first responder と UIKit keyb
 | memory warning policy | 実装済み。非 focus セッションの保持フレームだけを捨て、接続は切らない |
 | reconnect と scene restoration policy | 実装済み。接続済みだったセッションが再試行可能なエラーで落ちたら 1/2/4 秒で最大 3 回（`ReconnectSchedule`）。前景復帰時にも判定。認証失敗等は再試行しない。あわせて状態機械に `connected → failed` を追加した（従来は通信断後も `connected` のまま残っていた） |
 | 通常 tap は既存セッションへ戻る／明示操作だけが多重接続 | 実装済み。一覧の context menu「新しいセッションで接続」 |
-| 2×1080p で 30 分、切替・入力分離・個別切断 | 自動試験（`MultiSessionTests`）で focus・個別切断・再接続を確認。**実機 30 分は未実施** |
+| 2×1080p で 30 分、切替・入力分離・個別切断 | 自動試験（`MultiSessionTests`）に加え、実ホスト 2 台（Windows 11 VM と実機 Windows）で切替・入力分離・個別切断を確認（2026-10-07、iPhone Duo シミュレータ）: B 表示中の Win/Esc は VM に 0 件、A に切り替えての Win/Esc は VM に 1 組だけ、B を切断しても A は接続済みで入力も届く。**実機 30 分は未実施** |
 | network stall が他 session/UI を止めない | 構造上はセッションごとの worker で隔離。**実測は未実施** |
 | memory baseline と supported session guidance | **未実施**。実機計測が必要 |
 
@@ -300,6 +300,8 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 
 | Mac 配列（JIS / US） | 準備のみ。`LaptopKeyboardPlatform.mac` で Magic Keyboard（テンキー無し）相当の配列を出せる。⌘ は GUI（Win）、⌥ は Alt、英数/かな は LANG2/LANG1 として送る。fn は送れる usage が無いため置かず、前方削除を最上段に置く。矢印は逆 T 字。UI からは選べず、Windows ホストでは常に Windows 配列（`LaptopDeck` の `platform` 既定値）。Mac ホスト（画面共有/VNC 等）のセッションができたら渡す。左下の Caps キーは macOS の「修飾キー」設定と同じく `CapsLockRole`（Caps Lock / control / option / command / escape / 何もしない）で役割を変えられる（Mac JIS / US とも。UI 未接続。Windows 配列でも同じ仕組みで、メニューから Caps Lock / Ctrl を選べる） |
 
+接続方式（2026-10-07）: プロファイルの「接続方式」は以前から UI と警告だけがあり、接続には反映されていなかった（bridge が NLA 固定、PostConnect も HYBRID 以外を拒否）。bridge ABI 3 の `security_policy` で反映し、自動=NLA+TLS、NLA 必須、TLS 必須、レガシー=NLA+TLS+RDP。レガシーは選ぶと確認ダイアログを出し、許可した場合だけ設定され、接続時のトーストとセッションメニューに監査表示を出す。RDP Security Layer のみを受け付ける実機 Windows（X.224 で SSL_NOT_ALLOWED_BY_SERVER）に、許可後に接続できることを確認。TLS 失敗の文言にこの原因と設定場所を足した。
+
 実ホスト接続で見つけて直したもの（Phase 2 からの不具合）:
 
 - 証明書を保存済みの承認やシステム信頼で受け入れると、セッションが `awaitingUser` のまま `connected` に進めず、画面は出るのに入力がすべて止まっていた。バックエンドの「証明書確認中」を `awaitingUser` に写していたのが原因で、実際にユーザーへ尋ねたときだけ `awaitingUser` にした。
@@ -311,7 +313,8 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 次にやること:
 
 - 2 本指タップ／2 本指スクロールを手で触って確かめる。ジェスチャー判定は単体試験（`TrackpadGestureTrackerTests`）、右クリックとホイールが Windows に届くことは実ホストで確認済みだが、2 本の指を同時に置く操作そのものは XCUITest（twoFingerTap、内部の event synthesizer とも）が iPhone Duo シミュレータで合成できない。
-- 複数セッションの切替・入力分離・個別切断を実ホストで確かめる。Windows 11 Pro は同一ユーザーの 2 本目の接続で 1 本目を切るため、2 人目のユーザーが要る。
+- 同じ Windows ユーザーへ 2 本つなぐと、互いにセッションを奪い合い、自動再接続で取り返し続ける。奪われた切断は bridge から理由なしの backend failure（code 0）として届くため区別できない。FreeRDP の ErrorInfo（0x5: 別の接続により切断）を渡し、その場合は自動再接続しない。
+- レガシー RDP セキュリティで接続中かどうか（サーバーが実際に選んだ方式）は bridge が報告しないため、監査表示は「許可した接続先」までにとどまる。
 - セッション最初の音声 packet が node 構築前に届いて 1 つ捨てられる（最初の音の頭が欠ける）。
 - Microsoft IME の「変換=IME-オン / 無変換=IME-オフ」は `HKCU\Software\Microsoft\IME\15.0\IMEJP\MSIME` の `IsKeyAssignmentEnabled=1`、`KeyAssignmentHenkan=0`（IME-オン）、`KeyAssignmentMuhenkan=1`（IME-オフ）。設定画面で変えた差分から確認。この割当で英数/かな相当のキーが IME オフ/オンになり、連打しても切り替わらないこと（KEY-IME-01B）を確認済み。
 
