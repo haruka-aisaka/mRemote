@@ -54,6 +54,21 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     private var negotiatedChannels: Set<RDPBridgeChannel> = []
     private var currentDesktopSize: (width: Int, height: Int)
     private var nextResizeRequestID: UInt64 = 0
+    /// The size the workspace last asked for. Kept because the surface lays
+    /// out - and asks - while the session is still connecting, when nothing
+    /// can be sent yet; it is sent once the session is connected and the
+    /// display channel is up, whichever comes last.
+    private var desiredDesktopSize: (width: Int, height: Int)?
+    /// The server needs the display channel's capabilities before it acts on
+    /// a layout, and they arrive just after the channel opens.
+    private static let displayChannelSettle = Duration.milliseconds(500)
+    /// A layout sent while Windows is still logging the user on is dropped,
+    /// and the backend only reports that it was sent, not that it was used.
+    /// So the size the frames actually arrive at is checked after a while,
+    /// and the request repeated a few times until they match.
+    private static let resizeVerifyDelay = Duration.seconds(2)
+    private static let maximumResizeAttempts = 4
+    private var resizeAttempts = 0
 
     private(set) var remoteHasText = false
     private var nextClipboardID: UInt64 = 0
@@ -229,13 +244,30 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     var desktopSize: (width: Int, height: Int) { currentDesktopSize }
 
     func requestDesktopSize(width: Int, height: Int) async {
-        guard machine.state == .connected, supportsDynamicResolution else { return }
+        desiredDesktopSize = (width, height)
+        resizeAttempts = 0
+        sendDesiredDesktopSize()
+    }
+
+    private func sendDesiredDesktopSize() {
+        guard let (width, height) = desiredDesktopSize,
+              machine.state == .connected, supportsDynamicResolution else { return }
         // The bridge refuses an odd width because FreeRDP 3.31.1 would round
         // it silently and then disagree with us about the surface size.
         let clampedWidth = Self.clampDimension(width, roundToEven: true)
         let clampedHeight = Self.clampDimension(height, roundToEven: false)
-        guard clampedWidth != currentDesktopSize.width
-                || clampedHeight != currentDesktopSize.height else { return }
+        // Measured against the frames, not against the last request: the
+        // request's echo says only that it was sent.
+        let actual = frameStore.desktopSize ?? currentDesktopSize
+        guard clampedWidth != actual.width || clampedHeight != actual.height else {
+            resizeAttempts = 0
+            return
+        }
+        guard resizeAttempts < Self.maximumResizeAttempts else {
+            logger.session("disp resize \(clampedWidth)x\(clampedHeight) not adopted; giving up")
+            return
+        }
+        resizeAttempts += 1
 
         nextResizeRequestID &+= 1
         if nextResizeRequestID == 0 { nextResizeRequestID = 1 }
@@ -244,7 +276,13 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             width: UInt32(clampedWidth),
             height: UInt32(clampedHeight)
         ) ?? false
-        logger.session("disp resize \(clampedWidth)x\(clampedHeight) accepted=\(accepted)")
+        logger.session(
+            "disp resize \(clampedWidth)x\(clampedHeight) accepted=\(accepted) attempt=\(resizeAttempts)"
+        )
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.resizeVerifyDelay)
+            await self?.sendDesiredDesktopSize()
+        }
     }
 
     // MARK: - ClipboardCapableSession
@@ -460,6 +498,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
                 // handshake or while the session is tearing down.
                 pointerSink.setAccepting(machine.state.acceptsInput)
                 emit(.stateChanged(machine.state, generation: machine.generation))
+                if machine.state == .connected { sendDesiredDesktopSize() }
             }
 
         case let .failure(status, nativeCode, generation):
@@ -479,6 +518,12 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         case let .channel(channel, isConnected):
             if isConnected {
                 negotiatedChannels.insert(channel)
+                if channel == .disp {
+                    Task { [weak self] in
+                        try? await Task.sleep(for: Self.displayChannelSettle)
+                        await self?.sendDesiredDesktopSize()
+                    }
+                }
             } else {
                 negotiatedChannels.remove(channel)
             }
