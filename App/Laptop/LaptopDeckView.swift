@@ -53,6 +53,9 @@ final class LaptopDeckView: UIView {
     private let leftButton = UIView()
     private let rightButton = UIView()
     private var regions: [ObjectIdentifier: Region] = [:]
+    /// When each touch began, for the Windows key: tapped it opens Start,
+    /// held it latches.
+    private var touchStarts: [ObjectIdentifier: TimeInterval] = [:]
     private let haptics = UIImpactFeedbackGenerator(style: .light)
 
     private var repeatTimer: Timer?
@@ -155,6 +158,7 @@ final class LaptopDeckView: UIView {
             channel.surface?.setLaptopButton(button, pressed: false)
         }
         regions = [:]
+        touchStarts = [:]
         padTracker.reset()
         refreshKeys()
         refreshButtons()
@@ -289,6 +293,7 @@ final class LaptopDeckView: UIView {
             guard let region = region(at: touch.location(in: self)) else { continue }
             let id = ObjectIdentifier(touch)
             regions[id] = region
+            touchStarts[id] = touch.timestamp
             switch region {
             case .key(let key):
                 keyDown(key)
@@ -318,10 +323,11 @@ final class LaptopDeckView: UIView {
     private func finish(_ touches: Set<UITouch>, cancelled: Bool) {
         for touch in touches {
             let id = ObjectIdentifier(touch)
+            let start = touchStarts.removeValue(forKey: id) ?? touch.timestamp
             guard let region = regions.removeValue(forKey: id) else { continue }
             switch region {
             case .key(let key):
-                keyUp(key)
+                keyUp(key, heldFor: touch.timestamp - start)
             case .button(let button):
                 if !regions.values.contains(where: { Self.isButton($0, button) }) {
                     channel.surface?.setLaptopButton(button, pressed: false)
@@ -356,7 +362,7 @@ final class LaptopDeckView: UIView {
         refreshKeys()
     }
 
-    private func keyUp(_ key: LaptopKey) {
+    private func keyUp(_ key: LaptopKey, heldFor: TimeInterval) {
         // A second finger on the same key is not a second press, so the key
         // only comes up when the last finger on it lifts.
         let stillHeld = regions.values.contains { region in
@@ -364,7 +370,7 @@ final class LaptopDeckView: UIView {
             return false
         }
         if !stillHeld {
-            channel.surface?.sendLaptopKeys(composer.touchUp(key))
+            channel.surface?.sendLaptopKeys(composer.touchUp(key, heldFor: heldFor))
         }
         refreshKeys()
     }
@@ -484,6 +490,9 @@ private final class KeyCapView: UIView {
         accessibilityLabel = Self.spokenName(for: key)
         accessibilityTraits = .keyboardKey
         accessibilityIdentifier = "laptop-key-\(key.id)"
+        if key.sendsWhenTappedAlone {
+            accessibilityHint = "タップで単独で送信。長押しで次のキーと組み合わせ"
+        }
         applyState()
     }
 

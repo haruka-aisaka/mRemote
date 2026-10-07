@@ -273,6 +273,64 @@ final class LaptopKeyboardTests: XCTestCase {
         XCTAssertEqual(keys(composer.touchUp(key("delete"))), ["4C^", "E2^", "E0^"])
     }
 
+    // MARK: - Windows key
+
+    func testATappedWindowsKeyIsSentSoStartOpens() {
+        var composer = LaptopKeyboardComposer()
+        let win = key("windows")
+        XCTAssertEqual(keys(composer.touchDown(win)), [])
+        XCTAssertEqual(keys(composer.touchUp(win, heldFor: 0.1)), ["E3v", "E3^"])
+        XCTAssertFalse(composer.isActive(.windows), "a tap is not a latch")
+    }
+
+    func testAHeldWindowsKeyLatchesForOneFingerChords() {
+        var composer = LaptopKeyboardComposer()
+        let win = key("windows")
+        _ = composer.touchDown(win)
+        XCTAssertEqual(keys(composer.touchUp(win, heldFor: 0.6)), [])
+        XCTAssertEqual(composer.latches.latch(.windows), .oneShot)
+        XCTAssertEqual(keys(composer.touchDown(key("r"))), ["E3v", "15v"])
+        XCTAssertEqual(keys(composer.touchUp(key("r"))), ["15^", "E3^"])
+    }
+
+    func testTappingALatchedWindowsKeyMovesTheLatchOn() {
+        var composer = LaptopKeyboardComposer()
+        let win = key("windows")
+        _ = composer.touchDown(win)
+        _ = composer.touchUp(win, heldFor: 0.6)
+        _ = composer.touchDown(win)
+        XCTAssertEqual(keys(composer.touchUp(win, heldFor: 0.1)), [], "no Start while latched")
+        XCTAssertEqual(composer.latches.latch(.windows), .locked)
+    }
+
+    func testAWindowsChordWithTwoFingersSendsNoExtraWindowsKey() {
+        var composer = LaptopKeyboardComposer()
+        let win = key("windows")
+        _ = composer.touchDown(win)
+        XCTAssertEqual(keys(composer.touchDown(key("e"))), ["E3v", "08v"])
+        XCTAssertEqual(keys(composer.touchUp(key("e"))), ["08^", "E3^"])
+        XCTAssertEqual(keys(composer.touchUp(win, heldFor: 0.1)), [])
+    }
+
+    func testTheWindowsKeyCarriesALatchedModifier() {
+        var composer = LaptopKeyboardComposer()
+        _ = composer.touchDown(key("shift-left"))
+        _ = composer.touchUp(key("shift-left"))
+        _ = composer.touchDown(key("windows"))
+        XCTAssertEqual(keys(composer.touchUp(key("windows"))), ["E1v", "E3v", "E3^", "E1^"])
+        XCTAssertFalse(composer.isActive(.shift), "the one-shot is spent")
+    }
+
+    func testOnlyTheWindowsKeySendsWhenTappedAlone() {
+        for (name, layout) in allLayouts {
+            let senders = layout.keys.filter(\.sendsWhenTappedAlone).map(\.id)
+            XCTAssertEqual(senders, name.hasPrefix("windows") ? ["windows"] : [], name)
+        }
+        var composer = LaptopKeyboardComposer()
+        _ = composer.touchDown(key("control-left"))
+        XCTAssertEqual(keys(composer.touchUp(key("control-left"), heldFor: 0.1)), [], "Ctrl still latches")
+    }
+
     func testOverlappingKeysShareTheModifierUntilTheLastIsReleased() {
         var composer = LaptopKeyboardComposer()
         _ = composer.touchDown(key("shift-left"))

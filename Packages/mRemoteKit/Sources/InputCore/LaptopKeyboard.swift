@@ -29,19 +29,25 @@ public struct LaptopKey: Hashable, Sendable, Identifiable {
     public let kind: Kind
     /// In key units; every row of a layout adds up to the same total.
     public let width: Double
+    /// A modifier that does something on its own: the Windows key, which
+    /// opens Start when pressed and released with nothing in between. A
+    /// quick tap sends it; holding it still latches it instead.
+    public let sendsWhenTappedAlone: Bool
 
     public init(
         id: String,
         label: String,
         shiftedLabel: String? = nil,
         kind: Kind,
-        width: Double = 1
+        width: Double = 1,
+        sendsWhenTappedAlone: Bool = false
     ) {
         self.id = id
         self.label = label
         self.shiftedLabel = shiftedLabel
         self.kind = kind
         self.width = width
+        self.sendsWhenTappedAlone = sendsWhenTappedAlone
     }
 
     public var isModifier: Bool {
@@ -216,9 +222,16 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
         _ id: String,
         _ label: String,
         _ modifier: VirtualModifier,
-        width: Double
+        width: Double,
+        sendsWhenTappedAlone: Bool = false
     ) -> LaptopKey {
-        LaptopKey(id: id, label: label, kind: .modifier(modifier), width: width)
+        LaptopKey(
+            id: id,
+            label: label,
+            kind: .modifier(modifier),
+            width: width,
+            sendsWhenTappedAlone: sendsWhenTappedAlone
+        )
     }
 
     private static func withShifted(_ keys: [LaptopKey], _ shifted: [String?]) -> [LaptopKey] {
@@ -289,7 +302,7 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
         LaptopKeyboardRow(
             [
                 modifier("control-left", "Ctrl", .control, width: 1.25),
-                modifier("windows", "Win", .windows, width: 1),
+                modifier("windows", "Win", .windows, width: 1, sendsWhenTappedAlone: true),
                 modifier("alt-left", "Alt", .alt, width: 1),
                 key("nonconvert", "無変換", 0x8B, width: 1.25),
                 key("space", "", 0x2C, width: 4),
@@ -344,7 +357,7 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
         LaptopKeyboardRow(
             [
                 modifier("control-left", "Ctrl", .control, width: 1.25),
-                modifier("windows", "Win", .windows, width: 1.25),
+                modifier("windows", "Win", .windows, width: 1.25, sendsWhenTappedAlone: true),
                 modifier("alt-left", "Alt", .alt, width: 1.25),
                 key("space", "", 0x2C, width: 5.75),
                 modifier("alt-right", "Alt", .alt, width: 1.25),
@@ -480,6 +493,10 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
 ///   (one-shot, then locked, then off), so Ctrl+Alt+Del can be typed with
 ///   one finger.
 ///
+/// The Windows key is the exception, because on its own it opens Start: a
+/// quick tap sends it, and it latches only when held past
+/// `latchHoldDuration` - or tapped again while already latched.
+///
 /// A modifier is pressed on the host only around the keys it applies to and
 /// is reference-counted across overlapping keys, so releasing everything is
 /// always one well-defined list of ups.
@@ -494,6 +511,10 @@ public struct LaptopKeyboardComposer: Sendable {
     private var downKeys: [UInt16: [VirtualModifier]] = [:]
     /// How many down keys each host modifier is down for.
     private var hostModifiers: [VirtualModifier: Int] = [:]
+
+    /// How long the Windows key has to be held, alone, to latch rather than
+    /// be sent.
+    public static let latchHoldDuration: TimeInterval = 0.5
 
     public init() {}
 
@@ -519,21 +540,30 @@ public struct LaptopKeyboardComposer: Sendable {
         }
     }
 
-    public mutating func touchUp(_ key: LaptopKey) -> [KeyboardInput] {
+    /// - Parameter heldFor: how long the finger was on the key. It only
+    ///   matters for a key that `sendsWhenTappedAlone`.
+    public mutating func touchUp(_ key: LaptopKey, heldFor: TimeInterval = 0) -> [KeyboardInput] {
         switch key.kind {
         case .modifier(let modifier):
             let count = heldModifiers[modifier, default: 0]
             guard count > 0 else { return [] }
+            var events: [KeyboardInput] = []
             if count == 1 {
                 heldModifiers[modifier] = nil
                 if !modifiersUsedWhileHeld.contains(modifier) {
-                    latches.tap(modifier)
+                    if key.sendsWhenTappedAlone,
+                       latches.latch(modifier) == .off,
+                       heldFor < Self.latchHoldDuration {
+                        events = sendAlone(modifier)
+                    } else {
+                        latches.tap(modifier)
+                    }
                 }
                 modifiersUsedWhileHeld.remove(modifier)
             } else {
                 heldModifiers[modifier] = count - 1
             }
-            return []
+            return events
         case .key(let usage):
             return keyUp(usage)
         case .inert:
@@ -564,6 +594,21 @@ public struct LaptopKeyboardComposer: Sendable {
         modifiersUsedWhileHeld = []
         latches.releaseAll()
         return events
+    }
+
+    /// The modifier pressed and released by itself, with whatever else is
+    /// held or latched around it, as a real keyboard would send it.
+    private mutating func sendAlone(_ modifier: VirtualModifier) -> [KeyboardInput] {
+        let others = VirtualModifier.allCases.filter {
+            $0 != modifier && isActive($0) && hostModifiers[$0, default: 0] == 0
+        }
+        latches.keyWasSent()
+        return others.map { KeyboardInput(usage: $0.usage, transition: .down) }
+            + [
+                KeyboardInput(usage: modifier.usage, transition: .down),
+                KeyboardInput(usage: modifier.usage, transition: .up),
+            ]
+            + others.reversed().map { KeyboardInput(usage: $0.usage, transition: .up) }
     }
 
     private mutating func keyDown(_ usage: UInt16) -> [KeyboardInput] {
