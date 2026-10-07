@@ -15,6 +15,7 @@ struct SessionWorkspaceView: View {
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
+    @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
 
     var body: some View {
         ZStack {
@@ -122,7 +123,8 @@ struct SessionWorkspaceView: View {
                     arrangement: deckArrangement,
                     channel: laptopChannel,
                     isInputEnabled: model.acceptsInput && scenePhase == .active,
-                    capsLockRole: capsLockRole
+                    capsLockRole: capsLockRole,
+                    showsTrackpadButtons: showsTrackpadButtons
                 )
                 .transition(.move(edge: .bottom))
             }

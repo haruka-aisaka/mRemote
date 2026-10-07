@@ -25,6 +25,10 @@ enum LaptopDeckArrangement: String, CaseIterable {
     var hasTrackpad: Bool { self != .keyboardOnly }
 
     static let storageKey = "laptop-deck-arrangement"
+    /// Whether the pad has left and right buttons under it. Without them the
+    /// pad takes their room: a tap is a left click, a two-finger tap a right
+    /// click, and hold-then-move drags.
+    static let trackpadButtonsStorageKey = "laptop-trackpad-buttons"
 }
 
 extension CapsLockRole {
@@ -60,6 +64,7 @@ final class LaptopDeckView: UIView {
     private let channel: LaptopDeckChannel
     private var layout: LaptopKeyboardLayout
     private var arrangement: LaptopDeckArrangement
+    private var showsTrackpadButtons = true
     private var composer = LaptopKeyboardComposer()
     private var isInputEnabled = false
 
@@ -143,10 +148,20 @@ final class LaptopDeckView: UIView {
         setNeedsLayout()
     }
 
+    func setTrackpadButtons(_ shows: Bool) {
+        guard shows != showsTrackpadButtons else { return }
+        releaseEverything()
+        showsTrackpadButtons = shows
+        applyArrangement()
+        setNeedsLayout()
+    }
+
+    private var hasButtons: Bool { arrangement.hasTrackpad && showsTrackpadButtons }
+
     private func applyArrangement() {
-        for view in [pad, leftButton, rightButton] {
-            view.isHidden = !arrangement.hasTrackpad
-        }
+        pad.isHidden = !arrangement.hasTrackpad
+        leftButton.isHidden = !hasButtons
+        rightButton.isHidden = !hasButtons
     }
 
     /// Closing the gate lets go of everything, exactly as the surface does:
@@ -272,8 +287,8 @@ final class LaptopDeckView: UIView {
     /// keyboard is.
     private func layoutTrackpad(in lower: CGRect) {
         let padWidth = min(lower.width, max(lower.width * 0.72, 300))
-        let buttonHeight = min(40, lower.height * 0.22)
-        let padHeight = lower.height - buttonHeight - 6
+        let buttonHeight = hasButtons ? min(40, lower.height * 0.22) : 0
+        let padHeight = lower.height - (hasButtons ? buttonHeight + 6 : 0)
         let padFrame = CGRect(
             x: lower.midX - padWidth / 2,
             y: lower.minY,
@@ -296,8 +311,8 @@ final class LaptopDeckView: UIView {
             return .key(key)
         }
         guard arrangement.hasTrackpad else { return nil }
-        if leftButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.left) }
-        if rightButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.right) }
+        if hasButtons, leftButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.left) }
+        if hasButtons, rightButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.right) }
         if pad.frame.insetBy(dx: -8, dy: -8).contains(point) { return .pad }
         return nil
     }
@@ -606,6 +621,7 @@ struct LaptopDeck: UIViewRepresentable {
     let channel: LaptopDeckChannel
     let isInputEnabled: Bool
     var capsLockRole: CapsLockRole = .capsLock
+    var showsTrackpadButtons = true
     /// Only Windows hosts exist today; a Mac host's session will pass `.mac`.
     var platform: LaptopKeyboardPlatform = .windows
 
@@ -615,6 +631,7 @@ struct LaptopDeck: UIViewRepresentable {
             arrangement: arrangement,
             channel: channel
         )
+        view.setTrackpadButtons(showsTrackpadButtons)
         view.setInputEnabled(isInputEnabled)
         return view
     }
@@ -622,6 +639,7 @@ struct LaptopDeck: UIViewRepresentable {
     func updateUIView(_ view: LaptopDeckView, context: Context) {
         view.setLayout(LaptopKeyboardLayout(layout, platform: platform, capsLockRole: capsLockRole))
         view.setArrangement(arrangement)
+        view.setTrackpadButtons(showsTrackpadButtons)
         view.setInputEnabled(isInputEnabled)
     }
 

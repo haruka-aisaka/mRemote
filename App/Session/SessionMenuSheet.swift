@@ -16,6 +16,7 @@ struct SessionMenuSheet: View {
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
+    @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
 
     var body: some View {
         NavigationStack {
@@ -137,6 +138,11 @@ struct SessionMenuSheet: View {
                     }
                     .disabled(model.laptopDeckPreference == .never)
                     .accessibilityIdentifier("session-laptop-caps-role")
+                    // Without buttons: tap to click, two-finger tap for the
+                    // right button, hold then move to drag.
+                    Toggle("トラックパッドのクリックボタン", isOn: $showsTrackpadButtons)
+                        .disabled(model.laptopDeckPreference == .never || !deckArrangement.hasTrackpad)
+                        .accessibilityIdentifier("session-laptop-trackpad-buttons")
                 }
 
                 if model.clipboardPolicy != .disabled {
