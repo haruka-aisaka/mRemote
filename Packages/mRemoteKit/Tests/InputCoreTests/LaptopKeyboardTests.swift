@@ -14,9 +14,18 @@ final class LaptopKeyboardTests: XCTestCase {
 
     // MARK: - Layout
 
+    /// Every keyboard the deck can draw, named for failure messages.
+    private var allLayouts: [(String, LaptopKeyboardLayout)] {
+        KeyboardLayoutPreference.allCases.flatMap { preference in
+            LaptopKeyboardPlatform.allCases.map { platform in
+                ("\(platform) \(preference)", LaptopKeyboardLayout(preference, platform: platform))
+            }
+        }
+    }
+
     func testEveryRowFillsTheSameWidth() {
-        for preference in KeyboardLayoutPreference.allCases {
-            for (index, row) in LaptopKeyboardLayout(preference).rows.enumerated() {
+        for (preference, layout) in allLayouts {
+            for (index, row) in layout.rows.enumerated() {
                 XCTAssertEqual(
                     row.totalWidth,
                     LaptopKeyboardLayout.unitsPerRow,
@@ -28,8 +37,8 @@ final class LaptopKeyboardTests: XCTestCase {
     }
 
     func testKeyIdentifiersAreUniqueExceptForAKeySpanningTwoRows() {
-        for preference in KeyboardLayoutPreference.allCases {
-            let rows = LaptopKeyboardLayout(preference).rows
+        for (preference, layout) in allLayouts {
+            let rows = layout.rows
             var rowsOfID: [String: [Int]] = [:]
             var keyOfID: [String: LaptopKey] = [:]
             for (index, row) in rows.enumerated() {
@@ -48,7 +57,7 @@ final class LaptopKeyboardTests: XCTestCase {
                 XCTAssertEqual(indices[1], indices[0] + 1, "\(id) spans adjacent rows")
             }
             XCTAssertEqual(
-                LaptopKeyboardLayout(preference).keys.count,
+                layout.keys.count,
                 rowsOfID.count,
                 "keys lists a spanning key once"
             )
@@ -64,8 +73,8 @@ final class LaptopKeyboardTests: XCTestCase {
     }
 
     func testEveryKeyReachesTheHost() {
-        for preference in KeyboardLayoutPreference.allCases {
-            for key in LaptopKeyboardLayout(preference).keys {
+        for (preference, layout) in allLayouts {
+            for key in layout.keys {
                 let usage: UInt16
                 switch key.kind {
                 case .key(let value): usage = value
@@ -97,6 +106,50 @@ final class LaptopKeyboardTests: XCTestCase {
         }
         XCTAssertEqual(start(of: "up", in: rows[4]), start(of: "down", in: rows[5]))
         XCTAssertEqual(rows[4].keys.last?.id, "shift-right")
+    }
+
+    func testTheMacLayoutsSendCommandAndOptionAsWinAndAlt() {
+        for preference in [KeyboardLayoutPreference.japanese, .us] {
+            let keys = LaptopKeyboardLayout(preference, platform: .mac).keys
+            let command = keys.first { $0.id == "command-left" }
+            let option = keys.first { $0.id == "alt-left" }
+            XCTAssertEqual(command?.kind, .modifier(.windows), "\(preference)")
+            XCTAssertEqual(option?.kind, .modifier(.alt), "\(preference)")
+            XCTAssertNil(keys.first { $0.id == "windows" }, "no Win key on a Mac")
+        }
+    }
+
+    func testTheMacJISLayoutHasEisuAndKanaAsLANG2AndLANG1() {
+        let keys = LaptopKeyboardLayout(.japanese, platform: .mac).keys
+        XCTAssertEqual(keys.first { $0.id == "eisu" }?.kind, .key(0x91))
+        XCTAssertEqual(keys.first { $0.id == "kana" }?.kind, .key(0x90))
+        XCTAssertNil(keys.first { $0.id == "zenkaku" }, "a Mac has no 半/全")
+        XCTAssertNil(keys.first { $0.id == "convert" })
+        XCTAssertFalse(keys.first { $0.id == "eisu" }!.repeats)
+        XCTAssertEqual(
+            keys.first { $0.id == "control-left" }?.kind,
+            .modifier(.control),
+            "control sits left of A"
+        )
+    }
+
+    func testEveryLayoutsArrowsFormAnInvertedT() {
+        for (name, layout) in allLayouts where !(name.hasPrefix("windows") && !name.hasSuffix("japanese")) {
+            let rows = layout.rows
+            func start(of id: String, in row: LaptopKeyboardRow) -> Double? {
+                var x = 0.0
+                for key in row.keys {
+                    if key.id == id { return x }
+                    x += key.width
+                }
+                return nil
+            }
+            XCTAssertEqual(start(of: "up", in: rows[4]), start(of: "down", in: rows[5]), name)
+        }
+    }
+
+    func testTheDefaultPlatformIsWindows() {
+        XCTAssertEqual(LaptopKeyboardLayout(.japanese), LaptopKeyboardLayout(.japanese, platform: .windows))
     }
 
     func testIMEKeysDoNotRepeat() {

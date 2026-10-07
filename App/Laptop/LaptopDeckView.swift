@@ -552,6 +552,9 @@ private final class KeyCapView: UIView {
         case "space": return "スペース"
         case "backspace": return "バックスペース"
         case "enter": return "エンター"
+        case "command-left", "command-right": return "コマンド"
+        case "alt-left", "alt-right": return key.label == "⌥" ? "オプション" : key.label
+        case "delete": return key.label == "⌦" ? "前方削除" : key.label
         case "up": return "上"
         case "down": return "下"
         case "left": return "左"
@@ -564,13 +567,15 @@ private final class KeyCapView: UIView {
 /// Puts the deck in SwiftUI and keeps it told about the gate and the layout.
 struct LaptopDeck: UIViewRepresentable {
     let layout: KeyboardLayoutPreference
+    /// Only Windows hosts exist today; a Mac host's session will pass `.mac`.
+    var platform: LaptopKeyboardPlatform = .windows
     let arrangement: LaptopDeckArrangement
     let channel: LaptopDeckChannel
     let isInputEnabled: Bool
 
     func makeUIView(context: Context) -> LaptopDeckView {
         let view = LaptopDeckView(
-            layout: LaptopKeyboardLayout(layout),
+            layout: LaptopKeyboardLayout(layout, platform: platform),
             arrangement: arrangement,
             channel: channel
         )
@@ -579,7 +584,7 @@ struct LaptopDeck: UIViewRepresentable {
     }
 
     func updateUIView(_ view: LaptopDeckView, context: Context) {
-        view.setLayout(LaptopKeyboardLayout(layout))
+        view.setLayout(LaptopKeyboardLayout(layout, platform: platform))
         view.setArrangement(arrangement)
         view.setInputEnabled(isInputEnabled)
     }

@@ -61,6 +61,8 @@ public struct LaptopKey: Hashable, Sendable, Identifiable {
         0x88, // かな
         0x8A, // 変換
         0x8B, // 無変換
+        0x90, // LANG1, Mac かな
+        0x91, // LANG2, Mac 英数
     ]
 }
 
@@ -77,6 +79,18 @@ public struct LaptopKeyboardRow: Hashable, Sendable {
     public var totalWidth: Double { keys.reduce(0) { $0 + $1.width } }
 }
 
+/// Whose keyboard the deck draws: a PC's, or a Mac's.
+///
+/// The same positions are sent either way - Command is the GUI key that
+/// Windows calls Win, Option is Alt - so this changes the picture and the
+/// handful of keys that differ, such as 英数/かな in place of 無変換/変換.
+public enum LaptopKeyboardPlatform: String, Hashable, Sendable, CaseIterable {
+    case windows
+    /// Modelled on Apple's Magic Keyboard without a numeric keypad. There is
+    /// no fn key: it is not a usage a host can receive.
+    case mac
+}
+
 /// The rows of the laptop keyboard for the host's layout.
 ///
 /// The layout follows the session's keyboard profile rather than the
@@ -87,9 +101,15 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
 
     public let rows: [LaptopKeyboardRow]
 
-    public init(_ layout: KeyboardLayoutPreference) {
+    public init(_ layout: KeyboardLayoutPreference, platform: LaptopKeyboardPlatform = .windows) {
         // Automatic draws US, as `ASCIIKeystrokeMapper` assumes it.
-        rows = [Self.functionRow] + (layout == .japanese ? Self.japaneseRows : Self.usRows)
+        let isJapanese = layout == .japanese
+        switch platform {
+        case .windows:
+            rows = [Self.functionRow] + (isJapanese ? Self.japaneseRows : Self.usRows)
+        case .mac:
+            rows = [Self.macFunctionRow] + (isJapanese ? Self.macJapaneseRows : Self.macUSRows)
+        }
     }
 
     /// Every key once, in reading order; a key spanning two rows is listed
@@ -107,6 +127,16 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
                 key("f\(number)", "F\(number)", UInt16(0x3A + number - 1))
             }
             + [key("delete", "Del", 0x4C, width: 1.5)],
+        height: 0.7
+    )
+
+    private static let macFunctionRow = LaptopKeyboardRow(
+        [key("esc", "esc", 0x29, width: 1.5)]
+            + (1...12).map { number in
+                key("f\(number)", "F\(number)", UInt16(0x3A + number - 1))
+            }
+            // A Mac reaches forward delete with fn, which is not on offer.
+            + [key("delete", "⌦", 0x4C, width: 1.5)],
         height: 0.7
     )
 
@@ -275,6 +305,119 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
                 key("space", "", 0x2C, width: 5.75),
                 modifier("alt-right", "Alt", .alt, width: 1.25),
                 modifier("control-right", "Ctrl", .control, width: 1.25),
+            ] + arrowsLeftDownRight
+        ),
+    ]
+    // MARK: - Mac (Magic Keyboard) JIS
+
+    private static let macJapaneseRows: [LaptopKeyboardRow] = [
+        LaptopKeyboardRow(
+            withShifted(digits(), ["!", "\"", "#", "$", "%", "&", "'", "(", ")", nil])
+                + [
+                    key("minus", "-", 0x2D, shifted: "="),
+                    key("caret", "^", 0x2E, shifted: "~"),
+                    key("yen", "¥", 0x89, shifted: "|"),
+                    key("backspace", "delete", 0x2A, width: 2),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [key("tab", "tab", 0x2B, width: 1.5)]
+                + letters("QWERTYUIOP")
+                + [
+                    key("at", "@", 0x2F, shifted: "`"),
+                    key("bracketleft", "[", 0x30, shifted: "{"),
+                    key("enter", "return", 0x28, width: 1.5),
+                ]
+        ),
+        LaptopKeyboardRow(
+            // Control sits where Caps Lock does on a PC, as on every Mac JIS.
+            [modifier("control-left", "control", .control, width: 1.75)]
+                + letters("ASDFGHJKL")
+                + [
+                    key("semicolon", ";", 0x33, shifted: "+"),
+                    key("colon", ":", 0x34, shifted: "*"),
+                    key("bracketright", "]", 0x32, shifted: "}"),
+                    key("enter", "return", 0x28, width: 1.25),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [modifier("shift-left", "shift", .shift, width: 2)]
+                + letters("ZXCVBNM")
+                + [
+                    key("comma", ",", 0x36, shifted: "<"),
+                    key("period", ".", 0x37, shifted: ">"),
+                    key("slash", "/", 0x38, shifted: "?"),
+                    key("ro", "_", 0x87, shifted: "ろ"),
+                    key("up", "↑", 0x52),
+                    modifier("shift-right", "shift", .shift, width: 1),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [
+                key("capslock", "caps", 0x39, width: 1),
+                modifier("alt-left", "⌥", .alt, width: 1),
+                modifier("command-left", "⌘", .windows, width: 1.25),
+                // LANG2 and LANG1: what a Mac's JIS keyboard sends, and what
+                // RDP turns into 無変換 and 変換.
+                key("eisu", "英数", 0x91, width: 1.25),
+                key("space", "", 0x2C, width: 5),
+                key("kana", "かな", 0x90, width: 1.25),
+                modifier("command-right", "⌘", .windows, width: 1.25),
+            ] + arrowsLeftDownRight
+        ),
+    ]
+
+    // MARK: - Mac (Magic Keyboard) US
+
+    private static let macUSRows: [LaptopKeyboardRow] = [
+        LaptopKeyboardRow(
+            [key("grave", "`", 0x35, shifted: "~")]
+                + withShifted(digits(), ["!", "@", "#", "$", "%", "^", "&", "*", "(", ")"])
+                + [
+                    key("minus", "-", 0x2D, shifted: "_"),
+                    key("equal", "=", 0x2E, shifted: "+"),
+                    key("backspace", "delete", 0x2A, width: 2),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [key("tab", "tab", 0x2B, width: 1.5)]
+                + letters("QWERTYUIOP")
+                + [
+                    key("bracketleft", "[", 0x2F, shifted: "{"),
+                    key("bracketright", "]", 0x30, shifted: "}"),
+                    key("backslash", "\\", 0x31, shifted: "|", width: 1.5),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [key("capslock", "caps lock", 0x39, width: 1.75)]
+                + letters("ASDFGHJKL")
+                + [
+                    key("semicolon", ";", 0x33, shifted: ":"),
+                    key("quote", "'", 0x34, shifted: "\""),
+                    key("enter", "return", 0x28, width: 2.25),
+                ]
+        ),
+        LaptopKeyboardRow(
+            // Narrower right Shift than a real Magic Keyboard, so that up sits
+            // over down and the arrows make an inverted T.
+            [modifier("shift-left", "shift", .shift, width: 3)]
+                + letters("ZXCVBNM")
+                + [
+                    key("comma", ",", 0x36, shifted: "<"),
+                    key("period", ".", 0x37, shifted: ">"),
+                    key("slash", "/", 0x38, shifted: "?"),
+                    key("up", "↑", 0x52),
+                    modifier("shift-right", "shift", .shift, width: 1),
+                ]
+        ),
+        LaptopKeyboardRow(
+            [
+                modifier("control-left", "control", .control, width: 1.25),
+                modifier("alt-left", "⌥", .alt, width: 1.25),
+                modifier("command-left", "⌘", .windows, width: 1.5),
+                key("space", "", 0x2C, width: 5),
+                modifier("command-right", "⌘", .windows, width: 1.5),
+                modifier("alt-right", "⌥", .alt, width: 1.5),
             ] + arrowsLeftDownRight
         ),
     ]
