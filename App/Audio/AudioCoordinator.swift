@@ -51,6 +51,9 @@ final class AudioCoordinator {
         if stream !== self.stream {
             self.stream?.setFormatObserver(nil)
             self.stream = stream
+            // Which stream, not whose: an object identity says enough to tell
+            // the switches apart in a log without naming the session.
+            logger.info("audio follows \(stream.map { "stream \(ObjectIdentifier($0).hashValue & 0xFFFF)" } ?? "nothing", privacy: .public)")
             // What the newly focused session said while in the background is
             // not live any more.
             stream?.discardBacklog()
