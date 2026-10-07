@@ -92,18 +92,7 @@ final class AudioCoordinator {
                    standardFormatWithSampleRate: format.sampleRate,
                    channels: AVAudioChannelCount(format.channels)
                ) {
-                let channels = format.channels
-                // Unowned on purpose: retaining from the render thread is the
-                // one thing it must not do, and the coordinator detaches the
-                // node before it lets go of the stream.
-                let node = AVAudioSourceNode(format: avFormat) { [unowned stream] _, _, frameCount, list in
-                    stream.render(
-                        frameCount: Int(frameCount),
-                        channels: channels,
-                        into: UnsafeMutableAudioBufferListPointer(list)
-                    )
-                    return noErr
-                }
+                let node = Self.makeSourceNode(format: avFormat, stream: stream, channels: format.channels)
                 engine.attach(node)
                 engine.connect(node, to: engine.mainMixerNode, format: avFormat)
                 sourceNode = node
@@ -127,6 +116,30 @@ final class AudioCoordinator {
             try engine.start()
         } catch {
             logger.error("audio engine failed to start: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Nonisolated so the render block is too. Formed inside a main-actor
+    /// method, the closure would be main-actor isolated, and Swift 6 checks
+    /// that at run time: the first buffer the render thread pulled - the
+    /// first sound the host played - trapped on "expected to execute on the
+    /// main thread".
+    ///
+    /// The stream is unowned on purpose: retaining from the render thread is
+    /// the one thing it must not do, and the coordinator detaches the node
+    /// before it lets go of the stream.
+    private nonisolated static func makeSourceNode(
+        format: AVAudioFormat,
+        stream: PCMAudioStream,
+        channels: Int
+    ) -> AVAudioSourceNode {
+        AVAudioSourceNode(format: format) { [unowned stream] _, _, frameCount, list in
+            stream.render(
+                frameCount: Int(frameCount),
+                channels: channels,
+                into: UnsafeMutableAudioBufferListPointer(list)
+            )
+            return noErr
         }
     }
 }
