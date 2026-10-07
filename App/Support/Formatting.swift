@@ -34,6 +34,21 @@ enum Formatting {
         }
     }
 
+    static func endReasonLabel(_ reason: RemoteEndReason) -> String {
+        switch reason {
+        case .anotherConnection:
+            return "別の接続が同じユーザーでサインインし、このセッションを引き継ぎました。取り返さないよう、自動では再接続しません。"
+        case .disconnectedOnServer:
+            return "サーバー側でこのセッションが切断されました。別の端末が同じユーザーで接続した場合もこうなります。取り返さないよう、自動では再接続しません。"
+        case .signedOut:
+            return "サーバー側でサインアウトされました。"
+        case .idleTimeout:
+            return "操作がなかったため、サーバーが切断しました。"
+        case .signInTimeout:
+            return "サインインに時間がかかりすぎたため、サーバーが切断しました。"
+        }
+    }
+
     static func errorLabel(_ error: RemoteSessionError) -> String {
         switch error {
         case .nameResolutionFailed: return "ホスト名を解決できません。"

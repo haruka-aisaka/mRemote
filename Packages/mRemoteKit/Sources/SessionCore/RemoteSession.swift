@@ -7,6 +7,24 @@ public enum SessionControlEvent: Sendable {
     /// The remote clipboard changed. Carries whether it now holds text; the
     /// text itself is never part of an event.
     case clipboardChanged(hasRemoteText: Bool)
+    /// The server ended the session on purpose. Not an error, and not a
+    /// reason to reconnect: reconnecting after another connection took the
+    /// session over takes it back, and the two then fight over it.
+    case endedByServer(RemoteEndReason)
+}
+
+/// Why the server ended a session, in terms the UI can explain.
+public enum RemoteEndReason: Hashable, Sendable {
+    /// Another connection - possibly another device, possibly this app's
+    /// own other session - signed in as the same user and took it over.
+    case anotherConnection
+    /// Disconnected on the server. Windows 11 also reports a takeover by a
+    /// connection as the same user this way, not as `anotherConnection`.
+    case disconnectedOnServer
+    /// Signed out, by the user or an administrator.
+    case signedOut
+    case idleTimeout
+    case signInTimeout
 }
 
 public enum SessionVisibility: Hashable, Sendable {

@@ -72,6 +72,23 @@ final class RDPErrorMapperTests: XCTestCase {
         }
     }
 
+    func testATakeoverIsReportedAsSuch() {
+        XCTAssertEqual(
+            RDPErrorMapper.classify(status: .backend, nativeCode: errinfo(0x05)),
+            .remoteInitiated(.anotherConnection)
+        )
+        // What Windows 11 actually sent when a second client signed in as the
+        // same user (verified against a Windows 11 VM).
+        XCTAssertEqual(
+            RDPErrorMapper.classify(status: .backend, nativeCode: 0x0001_0001),
+            .remoteInitiated(.disconnectedOnServer)
+        )
+        XCTAssertEqual(
+            RDPErrorMapper.classify(status: .backend, nativeCode: errinfo(0x0C)),
+            .remoteInitiated(.signedOut)
+        )
+    }
+
     func testLicensingFailuresAreNotBlamedOnTheCredentials() {
         XCTAssertEqual(
             RDPErrorMapper.classify(status: .backend, nativeCode: errinfo(0x0102)),

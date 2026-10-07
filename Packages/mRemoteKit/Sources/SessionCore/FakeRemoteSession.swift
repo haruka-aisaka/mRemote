@@ -163,6 +163,15 @@ public actor FakeRemoteSession: RemoteSession, ClipboardCapableSession {
         emit(.stateChanged(machine.state, generation: machine.generation))
     }
 
+    /// The server ending the session on purpose: a takeover, a sign-out.
+    public func simulateServerEnded(_ reason: RemoteEndReason) {
+        guard machine.transition(to: .disconnecting) != nil else { return }
+        emit(.endedByServer(reason))
+        emit(.stateChanged(machine.state, generation: machine.generation))
+        machine.transition(to: .disconnected)
+        emit(.stateChanged(machine.state, generation: machine.generation))
+    }
+
     public func offerClipboardText(_ text: String) async throws {
         guard machine.state == .connected, configuration.clipboardPolicy.allowsSend else {
             throw ClipboardTransferError.unavailable

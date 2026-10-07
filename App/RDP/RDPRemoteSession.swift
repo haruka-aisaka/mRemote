@@ -632,8 +632,9 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             }
             resumeWorkerWaiters()
 
-        case .remoteInitiated(let detail) where machine.state != .disconnecting:
-            logger.session("remote ended the session: \(detail)")
+        case .remoteInitiated(let reason) where machine.state != .disconnecting:
+            logger.session("remote ended the session: \(reason)")
+            emit(.endedByServer(reason))
             if machine.transition(to: .disconnecting) != nil {
                 emit(.stateChanged(machine.state, generation: machine.generation))
             }

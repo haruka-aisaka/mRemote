@@ -106,7 +106,7 @@ public enum RDPTerminationCause: Hashable, Sendable {
     /// This side asked for the stop.
     case stoppedLocally
     /// The server, or an administrator, ended the session deliberately.
-    case remoteInitiated(detail: String)
+    case remoteInitiated(RemoteEndReason)
     case failed(RemoteSessionError)
 
     public var error: RemoteSessionError? {
@@ -218,14 +218,20 @@ public enum RDPErrorMapper {
 
     private static func serverDisconnect(type: UInt32) -> RDPTerminationCause {
         switch type {
-        case 0x01, 0x02, 0x0B, 0x0C:
-            return .remoteInitiated(detail: "the server ended the session")
+        case 0x01, 0x0B:
+            // ERRINFO_RPC_INITIATED_DISCONNECT(_BYUSER). Windows 11 sends
+            // this, not 0x05, when another client signs in as the same user.
+            return .remoteInitiated(.disconnectedOnServer)
+        case 0x02, 0x0C:
+            // ERRINFO_RPC_INITIATED_LOGOFF, ERRINFO_LOGOFF_BY_USER
+            return .remoteInitiated(.signedOut)
         case 0x03:
-            return .remoteInitiated(detail: "the server disconnected an idle session")
+            return .remoteInitiated(.idleTimeout)
         case 0x04:
-            return .remoteInitiated(detail: "the sign-in took too long")
+            return .remoteInitiated(.signInTimeout)
         case 0x05:
-            return .remoteInitiated(detail: "another connection took over the session")
+            // ERRINFO_DISCONNECTED_BY_OTHERCONNECTION
+            return .remoteInitiated(.anotherConnection)
         case 0x06:
             return .failed(.resourceUnavailable)
         case 0x07, 0x09, 0x0A:

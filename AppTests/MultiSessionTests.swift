@@ -81,6 +81,44 @@ final class MultiSessionTests: XCTestCase {
         XCTAssertEqual(environment.runningSessions.first?.state, .connected)
     }
 
+    func testATakenOverSessionSaysWhyAndDoesNotTakeItBack() async throws {
+        let environment = await makeEnvironment()
+        let office = try XCTUnwrap(environment.profiles.first { $0.displayName == "office" })
+        await environment.connect(to: office)
+        let model = try XCTUnwrap(environment.runningSession(for: office))
+        let found = await environment.sessions.session(for: model.id)
+        let fake = try XCTUnwrap(found as? FakeRemoteSession)
+        await waitUntil { model.state == .connected }
+
+        await fake.simulateServerEnded(.anotherConnection)
+        await waitUntil { model.state == .disconnected }
+        XCTAssertEqual(model.endReason, .anotherConnection)
+        XCTAssertNil(model.lastError, "a takeover is not an error")
+        try? await Task.sleep(for: .milliseconds(1_500))
+        XCTAssertNil(model.reconnectAttempt, "reconnecting would take the session back")
+        XCTAssertEqual(model.state, .disconnected)
+    }
+
+    func testReconnectingAFinishedSessionOpensANewOne() async throws {
+        let environment = await makeEnvironment()
+        let office = try XCTUnwrap(environment.profiles.first { $0.displayName == "office" })
+        await environment.connect(to: office)
+        let model = try XCTUnwrap(environment.runningSession(for: office))
+        let found = await environment.sessions.session(for: model.id)
+        let fake = try XCTUnwrap(found as? FakeRemoteSession)
+        await waitUntil { model.state == .connected }
+        await fake.simulateServerEnded(.anotherConnection)
+        await waitUntil { model.state == .disconnected }
+
+        await model.reconnect()
+        let fresh = try XCTUnwrap(environment.runningSession(for: office))
+        XCTAssertNotEqual(fresh.id, model.id, "the finished session cannot be revived")
+        XCTAssertEqual(environment.runningSessions.count, 1)
+        await waitUntil { fresh.state == .connected }
+        XCTAssertEqual(fresh.state, .connected)
+        XCTAssertNil(fresh.endReason)
+    }
+
     func testADroppedConnectionIsRetriedAutomatically() async throws {
         let environment = await makeEnvironment()
         let office = try XCTUnwrap(environment.profiles.first { $0.displayName == "office" })

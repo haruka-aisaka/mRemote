@@ -53,7 +53,7 @@ struct SessionMenuSheet: View {
                     if model.canRetry || model.state == .disconnected {
                         Button {
                             dismiss()
-                            Task { await model.retry() }
+                            Task { await model.reconnect() }
                         } label: {
                             Label("再接続", systemImage: "arrow.clockwise")
                         }

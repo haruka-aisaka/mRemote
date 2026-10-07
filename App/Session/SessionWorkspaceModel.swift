@@ -19,6 +19,8 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     private(set) var state: SessionState = .idle
     private(set) var lastError: RemoteSessionError?
+    /// Why the server ended the session, when it did so on purpose.
+    private(set) var endReason: RemoteEndReason?
     private(set) var pendingChallenge: SessionChallenge?
     /// Zoom, scale mode and the like: not part of the handshake, so they live
     /// here and may change while the session runs without writing back to the
@@ -183,6 +185,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             self.state = state
             if state == .connected || state == .connecting {
                 pendingChallenge = nil
+                endReason = nil
             }
             if state == .connected {
                 lastError = nil
@@ -200,6 +203,10 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         case .error(let error):
             lastError = error
             if state == .failed { scheduleReconnectIfNeeded() }
+        case .endedByServer(let reason):
+            // Shown instead of an error; the state is already on its way to
+            // disconnected, which never reconnects on its own.
+            endReason = reason
         case .clipboardChanged(let hasRemoteText):
             remoteHasText = hasRemoteText
             // A new remote copy: whatever was received before is no longer
@@ -426,6 +433,21 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             password: password,
             save: false
         ))
+    }
+
+    /// The 再接続 the user asks for. A failed session can try again in place;
+    /// a disconnected one is finished - its state machine has no way back -
+    /// so the workspace closes and the same profile connects anew.
+    func reconnect() async {
+        guard state == .disconnected else {
+            await retry()
+            return
+        }
+        let profileID = configuration.profileID
+        await disconnect()
+        guard let profileID,
+              let profile = environment.profiles.first(where: { $0.id == profileID }) else { return }
+        await environment.connect(to: profile)
     }
 
     func retry() async {

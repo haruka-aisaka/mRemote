@@ -125,6 +125,7 @@ struct SessionWorkspaceView: View {
                 if !model.showsDesktop {
                     status
                 }
+                endBanner
                 floatingMenu
                 toast
             }
@@ -251,6 +252,34 @@ struct SessionWorkspaceView: View {
         .sheet(isPresented: $model.isMenuPresented) {
             SessionMenuSheet(model: model)
                 .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// Why the server ended the session, over the desktop it left behind:
+    /// the last frame stays on screen after a disconnect, so without this a
+    /// session taken over by another device would just look frozen.
+    /// Reconnecting is offered, not done - it would take the session back.
+    @ViewBuilder
+    private var endBanner: some View {
+        if let reason = model.endReason, model.state == .disconnected {
+            VStack(spacing: 10) {
+                Label("切断されました", systemImage: "rectangle.portrait.and.arrow.right")
+                    .font(.headline)
+                Text(Formatting.endReasonLabel(reason))
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                Button("再接続") {
+                    Task { await model.reconnect() }
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("session-end-reconnect")
+            }
+            .padding(16)
+            .frame(maxWidth: 420)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .padding(24)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("session-end-reason")
         }
     }
 

@@ -313,7 +313,7 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 次にやること:
 
 - 2 本指タップ／2 本指スクロールを手で触って確かめる。ジェスチャー判定は単体試験（`TrackpadGestureTrackerTests`）、右クリックとホイールが Windows に届くことは実ホストで確認済みだが、2 本の指を同時に置く操作そのものは XCUITest（twoFingerTap、内部の event synthesizer とも）が iPhone Duo シミュレータで合成できない。
-- 同じ Windows ユーザーへ 2 本つなぐと、互いにセッションを奪い合い、自動再接続で取り返し続ける。奪われた切断は bridge から理由なしの backend failure（code 0）として届くため区別できない。FreeRDP の ErrorInfo（0x5: 別の接続により切断）を渡し、その場合は自動再接続しない。
+- （2026-10-07 対応済み）同じ Windows ユーザーへ 2 本つなぐとセッションを奪い合い、自動再接続で取り返し続けていた。bridge がサーバーの ErrorInfo を読んでいなかったのが原因で、今は FreeRDP の last error を常に渡し、サーバーが意図して終えた切断（引き継ぎ・切断・サインアウト・アイドル）は「切断済み」にして自動再接続しない。Windows 11 は同一ユーザーの引き継ぎを 0x5 ではなく 0x1（RPC_INITIATED_DISCONNECT）で送る。最後の画面の上に理由と「再接続」を出し、再接続は同じ接続先の新しいセッションを開く（切断済みのセッションは戻せないため。セッションメニューの「再接続」も切断済みでは何もしていなかったので同じ動作にした）。Windows 11 VM へ Duo と iPad の 2 台から同一ユーザーで接続して、奪い合いが起きないことを確認。
 - レガシー RDP セキュリティで接続中かどうか（サーバーが実際に選んだ方式）は bridge が報告しないため、監査表示は「許可した接続先」までにとどまる。
 - セッション最初の音声 packet が node 構築前に届いて 1 つ捨てられる（最初の音の頭が欠ける）。
 - Microsoft IME の「変換=IME-オン / 無変換=IME-オフ」は `HKCU\Software\Microsoft\IME\15.0\IMEJP\MSIME` の `IsKeyAssignmentEnabled=1`、`KeyAssignmentHenkan=0`（IME-オン）、`KeyAssignmentMuhenkan=1`（IME-オフ）。設定画面で変えた差分から確認。この割当で英数/かな相当のキーが IME オフ/オンになり、連打しても切り替わらないこと（KEY-IME-01B）を確認済み。
