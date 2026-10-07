@@ -85,6 +85,28 @@ final class ProfileEditorModel: Identifiable {
 
     var showsLegacySecurityWarning: Bool { securityPolicy == .legacyExplicit }
 
+    /// docs/data-and-security.md section 4: legacy RDP Security only by
+    /// explicit consent. Choosing it in the picker only asks; the policy
+    /// changes when the user confirms.
+    var isConfirmingLegacySecurity = false
+
+    func choose(_ policy: SecurityPolicy) {
+        if policy == .legacyExplicit, securityPolicy != .legacyExplicit {
+            isConfirmingLegacySecurity = true
+        } else {
+            securityPolicy = policy
+        }
+    }
+
+    func confirmLegacySecurity() {
+        isConfirmingLegacySecurity = false
+        securityPolicy = .legacyExplicit
+    }
+
+    func declineLegacySecurity() {
+        isConfirmingLegacySecurity = false
+    }
+
     /// A name is optional in the form; falling back to the host is friendlier
     /// than refusing to save.
     var resolvedDisplayName: String {

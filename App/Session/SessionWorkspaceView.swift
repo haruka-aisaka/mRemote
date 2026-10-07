@@ -259,6 +259,7 @@ struct SessionWorkspaceView: View {
         if let toastText {
             Text(toastText)
                 .font(.headline)
+                .multilineTextAlignment(.center)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(.thinMaterial, in: Capsule())
@@ -273,7 +274,8 @@ struct SessionWorkspaceView: View {
     /// docs/ui-flow.md section 6: the session's name, briefly, when it is
     /// connected to or switched to.
     private func showToast() {
-        withAnimation { toastText = "\(model.displayName) ・ \(model.statusText)" }
+        let warning = model.allowsLegacySecurity ? "\n⚠︎ 古い RDP セキュリティを許可した接続先です" : ""
+        withAnimation { toastText = "\(model.displayName) ・ \(model.statusText)\(warning)" }
         Task {
             try? await Task.sleep(for: .seconds(2))
             withAnimation { toastText = nil }

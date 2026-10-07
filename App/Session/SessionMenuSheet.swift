@@ -31,6 +31,15 @@ struct SessionMenuSheet: View {
                         Spacer()
                         SessionStateBadge(state: model.state, statusText: model.statusText)
                     }
+                    if model.allowsLegacySecurity {
+                        Label(
+                            "古い RDP セキュリティを許可した接続先です。暗号は弱く、サーバーの確認もできません。",
+                            systemImage: "exclamationmark.shield"
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("session-legacy-security")
+                    }
                 }
 
                 Section {

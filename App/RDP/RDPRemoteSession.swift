@@ -381,6 +381,18 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         pendingFetch = nil
     }
 
+    /// The profile's choice, as the bridge takes it. Legacy RDP Security is
+    /// offered only under `.legacyExplicit`, which the editor sets only
+    /// after the user confirmed it for this profile.
+    static func securityPolicy(for policy: SecurityPolicy) -> mr_rdp_security_policy {
+        switch policy {
+        case .secureAutomatic: return mr_rdp_security_policy(MR_RDP_SECURITY_SECURE_AUTOMATIC)
+        case .nlaRequired: return mr_rdp_security_policy(MR_RDP_SECURITY_NLA_REQUIRED)
+        case .tlsRequired: return mr_rdp_security_policy(MR_RDP_SECURITY_TLS_REQUIRED)
+        case .legacyExplicit: return mr_rdp_security_policy(MR_RDP_SECURITY_LEGACY_ALLOWED)
+        }
+    }
+
     static func keyboardProfile(for layout: KeyboardLayoutPreference) -> mr_rdp_keyboard_profile {
         switch layout {
         case .japanese: return mr_rdp_keyboard_profile(MR_RDP_KEYBOARD_JAPANESE)
@@ -464,7 +476,8 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             desktopHeight: UInt32(initialDesktopSize.height),
             keyboardProfile: Self.keyboardProfile(for: configuration.keyboardLayout),
             channelFlags: Self.channelFlags(for: configuration),
-            displayScale: displayScale
+            displayScale: displayScale,
+            securityPolicy: Self.securityPolicy(for: configuration.securityPolicy)
         ))
         // The connection carries it; nothing is owed until it changes.
         displayScaleIsPending = false

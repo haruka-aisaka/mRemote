@@ -76,6 +76,24 @@ final class ProfileEditorModelTests: XCTestCase {
         XCTAssertTrue(model.showsLegacySecurityWarning)
     }
 
+    func testChoosingLegacySecurityAsksFirst() {
+        let model = ProfileEditorModel(mode: .create)
+        model.choose(.legacyExplicit)
+        XCTAssertTrue(model.isConfirmingLegacySecurity)
+        XCTAssertEqual(model.securityPolicy, .secureAutomatic, "nothing changes before consent")
+        model.declineLegacySecurity()
+        XCTAssertEqual(model.securityPolicy, .secureAutomatic)
+
+        model.choose(.legacyExplicit)
+        model.confirmLegacySecurity()
+        XCTAssertEqual(model.securityPolicy, .legacyExplicit)
+        XCTAssertFalse(model.isConfirmingLegacySecurity)
+
+        model.choose(.nlaRequired)
+        XCTAssertEqual(model.securityPolicy, .nlaRequired, "leaving legacy needs no consent")
+        XCTAssertFalse(model.isConfirmingLegacySecurity)
+    }
+
     func testConfigurationIsCarriedIntoTheProfile() {
         let model = ProfileEditorModel(mode: .create)
         model.host = "desk.example"

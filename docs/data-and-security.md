@@ -98,7 +98,7 @@ scene 復元には profile ID と「接続中だった」事実だけを保存�
 ## 4. RDP transport と認証
 
 - NLA/CredSSP と TLS を既定とする。
-- 古い RDP Security への downgrade を自動で許可しない。必要なら profile ごとの明示設定、警告、監査表示を必要とする。
+- 古い RDP Security への downgrade を自動で許可しない。必要なら profile ごとの明示設定、警告、監査表示を必要とする。実装: 接続設定の「接続方式」で「レガシー RDP セキュリティ」を選ぶと確認ダイアログを出し、許可したときだけ設定する。bridge は policy が許す protocol だけを X.224 で提示し、PostConnect でサーバーが選んだ protocol を再確認する。接続時のトーストとセッションメニューに「古い RDP セキュリティを許可した接続先」と表示する。
 - TLS version/cipher は採用 FreeRDP/OpenSSL の安全な既定を使い、互換目的の弱い global override を設けない。
 - hostname verification を行い、FreeRDP の「常に証明書を受け入れる」設定を release build で禁止する。
 - 認証失敗と network error を分け、保存パスワードを無制限に再試行して account lockout を誘発しない。

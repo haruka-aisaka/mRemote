@@ -143,6 +143,11 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// input. Mirrored from `SessionManager` by the environment.
     var isFocused: Bool { environment.focusedSessionID == id }
 
+    /// docs/data-and-security.md section 4 asks for an audit display when a
+    /// profile allows legacy RDP Security. Whether the server actually chose
+    /// it is not reported by the bridge, so this says what was allowed.
+    var allowsLegacySecurity: Bool { configuration.securityPolicy == .legacyExplicit }
+
     var showsDesktop: Bool { desktop != nil && (state == .connected || desktopSize != nil) }
 
     func start() async {

@@ -51,10 +51,23 @@ struct ProfileEditorView: View {
                 }
 
                 Section("セキュリティ") {
-                    Picker("接続方式", selection: $model.securityPolicy) {
+                    Picker("接続方式", selection: Binding(
+                        get: { model.securityPolicy },
+                        set: { model.choose($0) }
+                    )) {
                         ForEach(SecurityPolicy.allCases, id: \.self) { policy in
                             Text(securityLabel(policy)).tag(policy)
                         }
+                    }
+                    .accessibilityIdentifier("profile-security-picker")
+                    .alert("レガシー RDP セキュリティを許可しますか？", isPresented: Binding(
+                        get: { model.isConfirmingLegacySecurity },
+                        set: { if !$0 { model.declineLegacySecurity() } }
+                    )) {
+                        Button("許可する", role: .destructive) { model.confirmLegacySecurity() }
+                        Button("キャンセル", role: .cancel) { model.declineLegacySecurity() }
+                    } message: {
+                        Text("この接続先だけ、TLS/NLA を使えないサーバーへ古い RDP セキュリティで接続できるようにします。暗号は弱く、サーバーが本物かどうかの確認もできません。信頼できるネットワーク上の、自分が管理するマシンにだけ使ってください。")
                     }
                     if model.showsLegacySecurityWarning {
                         Label(

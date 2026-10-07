@@ -62,6 +62,7 @@ struct RDPNativeConnection: Sendable {
     let keyboardProfile: mr_rdp_keyboard_profile
     let channelFlags: mr_rdp_channel_flags
     let displayScale: RemoteDisplayScale
+    let securityPolicy: mr_rdp_security_policy
 }
 
 /// One already-classified event from the native session, delivered in order.
@@ -278,6 +279,7 @@ final class RDPNativeSession: @unchecked Sendable {
         config.channel_flags = connection.channelFlags
         config.desktop_scale_factor = UInt32(connection.displayScale.desktopPercent)
         config.device_scale_factor = UInt32(connection.displayScale.devicePercent)
+        config.security_policy = connection.securityPolicy
         config.username_length = connection.username.utf8.count
         config.domain_length = connection.domain.utf8.count
 
