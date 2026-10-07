@@ -14,6 +14,8 @@ public struct LaptopKey: Hashable, Sendable, Identifiable {
         case key(UInt16)
         /// Ctrl, Alt, Shift, Win: held while touched, latched when tapped.
         case modifier(VirtualModifier)
+        /// Drawn but sends nothing: a Mac Caps Lock set to No Action.
+        case inert
     }
 
     /// Unique within a row, so a left and a right Shift are two keys. The
@@ -91,6 +93,36 @@ public enum LaptopKeyboardPlatform: String, Hashable, Sendable, CaseIterable {
     case mac
 }
 
+/// What a Mac's Caps Lock key does. macOS lets the user give it another
+/// modifier's job, or none, in Keyboard > Modifier Keys; the deck offers the
+/// same so its picture matches the Mac it is pretending to be.
+public enum MacCapsLockRole: String, Hashable, Sendable, CaseIterable {
+    case capsLock
+    case control
+    case option
+    case command
+    case escape
+    case noAction
+
+    fileprivate func key(width: Double) -> LaptopKey {
+        let id = "capslock"
+        switch self {
+        case .capsLock:
+            return LaptopKey(id: id, label: width > 1.5 ? "caps lock" : "caps", kind: .key(0x39), width: width)
+        case .control:
+            return LaptopKey(id: id, label: "control", kind: .modifier(.control), width: width)
+        case .option:
+            return LaptopKey(id: id, label: "⌥", kind: .modifier(.alt), width: width)
+        case .command:
+            return LaptopKey(id: id, label: "⌘", kind: .modifier(.windows), width: width)
+        case .escape:
+            return LaptopKey(id: id, label: "esc", kind: .key(0x29), width: width)
+        case .noAction:
+            return LaptopKey(id: id, label: "caps", kind: .inert, width: width)
+        }
+    }
+}
+
 /// The rows of the laptop keyboard for the host's layout.
 ///
 /// The layout follows the session's keyboard profile rather than the
@@ -101,14 +133,26 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
 
     public let rows: [LaptopKeyboardRow]
 
-    public init(_ layout: KeyboardLayoutPreference, platform: LaptopKeyboardPlatform = .windows) {
+    /// - Parameter capsLockRole: what the Mac layouts' Caps Lock key does.
+    ///   Ignored for Windows, whose Caps Lock position is 英数 on JIS.
+    public init(
+        _ layout: KeyboardLayoutPreference,
+        platform: LaptopKeyboardPlatform = .windows,
+        capsLockRole: MacCapsLockRole = .capsLock
+    ) {
         // Automatic draws US, as `ASCIIKeystrokeMapper` assumes it.
         let isJapanese = layout == .japanese
         switch platform {
         case .windows:
             rows = [Self.functionRow] + (isJapanese ? Self.japaneseRows : Self.usRows)
         case .mac:
-            rows = [Self.macFunctionRow] + (isJapanese ? Self.macJapaneseRows : Self.macUSRows)
+            let middle = isJapanese ? Self.macJapaneseRows : Self.macUSRows
+            rows = [Self.macFunctionRow] + middle.map { row in
+                LaptopKeyboardRow(
+                    row.keys.map { $0.id == "capslock" ? capsLockRole.key(width: $0.width) : $0 },
+                    height: row.height
+                )
+            }
         }
     }
 
@@ -470,6 +514,8 @@ public struct LaptopKeyboardComposer: Sendable {
             return []
         case .key(let usage):
             return keyDown(usage)
+        case .inert:
+            return []
         }
     }
 
@@ -490,6 +536,8 @@ public struct LaptopKeyboardComposer: Sendable {
             return []
         case .key(let usage):
             return keyUp(usage)
+        case .inert:
+            return []
         }
     }
 

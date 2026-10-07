@@ -402,6 +402,8 @@ final class LaptopDeckView: UIView {
                     : composer.isActive(modifier) ? .active : .idle
             case .key(let usage):
                 view.state = composer.isDown(usage: usage) ? .pressed : .idle
+            case .inert:
+                view.state = .idle
             }
         }
     }
@@ -569,13 +571,15 @@ struct LaptopDeck: UIViewRepresentable {
     let layout: KeyboardLayoutPreference
     /// Only Windows hosts exist today; a Mac host's session will pass `.mac`.
     var platform: LaptopKeyboardPlatform = .windows
+    /// Mac layouts only; mirrors macOS's Modifier Keys setting.
+    var capsLockRole: MacCapsLockRole = .capsLock
     let arrangement: LaptopDeckArrangement
     let channel: LaptopDeckChannel
     let isInputEnabled: Bool
 
     func makeUIView(context: Context) -> LaptopDeckView {
         let view = LaptopDeckView(
-            layout: LaptopKeyboardLayout(layout, platform: platform),
+            layout: LaptopKeyboardLayout(layout, platform: platform, capsLockRole: capsLockRole),
             arrangement: arrangement,
             channel: channel
         )
@@ -584,7 +588,7 @@ struct LaptopDeck: UIViewRepresentable {
     }
 
     func updateUIView(_ view: LaptopDeckView, context: Context) {
-        view.setLayout(LaptopKeyboardLayout(layout, platform: platform))
+        view.setLayout(LaptopKeyboardLayout(layout, platform: platform, capsLockRole: capsLockRole))
         view.setArrangement(arrangement)
         view.setInputEnabled(isInputEnabled)
     }

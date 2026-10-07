@@ -79,6 +79,7 @@ final class LaptopKeyboardTests: XCTestCase {
                 switch key.kind {
                 case .key(let value): usage = value
                 case .modifier(let modifier): usage = modifier.usage
+                case .inert: continue
                 }
                 XCTAssertNoThrow(
                     try RDPScanCodeMapper.set1ScanCode(forHIDUsage: usage),
@@ -146,6 +147,53 @@ final class LaptopKeyboardTests: XCTestCase {
             }
             XCTAssertEqual(start(of: "up", in: rows[4]), start(of: "down", in: rows[5]), name)
         }
+    }
+
+    func testTheMacCapsLockKeyTakesTheRoleMacOSWasGiven() {
+        let expected: [MacCapsLockRole: LaptopKey.Kind] = [
+            .capsLock: .key(0x39),
+            .control: .modifier(.control),
+            .option: .modifier(.alt),
+            .command: .modifier(.windows),
+            .escape: .key(0x29),
+            .noAction: .inert,
+        ]
+        for preference in [KeyboardLayoutPreference.japanese, .us] {
+            for role in MacCapsLockRole.allCases {
+                let layout = LaptopKeyboardLayout(preference, platform: .mac, capsLockRole: role)
+                let caps = layout.keys.first { $0.id == "capslock" }
+                XCTAssertEqual(caps?.kind, expected[role], "\(preference) \(role)")
+                XCTAssertEqual(
+                    layout.rows.map(\.totalWidth),
+                    LaptopKeyboardLayout(preference, platform: .mac).rows.map(\.totalWidth),
+                    "the role does not move other keys"
+                )
+            }
+        }
+        XCTAssertEqual(
+            LaptopKeyboardLayout(.japanese, capsLockRole: .control),
+            LaptopKeyboardLayout(.japanese),
+            "Windows has no Mac Caps Lock to change"
+        )
+    }
+
+    func testANoActionKeySendsNothingAndDoesNotLatch() {
+        var composer = LaptopKeyboardComposer()
+        let caps = LaptopKeyboardLayout(.japanese, platform: .mac, capsLockRole: .noAction)
+            .keys.first { $0.id == "capslock" }!
+        XCTAssertEqual(composer.touchDown(caps), [])
+        XCTAssertEqual(composer.touchUp(caps), [])
+        XCTAssertFalse(caps.repeats)
+        XCTAssertFalse(caps.isModifier)
+    }
+
+    func testACapsLockActingAsControlChordsLikeControl() {
+        var composer = LaptopKeyboardComposer()
+        let layoutKeys = LaptopKeyboardLayout(.japanese, platform: .mac, capsLockRole: .control).keys
+        let caps = layoutKeys.first { $0.id == "capslock" }!
+        let c = layoutKeys.first { $0.id == "c" }!
+        _ = composer.touchDown(caps)
+        XCTAssertEqual(keys(composer.touchDown(c)), ["E0v", "06v"])
     }
 
     func testTheDefaultPlatformIsWindows() {
