@@ -123,6 +123,26 @@
         }
       }
     },
+    "Dynamic Island や画面の角の下にもデスクトップを表示します。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The desktop also shows under the Dynamic Island and the screen's corners."
+          }
+        }
+      }
+    },
+    "Dynamic Island、画面の角、ホームインジケータを避けて表示します。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The desktop stays clear of the Dynamic Island, the screen's corners and the Home indicator."
+          }
+        }
+      }
+    },
     "FreeRDP 3.31.1 同梱": {
       "localizations": {
         "en": {
@@ -2310,6 +2330,16 @@
         }
       }
     },
+    "画面の端まで使う": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the whole screen"
+          }
+        }
+      }
+    },
     "画面終了": {
       "localizations": {
         "en": {
@@ -2400,12 +2430,12 @@
         }
       }
     },
-    "自動は画面の大きさに合わせて解像度を変えます（サーバーが対応している場合）。": {
+    "自動は画面の大きさに合わせて解像度を変えます（サーバーが対応している場合）。「画面の端まで使う」をオフにすると、Dynamic Island や画面の角を避けて表示します。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Automatic changes the resolution to fit the screen (when the server supports it)."
+            "value": "Automatic changes the resolution to fit the screen (when the server supports it). With “Use the whole screen” off, the desktop stays clear of the Dynamic Island and the screen's corners."
           }
         }
       }

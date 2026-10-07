@@ -11,3 +11,15 @@ extension RemoteScalePreference {
 extension FoldResolutionPolicy {
     static let storageKey = "fold-resolution-policy"
 }
+
+/// Whether the desktop keeps clear of what the screen does not fully show -
+/// the Dynamic Island or notch, the rounded corners, the home indicator. The
+/// insets come from the system for whichever device and rotation is in hand.
+enum DesktopSafeAreaPolicy: String, CaseIterable {
+    /// The desktop is fitted inside the safe area, and the rest stays black.
+    case avoid
+    /// Edge to edge: more pixels, some of them under the island or a corner.
+    case fullScreen
+
+    static let storageKey = "desktop-safe-area"
+}

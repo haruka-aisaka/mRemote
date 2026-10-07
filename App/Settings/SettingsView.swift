@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     @State private var settings = GlobalSettings.default
+    @AppStorage(DesktopSafeAreaPolicy.storageKey)
+    private var safeAreaPolicy = DesktopSafeAreaPolicy.avoid
 
     var body: some View {
         NavigationStack {
@@ -32,10 +34,17 @@ struct SettingsView: View {
                         Text("画面に合わせる").tag(InitialScale.fit)
                         Text("100%").tag(InitialScale.oneToOne)
                     }
+                    // A matter of the device in hand, so it is kept on the
+                    // device rather than with the other settings.
+                    Toggle("画面の端まで使う", isOn: Binding(
+                        get: { safeAreaPolicy == .fullScreen },
+                        set: { safeAreaPolicy = $0 ? .fullScreen : .avoid }
+                    ))
+                    .accessibilityIdentifier("settings-full-screen-toggle")
                 } header: {
                     Text("表示")
                 } footer: {
-                    Text("自動は画面の大きさに合わせて解像度を変えます（サーバーが対応している場合）。")
+                    Text("自動は画面の大きさに合わせて解像度を変えます（サーバーが対応している場合）。「画面の端まで使う」をオフにすると、Dynamic Island や画面の角を避けて表示します。")
                 }
 
                 Section("入力") {

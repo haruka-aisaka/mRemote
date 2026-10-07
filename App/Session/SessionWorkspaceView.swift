@@ -13,9 +13,12 @@ struct SessionWorkspaceView: View {
     private var scalePreference = RemoteScalePreference.automatic
     @AppStorage(FoldResolutionPolicy.storageKey)
     private var foldPolicy = FoldResolutionPolicy.resizeToFit
+    @AppStorage(DesktopSafeAreaPolicy.storageKey)
+    private var safeAreaPolicy = DesktopSafeAreaPolicy.avoid
     @Bindable var model: SessionWorkspaceModel
     @State private var toastText: String?
     @State private var hingePosture: HingePosture = .unavailable
+    @State private var windowSafeArea = EdgeInsets()
     @State private var laptopChannel = LaptopDeckChannel()
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
@@ -32,12 +35,16 @@ struct SessionWorkspaceView: View {
                 .frame(width: 1, height: 1)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
+            WindowSafeAreaReader { windowSafeArea = $0 }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             SoftwareKeyboardHost(controller: model.softwareKeyboard)
                 .frame(width: 1, height: 1)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             GeometryReader { proxy in
-                split(in: proxy.size)
+                split(in: proxy.size, safeArea: windowSafeArea)
             }
             .ignoresSafeArea()
             privacyCover
@@ -72,7 +79,9 @@ struct SessionWorkspaceView: View {
         // What the input gate is made of, for UI tests that drive a live host.
         .accessibilityValue(
             "state=\(model.state) focused=\(model.isFocused) menu=\(model.isMenuPresented) "
-                + "phase=\(scenePhase) accepts=\(model.acceptsInput)"
+                + "phase=\(scenePhase) accepts=\(model.acceptsInput) "
+                + "safeArea=\(Int(windowSafeArea.top)),\(Int(windowSafeArea.leading)),"
+                + "\(Int(windowSafeArea.bottom)),\(Int(windowSafeArea.trailing))"
         )
         #endif
         .statusBarHidden()
@@ -121,7 +130,7 @@ struct SessionWorkspaceView: View {
     /// added after it rather than the two being swapped between layouts,
     /// which would rebuild the surface and drop its texture.
     @ViewBuilder
-    private func split(in size: CGSize) -> some View {
+    private func split(in size: CGSize, safeArea: EdgeInsets) -> some View {
         let showsDeck = deckPreference.showsDeck(
             posture: hingePosture,
             isPortrait: size.height > size.width
@@ -134,8 +143,14 @@ struct SessionWorkspaceView: View {
                     touchMode: showsDeck && !deckArrangement.hasTrackpad ? .trackpad : touchMode,
                     // Keeping the resolution means asking for the whole screen
                     // while only part of it is the desktop.
-                    renderSizeOverride: showsDeck && foldPolicy == .keepAndScale ? size : nil
+                    renderSizeOverride: showsDeck && foldPolicy == .keepAndScale
+                        ? usableSize(of: size, safeArea: safeArea) : nil
                 )
+                // Inset by what the system reports for this device and
+                // rotation, so the surface - and the size it asks the server
+                // for - stays clear of the island, the corners and the home
+                // indicator. With the deck up the bottom edge is the deck's.
+                .padding(desktopInsets(safeArea: safeArea, showsDeck: showsDeck))
                 if !model.showsDesktop {
                     status
                 }
@@ -201,9 +216,30 @@ struct SessionWorkspaceView: View {
                     environment.inputDiagnostics.update(diagnostics)
                 }
             )
-            .ignoresSafeArea()
+            // Edge to edge only when asked: ignoring the safe area here would
+            // grow the surface back over the insets it was padded by.
+            .ignoresSafeArea(edges: safeAreaPolicy == .fullScreen ? .all : [])
             .opacity(model.showsDesktop ? 1 : 0)
         }
+    }
+
+    private func desktopInsets(safeArea: EdgeInsets, showsDeck: Bool) -> EdgeInsets {
+        guard safeAreaPolicy == .avoid else { return EdgeInsets() }
+        return EdgeInsets(
+            top: safeArea.top,
+            leading: safeArea.leading,
+            bottom: showsDeck ? 0 : safeArea.bottom,
+            trailing: safeArea.trailing
+        )
+    }
+
+    /// The whole screen as the desktop would fill it without the deck.
+    private func usableSize(of size: CGSize, safeArea: EdgeInsets) -> CGSize {
+        guard safeAreaPolicy == .avoid else { return size }
+        return CGSize(
+            width: size.width - safeArea.leading - safeArea.trailing,
+            height: size.height - safeArea.top - safeArea.bottom
+        )
     }
 
     private var status: some View {

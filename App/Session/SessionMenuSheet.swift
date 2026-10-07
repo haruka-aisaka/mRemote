@@ -35,6 +35,8 @@ struct SessionMenuSheet: View {
     @AppStorage(FoldResolutionPolicy.storageKey)
     private var foldPolicy = FoldResolutionPolicy.resizeToFit
     @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
+    @AppStorage(DesktopSafeAreaPolicy.storageKey)
+    private var safeAreaPolicy = DesktopSafeAreaPolicy.avoid
 
     var body: some View {
         NavigationStack {
@@ -182,6 +184,16 @@ struct SessionMenuSheet: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+                    Toggle("画面の端まで使う", isOn: Binding(
+                        get: { safeAreaPolicy == .fullScreen },
+                        set: { safeAreaPolicy = $0 ? .fullScreen : .avoid }
+                    ))
+                    .accessibilityIdentifier("session-full-screen-toggle")
+                    Text(safeAreaPolicy == .fullScreen
+                         ? String(localized: "Dynamic Island や画面の角の下にもデスクトップを表示します。")
+                         : String(localized: "Dynamic Island、画面の角、ホームインジケータを避けて表示します。"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     if let size = model.desktopSizeText {
                         LabeledContent(
                             String(localized: "リモート解像度"),
