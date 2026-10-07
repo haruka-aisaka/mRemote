@@ -166,6 +166,22 @@ struct SessionMenuSheet: View {
                         Text("変えずに縮小表示").tag(FoldResolutionPolicy.keepAndScale)
                     }
                     .accessibilityIdentifier("session-fold-resolution-picker")
+                    // For this session; the connection's own setting is the
+                    // one it starts from next time.
+                    Picker("解像度", selection: Binding(
+                        get: { model.runtime.resolution },
+                        set: { model.setResolution($0) }
+                    )) {
+                        ForEach([ResolutionPolicy.adaptive] + ResolutionPolicy.presets, id: \.self) { policy in
+                            Text(Formatting.resolutionLabel(policy)).tag(policy)
+                        }
+                    }
+                    .accessibilityIdentifier("session-resolution-picker")
+                    if !model.supportsDynamicResolution, model.state == .connected {
+                        Text("このサーバーは接続中の解像度変更に対応していません。接続先の設定で指定すると、次の接続から反映されます。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                     if let size = model.desktopSizeText {
                         LabeledContent(
                             String(localized: "リモート解像度"),
@@ -262,6 +278,10 @@ struct SessionMenuSheet: View {
 
             }
             .navigationTitle("セッション")
+            // The display channel opens after the session is connected, so
+            // what the server supports is read again when there is a menu to
+            // show it in.
+            .task { await model.refresh() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

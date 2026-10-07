@@ -53,12 +53,14 @@ final class EffectiveProfileResolverTests: XCTestCase {
     func testRuntimeStateStartsFromResolvedConfiguration() {
         let resolved = EffectiveProfileResolver().resolve(
             profile: profile(RDPConfiguration(
+                resolutionPolicy: .explicit(.fixed(width: 1_600, height: 900)),
                 initialScale: .explicit(.oneToOne),
                 scrollDirection: .explicit(.reversed)
             )),
             globalSettings: .default
         )
         let runtime = SessionRuntimeState(from: resolved)
+        XCTAssertEqual(runtime.resolution, .fixed(width: 1_600, height: 900))
         XCTAssertEqual(runtime.scale, .oneToOne)
         XCTAssertEqual(runtime.scrollDirection, .reversed)
         XCTAssertEqual(runtime.zoom, 1.0)

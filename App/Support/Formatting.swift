@@ -16,6 +16,19 @@ enum Formatting {
         return "\(username) @ \(endpoint(profile.endpoint))"
     }
 
+    /// "1920×1080（16:9）", or 自動 for following the screen.
+    static func resolutionLabel(_ policy: ResolutionPolicy) -> String {
+        switch policy {
+        case .adaptive:
+            return String(localized: "自動（画面に合わせる）")
+        case let .fixed(width, height):
+            let ratio = Double(width) / Double(max(height, 1))
+            let named = [("4:3", 4.0 / 3), ("5:4", 5.0 / 4), ("16:9", 16.0 / 9), ("16:10", 16.0 / 10)]
+                .first { abs($0.1 - ratio) < 0.01 }?.0
+            return named.map { "\(width)×\(height)（\($0)）" } ?? "\(width)×\(height)"
+        }
+    }
+
     static func lastConnected(_ date: Date?) -> String? {
         guard let date else { return nil }
         return date.formatted(.relative(presentation: .named))

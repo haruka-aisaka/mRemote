@@ -34,6 +34,20 @@ struct ProfileEditorView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section {
+                    InheritablePicker(
+                        title: String(localized: "解像度"),
+                        selection: $model.resolutionPolicy,
+                        options: [.adaptive] + ResolutionPolicy.presets,
+                        label: Formatting.resolutionLabel
+                    )
+                    .accessibilityIdentifier("profile-resolution-picker")
+                } header: {
+                    Text("画面")
+                } footer: {
+                    Text("接続中でもセッションメニューから変えられます。")
+                }
+
                 Section("キーボード") {
                     InheritablePicker(
                         title: String(localized: "レイアウト"),

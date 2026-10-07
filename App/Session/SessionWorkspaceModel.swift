@@ -63,7 +63,8 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// is disconnected, so the task cannot outlive it.
     private var eventTask: Task<Void, Never>?
     private var resizeTask: Task<Void, Never>?
-    private var lastRequestedRenderSize: (width: Int, height: Int)?
+    private var renderSize: (width: Int, height: Int)?
+    private var lastRequestedDesktopSize: (width: Int, height: Int)?
 
     /// A rotation or a Stage Manager resize arrives as a burst of layout
     /// passes. Asking the server to resize on each one would renegotiate the
@@ -406,14 +407,28 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     }
 
     /// The surface reports its drawable size in pixels. A server that
-    /// negotiated the display channel is asked to match it; one that did not
-    /// keeps its own size and the surface scales locally, which is why this is
-    /// not an error path.
+    /// negotiated the display channel is asked to match it - or to take the
+    /// fixed resolution the user chose; one that did not keeps its own size
+    /// and the surface scales locally, which is why this is not an error path.
     func renderSizeChanged(width: Int, height: Int) {
         guard width > 0, height > 0 else { return }
-        guard lastRequestedRenderSize?.width != width
-                || lastRequestedRenderSize?.height != height else { return }
-        lastRequestedRenderSize = (width, height)
+        renderSize = (width, height)
+        requestDesktopLayout()
+    }
+
+    /// Live, for this session only: a chosen size is kept through rotation and
+    /// the deck, and 自動 goes back to following the screen.
+    func setResolution(_ resolution: ResolutionPolicy) {
+        guard resolution != runtime.resolution else { return }
+        runtime.resolution = resolution
+        requestDesktopLayout()
+    }
+
+    private func requestDesktopLayout() {
+        guard let (width, height) = runtime.resolution.desktopSize(fitting: renderSize) else { return }
+        guard lastRequestedDesktopSize?.width != width
+                || lastRequestedDesktopSize?.height != height else { return }
+        lastRequestedDesktopSize = (width, height)
 
         resizeTask?.cancel()
         guard let desktop else { return }

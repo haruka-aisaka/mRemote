@@ -27,6 +27,7 @@ final class ProfileEditorModel: Identifiable {
     var audioPlayback: Inheritable<Bool>
     var clipboardPolicy: Inheritable<ClipboardPolicy>
     var scrollDirection: Inheritable<ScrollDirection>
+    var resolutionPolicy: Inheritable<ResolutionPolicy>
 
     private let existing: ConnectionProfile?
 
@@ -44,6 +45,7 @@ final class ProfileEditorModel: Identifiable {
             audioPlayback = .inherit
             clipboardPolicy = .inherit
             scrollDirection = .inherit
+            resolutionPolicy = .inherit
         case .edit(let profile):
             existing = profile
             displayName = profile.displayName
@@ -57,6 +59,7 @@ final class ProfileEditorModel: Identifiable {
             audioPlayback = rdp.audioPlayback
             clipboardPolicy = rdp.clipboardPolicy
             scrollDirection = rdp.scrollDirection
+            resolutionPolicy = rdp.resolutionPolicy
         }
         self.password = password ?? ""
     }
@@ -116,13 +119,15 @@ final class ProfileEditorModel: Identifiable {
 
     func makeProfile(now: Date = Date()) -> ConnectionProfile? {
         guard let port else { return nil }
-        let configuration = RDPConfiguration(
-            keyboardLayout: keyboardLayout,
-            audioPlayback: audioPlayback,
-            clipboardPolicy: clipboardPolicy,
-            scrollDirection: scrollDirection,
-            securityPolicy: securityPolicy
-        )
+        // Built on what was there, so a field the form does not show is
+        // kept rather than reset to inherit.
+        var configuration = existing?.configuration.rdp ?? RDPConfiguration()
+        configuration.keyboardLayout = keyboardLayout
+        configuration.audioPlayback = audioPlayback
+        configuration.clipboardPolicy = clipboardPolicy
+        configuration.scrollDirection = scrollDirection
+        configuration.resolutionPolicy = resolutionPolicy
+        configuration.securityPolicy = securityPolicy
         var profile = existing ?? ConnectionProfile(
             displayName: resolvedDisplayName,
             endpoint: RemoteEndpoint(host: trimmedHost, port: port),

@@ -31,4 +31,22 @@ final class DisplayScaleTests: XCTestCase {
         XCTAssertEqual(RemoteScalePreference(rawValue: "40"), .fixed(100), "clamped, not refused")
         XCTAssertNil(RemoteScalePreference(rawValue: "large"))
     }
+
+    func testAFixedResolutionIgnoresTheScreenAndAnAdaptiveOneFollowsIt() {
+        let fixed = ResolutionPolicy.fixed(width: 1_920, height: 1_080)
+        XCTAssertEqual(fixed.desktopSize(fitting: (2_000, 1_400))?.width, 1_920)
+        XCTAssertEqual(fixed.desktopSize(fitting: nil)?.height, 1_080)
+        XCTAssertEqual(ResolutionPolicy.adaptive.desktopSize(fitting: (2_000, 1_400))?.width, 2_000)
+        XCTAssertNil(ResolutionPolicy.adaptive.desktopSize(fitting: nil))
+    }
+
+    func testEveryPresetIsAFixedSizeTheProtocolAccepts() {
+        XCTAssertEqual(Set(ResolutionPolicy.presets).count, ResolutionPolicy.presets.count)
+        for preset in ResolutionPolicy.presets {
+            guard case let .fixed(width, height) = preset else { return XCTFail("\(preset)") }
+            // MS-RDPEDISP: 200...8192, and an even width.
+            XCTAssertTrue((200...8_192).contains(width) && (200...8_192).contains(height))
+            XCTAssertEqual(width % 2, 0)
+        }
+    }
 }

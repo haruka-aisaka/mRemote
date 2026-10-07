@@ -91,17 +91,22 @@ public struct SessionRuntimeState: Hashable, Sendable {
     public var zoom: Double
     public var scrollDirection: ScrollDirection
     public var isLocallyMuted: Bool
+    /// Starts as the connection's setting; the session menu changes it for
+    /// this session only.
+    public var resolution: ResolutionPolicy
 
     public init(
         scale: InitialScale = .fit,
         zoom: Double = 1.0,
         scrollDirection: ScrollDirection = .normal,
-        isLocallyMuted: Bool = false
+        isLocallyMuted: Bool = false,
+        resolution: ResolutionPolicy = .adaptive
     ) {
         self.scale = scale
         self.zoom = zoom
         self.scrollDirection = scrollDirection
         self.isLocallyMuted = isLocallyMuted
+        self.resolution = resolution
     }
 
     public init(from configuration: EffectiveConnectionConfiguration) {
@@ -109,7 +114,8 @@ public struct SessionRuntimeState: Hashable, Sendable {
             scale: configuration.initialScale,
             zoom: 1.0,
             scrollDirection: configuration.scrollDirection,
-            isLocallyMuted: false
+            isLocallyMuted: false,
+            resolution: configuration.resolutionPolicy
         )
     }
 }

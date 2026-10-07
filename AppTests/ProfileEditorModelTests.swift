@@ -106,4 +106,30 @@ final class ProfileEditorModelTests: XCTestCase {
         XCTAssertEqual(rdp?.scrollDirection, .explicit(.reversed))
         XCTAssertEqual(rdp?.audioPlayback, .explicit(false))
     }
+
+    func testTheResolutionIsSavedAndWhatTheFormDoesNotShowIsKept() {
+        let existing = ConnectionProfile(
+            displayName: "desk",
+            endpoint: RemoteEndpoint(host: "desk.example", port: 3389),
+            configuration: .rdp(RDPConfiguration(initialScale: .explicit(.oneToOne)))
+        )
+        let model = ProfileEditorModel(mode: .edit(existing))
+        XCTAssertEqual(model.resolutionPolicy, .inherit)
+
+        model.resolutionPolicy = .explicit(.fixed(width: 1_920, height: 1_080))
+        let rdp = model.makeProfile()?.configuration.rdp
+        XCTAssertEqual(rdp?.resolutionPolicy, .explicit(.fixed(width: 1_920, height: 1_080)))
+        XCTAssertEqual(rdp?.initialScale, .explicit(.oneToOne))
+        XCTAssertEqual(
+            ProfileEditorModel(mode: .edit(model.makeProfile()!)).resolutionPolicy,
+            .explicit(.fixed(width: 1_920, height: 1_080))
+        )
+    }
+
+    func testResolutionLabelsNameTheAspectRatio() {
+        XCTAssertEqual(Formatting.resolutionLabel(.fixed(width: 1_920, height: 1_080)), "1920×1080（16:9）")
+        XCTAssertEqual(Formatting.resolutionLabel(.fixed(width: 1_280, height: 1_024)), "1280×1024（5:4）")
+        XCTAssertEqual(Formatting.resolutionLabel(.fixed(width: 1_366, height: 768)), "1366×768（16:9）")
+        XCTAssertEqual(Formatting.resolutionLabel(.fixed(width: 1_280, height: 768)), "1280×768")
+    }
 }

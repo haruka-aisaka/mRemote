@@ -21,11 +21,21 @@ struct SettingsView: View {
                     Text("英数→無変換、かな→変換の変換が保証されるのは日本語レイアウトのみです。接続先ごとに上書きできます。")
                 }
 
-                Section("表示") {
+                Section {
+                    Picker("解像度", selection: $settings.resolutionPolicy) {
+                        ForEach([ResolutionPolicy.adaptive] + ResolutionPolicy.presets, id: \.self) { policy in
+                            Text(Formatting.resolutionLabel(policy)).tag(policy)
+                        }
+                    }
+                    .accessibilityIdentifier("settings-resolution-picker")
                     Picker("初期倍率", selection: $settings.initialScale) {
                         Text("画面に合わせる").tag(InitialScale.fit)
                         Text("100%").tag(InitialScale.oneToOne)
                     }
+                } header: {
+                    Text("表示")
+                } footer: {
+                    Text("自動は画面の大きさに合わせて解像度を変えます（サーバーが対応している場合）。")
                 }
 
                 Section("入力") {

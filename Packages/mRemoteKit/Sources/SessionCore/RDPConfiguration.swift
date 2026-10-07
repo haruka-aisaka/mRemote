@@ -7,6 +7,37 @@ public enum ResolutionPolicy: Hashable, Sendable, Codable {
     case fixed(width: Int, height: Int)
 }
 
+extension ResolutionPolicy {
+    /// What the pickers offer besides following the screen: the common 4:3,
+    /// 16:9 and 16:10 desktop sizes, smallest first.
+    public static let presets: [ResolutionPolicy] = [
+        .fixed(width: 1_024, height: 768),
+        .fixed(width: 1_280, height: 720),
+        .fixed(width: 1_280, height: 800),
+        .fixed(width: 1_280, height: 1_024),
+        .fixed(width: 1_366, height: 768),
+        .fixed(width: 1_440, height: 900),
+        .fixed(width: 1_600, height: 900),
+        .fixed(width: 1_680, height: 1_050),
+        .fixed(width: 1_920, height: 1_080),
+        .fixed(width: 1_920, height: 1_200),
+        .fixed(width: 2_560, height: 1_440),
+        .fixed(width: 2_560, height: 1_600),
+        .fixed(width: 3_840, height: 2_160),
+    ]
+
+    /// The desktop size to ask for, given the size the surface would fill.
+    /// Nil while an adaptive policy has nothing to follow yet.
+    public func desktopSize(
+        fitting renderSize: (width: Int, height: Int)?
+    ) -> (width: Int, height: Int)? {
+        switch self {
+        case .adaptive: return renderSize
+        case let .fixed(width, height): return (width, height)
+        }
+    }
+}
+
 public enum InitialScale: String, Hashable, Sendable, Codable, CaseIterable {
     case fit
     case oneToOne

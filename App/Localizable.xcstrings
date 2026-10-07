@@ -340,6 +340,16 @@
         }
       }
     },
+    "このサーバーは接続中の解像度変更に対応していません。接続先の設定で指定すると、次の接続から反映されます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This server can't change resolution during a session. Set it in the connection's settings to use it from the next connection."
+          }
+        }
+      }
+    },
     "このセッションを切断": {
       "localizations": {
         "en": {
@@ -2010,6 +2020,16 @@
         }
       }
     },
+    "接続中でもセッションメニューから変えられます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can also change it from the session menu while connected."
+          }
+        }
+      }
+    },
     "接続先": {
       "localizations": {
         "en": {
@@ -2250,6 +2270,16 @@
         }
       }
     },
+    "画面": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen"
+          }
+        }
+      }
+    },
     "画面に合わせて変える": {
       "localizations": {
         "en": {
@@ -2370,6 +2400,16 @@
         }
       }
     },
+    "自動は画面の大きさに合わせて解像度を変えます（サーバーが対応している場合）。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic changes the resolution to fit the screen (when the server supports it)."
+          }
+        }
+      }
+    },
     "自動再接続": {
       "localizations": {
         "en": {
@@ -2386,6 +2426,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Automatic (secure only)"
+          }
+        }
+      }
+    },
+    "自動（画面に合わせる）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic (fit the screen)"
           }
         }
       }
@@ -2516,6 +2566,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Duplicate"
+          }
+        }
+      }
+    },
+    "解像度": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolution"
           }
         }
       }
