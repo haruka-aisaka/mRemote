@@ -75,6 +75,13 @@ struct SettingsView: View {
                     .accessibilityIdentifier("input-diagnostics-link")
                 }
 
+                Section("ヘルプ") {
+                    NavigationLink("送れないキーとバックグラウンド") {
+                        HelpView()
+                    }
+                    .accessibilityIdentifier("help-link")
+                }
+
                 Section {
                     NavigationLink("ライセンス") {
                         LicensesView()

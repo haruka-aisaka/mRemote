@@ -39,6 +39,7 @@ Keyboard、接続先は手元の Windows 11 が一台である。App Store で�
 | [test-plan.md](test-plan.md) | テスト戦略、端末マトリクス、受入試験 |
 | [traceability.md](traceability.md) | 要件 ID と設計・テスト・実装 phase の対応 |
 | [roadmap.md](roadmap.md) | スパイクからリリースまでの段階計画 |
+| [help-limitations.md](help-limitations.md) | 利用者向けヘルプ原稿: 送れないキー、バックグラウンドの制約、Windows IME の設定 |
 
 ## 現時点の主要決定
 
