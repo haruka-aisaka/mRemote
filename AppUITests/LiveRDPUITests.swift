@@ -28,6 +28,7 @@ import XCTest
 ///     keys <id> <id> ...               tap each in turn
 ///     sleep <seconds>
 ///     value <id>                       report the element's value
+///     frame <id>                       report the element's frame
 ///     swipeup <id>                     swipe up on an element
 ///     button <label>                   tap the button with this label
 ///     back                             the navigation bar's back button
@@ -173,6 +174,10 @@ final class LiveRDPUITests: XCTestCase {
             app.typeText(arguments.joined(separator: " ")
                 .replacingOccurrences(of: "\\n", with: "\n")
                 .replacingOccurrences(of: "\\b", with: XCUIKeyboardKey.delete.rawValue))
+        case "frame":
+            let target = element(arguments.joined(separator: " "))
+            guard target.waitForExistence(timeout: 3) else { return "missing" }
+            return "frame=\(target.frame) window=\(app.windows.firstMatch.frame)"
         case "value":
             let target = element(arguments.joined(separator: " "))
             guard target.waitForExistence(timeout: 3) else { return "missing" }
@@ -213,14 +218,22 @@ final class LiveRDPUITests: XCTestCase {
 
     /// Certificate review and credentials, in whichever order the host asks.
     private func answerChallenges(password: String, wait: TimeInterval = 30) {
-        let deadline = Date().addingTimeInterval(wait)
+        // Each answer restarts the wait: the next prompt can take a while,
+        // as the certificate does when the host asks for credentials first.
+        var deadline = Date().addingTimeInterval(wait)
         repeat {
             if element("certificate-trust-always").exists {
                 element("certificate-trust-always").tap()
+                deadline = Date().addingTimeInterval(wait)
+            } else if app.navigationBars["サーバー証明書の確認"].exists {
+                // A long warning pushes the buttons below the sheet, and the
+                // form does not build rows it has not scrolled to.
+                app.collectionViews.firstMatch.swipeUp()
             } else if element("challenge-password").exists {
                 element("challenge-password").tap()
                 app.typeText(password)
                 element("challenge-connect").tap()
+                deadline = Date().addingTimeInterval(wait)
             } else if wait > 0, !element("session-status").exists {
                 return
             }
