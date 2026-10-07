@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// Connects the real app to a real Windows host, then holds the session open
@@ -28,6 +29,11 @@ import XCTest
 ///     value <id>                       report the element's value
 ///     swipeup <id>                     swipe up on an element
 ///     button <label>                   tap the button with this label
+///     back                             the navigation bar's back button
+///     setpasteboard <base64>           put UTF-8 text on the device pasteboard
+///     pasteboard                       report the pasteboard text, base64
+///     type <text>                      type into the focused field
+///     scroll <id> <dx> <dy>            a pointer scroll over an element
 ///
 /// The password is typed into the credential prompt and not saved.
 final class LiveRDPUITests: XCTestCase {
@@ -99,8 +105,14 @@ final class LiveRDPUITests: XCTestCase {
         }
         switch verb {
         case "tap":
-            guard let target = target() else { return "missing" }
-            target.tap()
+            // The rest of the line, so identifiers with spaces work.
+            let found = element(arguments.joined(separator: " "))
+            guard found.waitForExistence(timeout: 3) else { return "missing" }
+            found.tap()
+        case "back":
+            let back = app.navigationBars.buttons.firstMatch
+            guard back.waitForExistence(timeout: 3) else { return "missing" }
+            back.tap()
         case "twotap":
             guard let target = target() else { return "missing" }
             target.twoFingerTap()
@@ -128,8 +140,21 @@ final class LiveRDPUITests: XCTestCase {
             let button = app.buttons[arguments.joined(separator: " ")].firstMatch
             guard button.waitForExistence(timeout: 3) else { return "missing" }
             button.tap()
-        case "value":
+        case "setpasteboard":
+            guard let data = Data(base64Encoded: arguments.first ?? ""),
+                  let text = String(data: data, encoding: .utf8) else { return "bad base64" }
+            UIPasteboard.general.string = text
+        case "pasteboard":
+            let text = UIPasteboard.general.string ?? ""
+            return "pasteboard=" + Data(text.utf8).base64EncodedString()
+        case "scroll":
             guard let target = target() else { return "missing" }
+            target.scroll(byDeltaX: number(1), deltaY: number(2))
+        case "type":
+            app.typeText(arguments.joined(separator: " "))
+        case "value":
+            let target = element(arguments.joined(separator: " "))
+            guard target.waitForExistence(timeout: 3) else { return "missing" }
             return "value=\(target.value.map { "\($0)" } ?? "nil") label=\(target.label)"
         case "sleep":
             Thread.sleep(forTimeInterval: TimeInterval(number(0)))
