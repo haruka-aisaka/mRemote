@@ -24,7 +24,21 @@ protocol RemotePointerControl: AnyObject {
 /// their identity and last position.
 @MainActor
 final class TrackpadGestureTracker {
+    /// One finger's position at a moment. UIKit's touches are reduced to
+    /// this so the gesture logic can be exercised without UIKit's touches,
+    /// which tests cannot create.
+    struct Sample {
+        let id: ObjectIdentifier
+        let location: CGPoint
+        let timestamp: TimeInterval
+    }
+
+    /// Arms the long-press that starts a drag; returns a cancel. A Timer in
+    /// the app, replaced by tests that fire it themselves.
+    typealias Scheduler = @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> () -> Void
+
     private let target: () -> (any RemotePointerControl)?
+    private let schedule: Scheduler
     private let haptics = UIImpactFeedbackGenerator(style: .light)
 
     private var touches: [ObjectIdentifier: CGPoint] = [:]
@@ -33,7 +47,7 @@ final class TrackpadGestureTracker {
     private var startTime: TimeInterval = 0
     private var lastTime: TimeInterval = 0
     private var isDragging = false
-    private var longPressTimer: Timer?
+    private var cancelLongPress: (() -> Void)?
 
     private(set) var isEnabled = false
 
@@ -41,8 +55,20 @@ final class TrackpadGestureTracker {
     static let tapDuration: TimeInterval = 0.3
     static let dragHold: TimeInterval = 0.45
 
-    init(target: @escaping () -> (any RemotePointerControl)?) {
+    init(
+        target: @escaping () -> (any RemotePointerControl)?,
+        schedule: @escaping Scheduler = TrackpadGestureTracker.runLoopTimer
+    ) {
         self.target = target
+        self.schedule = schedule
+    }
+
+    static func runLoopTimer(after delay: TimeInterval, _ action: @escaping @MainActor () -> Void) -> () -> Void {
+        let timer = Timer(timeInterval: delay, repeats: false) { _ in
+            MainActor.assumeIsolated { action() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        return { timer.invalidate() }
     }
 
     var isTracking: Bool { !touches.isEmpty }
@@ -56,8 +82,7 @@ final class TrackpadGestureTracker {
     /// Forgets the sequence, releasing a drag's button on the way: the
     /// button must not outlive the finger that held it.
     func reset() {
-        longPressTimer?.invalidate()
-        longPressTimer = nil
+        disarmLongPress()
         if isDragging {
             isDragging = false
             target()?.setLaptopButton(.left, pressed: false)
@@ -67,35 +92,53 @@ final class TrackpadGestureTracker {
         travel = 0
     }
 
+    // MARK: - UIKit touches
+
     func began(_ touch: UITouch, in view: UIView) {
-        if touches.isEmpty {
-            reset()
-            startTime = touch.timestamp
-            lastTime = touch.timestamp
-        }
-        touches[ObjectIdentifier(touch)] = touch.location(in: view)
-        maximumTouches = max(maximumTouches, touches.count)
-        if touches.count == 1 {
-            armLongPress()
-        } else {
-            longPressTimer?.invalidate()
-            longPressTimer = nil
-        }
+        began(Self.sample(touch, in: view))
     }
 
     func moved(_ moved: [UITouch], in view: UIView) {
+        self.moved(moved.map { Self.sample($0, in: view) })
+    }
+
+    func ended(_ touch: UITouch, cancelled: Bool) {
+        ended(id: ObjectIdentifier(touch), at: touch.timestamp, cancelled: cancelled)
+    }
+
+    private static func sample(_ touch: UITouch, in view: UIView) -> Sample {
+        Sample(id: ObjectIdentifier(touch), location: touch.location(in: view), timestamp: touch.timestamp)
+    }
+
+    // MARK: - Gesture
+
+    func began(_ sample: Sample) {
+        if touches.isEmpty {
+            reset()
+            startTime = sample.timestamp
+            lastTime = sample.timestamp
+        }
+        touches[sample.id] = sample.location
+        maximumTouches = max(maximumTouches, touches.count)
+        if touches.count == 1 {
+            disarmLongPress()
+            cancelLongPress = schedule(Self.dragHold) { [weak self] in self?.beginDrag() }
+        } else {
+            disarmLongPress()
+        }
+    }
+
+    func moved(_ samples: [Sample]) {
         var sum = CGPoint.zero
         var count = 0
         var timestamp = lastTime
-        for touch in moved {
-            let id = ObjectIdentifier(touch)
-            guard let previous = touches[id] else { continue }
-            let location = touch.location(in: view)
-            sum.x += location.x - previous.x
-            sum.y += location.y - previous.y
-            touches[id] = location
+        for sample in samples {
+            guard let previous = touches[sample.id] else { continue }
+            sum.x += sample.location.x - previous.x
+            sum.y += sample.location.y - previous.y
+            touches[sample.id] = sample.location
             count += 1
-            timestamp = max(timestamp, touch.timestamp)
+            timestamp = max(timestamp, sample.timestamp)
         }
         guard count > 0 else { return }
         let delta = CGPoint(x: sum.x / CGFloat(count), y: sum.y / CGFloat(count))
@@ -103,8 +146,7 @@ final class TrackpadGestureTracker {
         let elapsed = max(timestamp - lastTime, 1.0 / 240)
         lastTime = timestamp
         if travel >= Self.tapTravel, !isDragging {
-            longPressTimer?.invalidate()
-            longPressTimer = nil
+            disarmLongPress()
         }
 
         guard isEnabled, let target = target() else { return }
@@ -118,13 +160,13 @@ final class TrackpadGestureTracker {
         }
     }
 
-    func ended(_ touch: UITouch, cancelled: Bool) {
-        guard touches.removeValue(forKey: ObjectIdentifier(touch)) != nil else { return }
+    func ended(id: ObjectIdentifier, at timestamp: TimeInterval, cancelled: Bool) {
+        guard touches.removeValue(forKey: id) != nil else { return }
         guard touches.isEmpty else { return }
         let wasTap = !cancelled
             && !isDragging
             && travel < Self.tapTravel
-            && touch.timestamp - startTime < Self.tapDuration
+            && timestamp - startTime < Self.tapDuration
         if wasTap, isEnabled {
             haptics.impactOccurred()
             target()?.clickRemote(maximumTouches >= 2 ? .right : .left)
@@ -132,17 +174,13 @@ final class TrackpadGestureTracker {
         reset()
     }
 
-    private func armLongPress() {
-        longPressTimer?.invalidate()
-        let timer = Timer(timeInterval: Self.dragHold, repeats: false) { _ in
-            MainActor.assumeIsolated { [weak self] in self?.beginDrag() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        longPressTimer = timer
+    private func disarmLongPress() {
+        cancelLongPress?()
+        cancelLongPress = nil
     }
 
     private func beginDrag() {
-        longPressTimer = nil
+        cancelLongPress = nil
         guard isEnabled, touches.count == 1, travel < Self.tapTravel, !isDragging else { return }
         isDragging = true
         haptics.impactOccurred(intensity: 1)
