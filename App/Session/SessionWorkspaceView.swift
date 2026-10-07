@@ -45,6 +45,13 @@ struct SessionWorkspaceView: View {
         // text and the floating menu have to stay individually reachable.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("session-workspace")
+        #if DEBUG
+        // What the input gate is made of, for UI tests that drive a live host.
+        .accessibilityValue(
+            "state=\(model.state) focused=\(model.isFocused) menu=\(model.isMenuPresented) "
+                + "phase=\(scenePhase) accepts=\(model.acceptsInput)"
+        )
+        #endif
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         // Only the presented session raises its challenge here; one waiting in

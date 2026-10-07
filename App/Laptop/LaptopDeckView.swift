@@ -71,6 +71,7 @@ final class LaptopDeckView: UIView {
         backgroundColor = UIColor(white: 0.09, alpha: 1)
         isMultipleTouchEnabled = true
         accessibilityIdentifier = "laptop-deck"
+        applyInputEnabledAppearance()
         buildKeys()
 
         pad.backgroundColor = UIColor(white: 0.15, alpha: 1)
@@ -137,7 +138,14 @@ final class LaptopDeckView: UIView {
         isInputEnabled = enabled
         padTracker.setEnabled(enabled)
         if !enabled { releaseEverything() }
-        alpha = enabled ? 1 : 0.6
+        applyInputEnabledAppearance()
+    }
+
+    /// Dimmed while closed, from the start: the deck begins closed, and a
+    /// deck that looks live but ignores every key is the worst of both.
+    private func applyInputEnabledAppearance() {
+        alpha = isInputEnabled ? 1 : 0.6
+        accessibilityValue = isInputEnabled ? "入力可" : "入力不可"
     }
 
     func releaseEverything() {
