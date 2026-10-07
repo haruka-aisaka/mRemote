@@ -137,6 +137,10 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     private var directTouchesDriveTrackpad = false
     private lazy var directTrackpad = TrackpadGestureTracker { [weak self] in self }
     private var viewportPan: UIPanGestureRecognizer?
+    /// The size, in points, to ask the server for instead of this view's own:
+    /// the whole screen while the laptop deck takes part of it and the user
+    /// would rather keep the resolution and draw it smaller.
+    private var renderSizeOverride: CGSize?
     private var viewportDoubleTap: UITapGestureRecognizer?
     /// False until the surface is configured, so nothing is delivered before
     /// the workspace has said whether the session can carry it.
@@ -367,10 +371,21 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     override func layoutSubviews() {
         super.layoutSubviews()
         updateTransform()
+        reportRenderSize()
+    }
+
+    func setRenderSizeOverride(_ size: CGSize?) {
+        guard size != renderSizeOverride else { return }
+        renderSizeOverride = size
+        reportRenderSize()
+    }
+
+    private func reportRenderSize() {
         let scale = window?.screen.scale ?? contentScaleFactor
+        let size = renderSizeOverride ?? bounds.size
         onRenderSizeChange?(
-            Int((bounds.width * scale).rounded()),
-            Int((bounds.height * scale).rounded())
+            Int((size.width * scale).rounded()),
+            Int((size.height * scale).rounded())
         )
     }
 

@@ -61,6 +61,7 @@ struct RDPNativeConnection: Sendable {
     let desktopHeight: UInt32
     let keyboardProfile: mr_rdp_keyboard_profile
     let channelFlags: mr_rdp_channel_flags
+    let displayScale: RemoteDisplayScale
 }
 
 /// One already-classified event from the native session, delivered in order.
@@ -220,8 +221,13 @@ final class RDPNativeSession: @unchecked Sendable {
         context.sendKey(&event)
     }
 
-    func requestDisplayResize(requestID: UInt64, width: UInt32, height: UInt32) -> Bool {
-        context.requestDisplayResize(requestID: requestID, width: width, height: height)
+    func requestDisplayResize(
+        requestID: UInt64,
+        width: UInt32,
+        height: UInt32,
+        scale: RemoteDisplayScale
+    ) -> Bool {
+        context.requestDisplayResize(requestID: requestID, width: width, height: height, scale: scale)
     }
 
     /// Remembered and replayed once the handle exists, so a session focused
@@ -270,6 +276,8 @@ final class RDPNativeSession: @unchecked Sendable {
         config.desktop_height = connection.desktopHeight
         config.keyboard_profile = connection.keyboardProfile
         config.channel_flags = connection.channelFlags
+        config.desktop_scale_factor = UInt32(connection.displayScale.desktopPercent)
+        config.device_scale_factor = UInt32(connection.displayScale.devicePercent)
         config.username_length = connection.username.utf8.count
         config.domain_length = connection.domain.utf8.count
 
@@ -421,12 +429,19 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
         _ = calls.sendKey(&event)
     }
 
-    func requestDisplayResize(requestID: UInt64, width: UInt32, height: UInt32) -> Bool {
+    func requestDisplayResize(
+        requestID: UInt64,
+        width: UInt32,
+        height: UInt32,
+        scale: RemoteDisplayScale
+    ) -> Bool {
         var request = mr_rdp_display_resize_request()
         mr_rdp_display_resize_request_init(&request)
         request.request_id = requestID
         request.width = width
         request.height = height
+        request.desktop_scale_factor = UInt32(scale.desktopPercent)
+        request.device_scale_factor = UInt32(scale.devicePercent)
         return calls.requestDisplayResize(&request) == mr_rdp_status(MR_RDP_STATUS_OK)
     }
 

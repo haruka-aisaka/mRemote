@@ -29,4 +29,13 @@ public protocol DesktopSession: RemoteSession {
     /// session drops the request when the display channel is absent rather
     /// than reporting an error, because a server without it is not broken.
     func requestDesktopSize(width: Int, height: Int) async
+
+    /// How large the server should draw. Applied with the next layout the
+    /// session can send - which it sends at once if only the scale changed.
+    func setDisplayScale(_ scale: RemoteDisplayScale) async
+}
+
+extension DesktopSession {
+    /// A session that cannot tell its server how large to draw ignores it.
+    public func setDisplayScale(_ scale: RemoteDisplayScale) async {}
 }

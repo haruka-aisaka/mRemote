@@ -363,6 +363,17 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         }
     }
 
+    @ObservationIgnored private var displayScale: RemoteDisplayScale?
+
+    /// How large Windows should draw. Resolved by the view, which knows the
+    /// screen; the session sends it with the next layout, or at once.
+    func setDisplayScale(_ scale: RemoteDisplayScale) {
+        guard scale != displayScale else { return }
+        displayScale = scale
+        guard let desktop else { return }
+        Task { await desktop.setDisplayScale(scale) }
+    }
+
     func desktopSizeChanged(width: Int, height: Int) {
         desktopSize = (width, height)
     }

@@ -16,6 +16,10 @@ struct SessionMenuSheet: View {
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
+    @AppStorage(RemoteScalePreference.storageKey)
+    private var scalePreference = RemoteScalePreference.automatic
+    @AppStorage(FoldResolutionPolicy.storageKey)
+    private var foldPolicy = FoldResolutionPolicy.resizeToFit
     @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
 
     var body: some View {
@@ -95,6 +99,20 @@ struct SessionMenuSheet: View {
                         Text("100%").tag(InitialScale.oneToOne)
                     }
                     .accessibilityIdentifier("session-scale-picker")
+                    // Windows' own Scale, sent with the display layout: what
+                    // makes text on a phone-sized desktop readable.
+                    Picker("Windows の拡大率", selection: $scalePreference) {
+                        Text("自動（端末に合わせる）").tag(RemoteScalePreference.automatic)
+                        ForEach(RemoteDisplayScale.choices, id: \.self) { percent in
+                            Text("\(percent)%").tag(RemoteScalePreference.fixed(percent))
+                        }
+                    }
+                    .accessibilityIdentifier("session-remote-scale-picker")
+                    Picker("折り曲げたときの解像度", selection: $foldPolicy) {
+                        Text("画面に合わせて変える").tag(FoldResolutionPolicy.resizeToFit)
+                        Text("変えずに縮小表示").tag(FoldResolutionPolicy.keepAndScale)
+                    }
+                    .accessibilityIdentifier("session-fold-resolution-picker")
                     if let size = model.desktopSizeText {
                         LabeledContent(
                             "リモート解像度",

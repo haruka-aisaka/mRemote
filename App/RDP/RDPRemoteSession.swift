@@ -69,6 +69,10 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     private static let resizeVerifyDelay = Duration.seconds(2)
     private static let maximumResizeAttempts = 4
     private var resizeAttempts = 0
+    /// How large the server should draw. Sent at connect and with every
+    /// layout; a change on its own is a reason to send one.
+    private var displayScale = RemoteDisplayScale.unscaled
+    private var displayScaleIsPending = false
 
     private(set) var remoteHasText = false
     private var nextClipboardID: UInt64 = 0
@@ -249,17 +253,28 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         sendDesiredDesktopSize()
     }
 
+    func setDisplayScale(_ scale: RemoteDisplayScale) async {
+        guard scale != displayScale else { return }
+        displayScale = scale
+        displayScaleIsPending = true
+        resizeAttempts = 0
+        sendDesiredDesktopSize()
+    }
+
     private func sendDesiredDesktopSize() {
-        guard let (width, height) = desiredDesktopSize,
-              machine.state == .connected, supportsDynamicResolution else { return }
+        guard machine.state == .connected, supportsDynamicResolution else { return }
+        // A scale change alone re-sends the size the desktop already has.
+        let current = frameStore.desktopSize ?? currentDesktopSize
+        let (width, height) = desiredDesktopSize ?? current
         // The bridge refuses an odd width because FreeRDP 3.31.1 would round
         // it silently and then disagree with us about the surface size.
         let clampedWidth = Self.clampDimension(width, roundToEven: true)
         let clampedHeight = Self.clampDimension(height, roundToEven: false)
         // Measured against the frames, not against the last request: the
         // request's echo says only that it was sent.
-        let actual = frameStore.desktopSize ?? currentDesktopSize
-        guard clampedWidth != actual.width || clampedHeight != actual.height else {
+        let actual = current
+        guard clampedWidth != actual.width || clampedHeight != actual.height
+                || displayScaleIsPending else {
             resizeAttempts = 0
             return
         }
@@ -274,10 +289,15 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         let accepted = native?.requestDisplayResize(
             requestID: nextResizeRequestID,
             width: UInt32(clampedWidth),
-            height: UInt32(clampedHeight)
+            height: UInt32(clampedHeight),
+            scale: displayScale
         ) ?? false
+        // The scale cannot be read back from the frames, so it counts as
+        // delivered once the backend has taken the layout.
+        if accepted { displayScaleIsPending = false }
         logger.session(
-            "disp resize \(clampedWidth)x\(clampedHeight) accepted=\(accepted) attempt=\(resizeAttempts)"
+            "disp resize \(clampedWidth)x\(clampedHeight) scale=\(displayScale.desktopPercent)% "
+                + "accepted=\(accepted) attempt=\(resizeAttempts)"
         )
         Task { [weak self] in
             try? await Task.sleep(for: Self.resizeVerifyDelay)
@@ -439,8 +459,11 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             desktopWidth: UInt32(initialDesktopSize.width),
             desktopHeight: UInt32(initialDesktopSize.height),
             keyboardProfile: Self.keyboardProfile(for: configuration.keyboardLayout),
-            channelFlags: Self.channelFlags(for: configuration)
+            channelFlags: Self.channelFlags(for: configuration),
+            displayScale: displayScale
         ))
+        // The connection carries it; nothing is owed until it changes.
+        displayScaleIsPending = false
     }
 
     /// The credential this attempt runs with, or nil when the user has to be

@@ -8,6 +8,11 @@ import SessionCore
 struct SessionWorkspaceView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.displayScale) private var screenScale
+    @AppStorage(RemoteScalePreference.storageKey)
+    private var scalePreference = RemoteScalePreference.automatic
+    @AppStorage(FoldResolutionPolicy.storageKey)
+    private var foldPolicy = FoldResolutionPolicy.resizeToFit
     @Bindable var model: SessionWorkspaceModel
     @State private var toastText: String?
     @State private var hingePosture: HingePosture = .unavailable
@@ -35,6 +40,9 @@ struct SessionWorkspaceView: View {
             privacyCover
         }
         .onAppear { showToast() }
+        .onChange(of: scalePreference.resolved(screenScale: screenScale), initial: true) { _, scale in
+            model.setDisplayScale(scale)
+        }
         .onChange(of: model.clipboardMessage) { _, message in
             guard let message else { return }
             withAnimation { toastText = message }
@@ -108,7 +116,12 @@ struct SessionWorkspaceView: View {
         )
         VStack(spacing: 0) {
             ZStack {
-                desktop(touchesDriveTrackpad: showsDeck && !deckArrangement.hasTrackpad)
+                desktop(
+                    touchesDriveTrackpad: showsDeck && !deckArrangement.hasTrackpad,
+                    // Keeping the resolution means asking for the whole screen
+                    // while only part of it is the desktop.
+                    renderSizeOverride: showsDeck && foldPolicy == .keepAndScale ? size : nil
+                )
                 if !model.showsDesktop {
                     status
                 }
@@ -137,7 +150,7 @@ struct SessionWorkspaceView: View {
     }
 
     @ViewBuilder
-    private func desktop(touchesDriveTrackpad: Bool) -> some View {
+    private func desktop(touchesDriveTrackpad: Bool, renderSizeOverride: CGSize?) -> some View {
         if let frameStore = model.frameStore {
             RemoteDesktopSurface(
                 frameStore: frameStore,
@@ -147,6 +160,7 @@ struct SessionWorkspaceView: View {
                 scrollDirection: model.runtime.scrollDirection,
                 laptopChannel: laptopChannel,
                 directTouchesDriveTrackpad: touchesDriveTrackpad,
+                renderSizeOverride: renderSizeOverride,
                 // Input is gated on both halves of docs/architecture.md
                 // section 10: the session must be able to deliver it, and the
                 // scene must be the one the user is looking at.
