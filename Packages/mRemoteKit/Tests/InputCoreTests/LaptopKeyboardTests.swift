@@ -85,6 +85,20 @@ final class LaptopKeyboardTests: XCTestCase {
         XCTAssertFalse(Set(LaptopKeyboardLayout(.us).keys.map(\.id)).contains("kana"))
     }
 
+    func testTheJISArrowsFormAnInvertedT() {
+        let rows = LaptopKeyboardLayout(.japanese).rows
+        func start(of id: String, in row: LaptopKeyboardRow) -> Double? {
+            var x = 0.0
+            for key in row.keys {
+                if key.id == id { return x }
+                x += key.width
+            }
+            return nil
+        }
+        XCTAssertEqual(start(of: "up", in: rows[4]), start(of: "down", in: rows[5]))
+        XCTAssertEqual(rows[4].keys.last?.id, "shift-right")
+    }
+
     func testIMEKeysDoNotRepeat() {
         XCTAssertFalse(key("zenkaku").repeats)
         XCTAssertFalse(key("convert").repeats)

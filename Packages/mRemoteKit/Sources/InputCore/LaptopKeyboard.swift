@@ -206,8 +206,10 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
                     key("period", ".", 0x37, shifted: ">"),
                     key("slash", "/", 0x38, shifted: "?"),
                     key("ro", "\\", 0x87, shifted: "_"),
-                    modifier("shift-right", "Shift", .shift, width: 1),
+                    // ↑ over ↓ rather than over →: the arrows make an
+                    // inverted T, as on most laptops.
                     key("up", "↑", 0x52),
+                    modifier("shift-right", "Shift", .shift, width: 1),
                 ]
         ),
         LaptopKeyboardRow(
