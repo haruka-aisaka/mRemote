@@ -91,7 +91,7 @@ final class LaptopKeyboardTests: XCTestCase {
 
     func testTheJapaneseLayoutHasTheIMEKeys() {
         let ids = Set(LaptopKeyboardLayout(.japanese).keys.map(\.id))
-        XCTAssertTrue(ids.isSuperset(of: ["zenkaku", "eisu", "nonconvert", "convert", "kana", "ro", "yen"]))
+        XCTAssertTrue(ids.isSuperset(of: ["zenkaku", "capslock", "nonconvert", "convert", "kana", "ro", "yen"]))
         XCTAssertFalse(Set(LaptopKeyboardLayout(.us).keys.map(\.id)).contains("kana"))
     }
 
@@ -150,7 +150,7 @@ final class LaptopKeyboardTests: XCTestCase {
     }
 
     func testTheMacCapsLockKeyTakesTheRoleMacOSWasGiven() {
-        let expected: [MacCapsLockRole: LaptopKey.Kind] = [
+        let expected: [CapsLockRole: LaptopKey.Kind] = [
             .capsLock: .key(0x39),
             .control: .modifier(.control),
             .option: .modifier(.alt),
@@ -159,7 +159,7 @@ final class LaptopKeyboardTests: XCTestCase {
             .noAction: .inert,
         ]
         for preference in [KeyboardLayoutPreference.japanese, .us] {
-            for role in MacCapsLockRole.allCases {
+            for role in CapsLockRole.allCases {
                 let layout = LaptopKeyboardLayout(preference, platform: .mac, capsLockRole: role)
                 let caps = layout.keys.first { $0.id == "capslock" }
                 XCTAssertEqual(caps?.kind, expected[role], "\(preference) \(role)")
@@ -170,11 +170,19 @@ final class LaptopKeyboardTests: XCTestCase {
                 )
             }
         }
-        XCTAssertEqual(
-            LaptopKeyboardLayout(.japanese, capsLockRole: .control),
-            LaptopKeyboardLayout(.japanese),
-            "Windows has no Mac Caps Lock to change"
-        )
+    }
+
+    func testTheWindowsCapsKeyIsCapsLockAndCanBecomeControl() {
+        for preference in [KeyboardLayoutPreference.japanese, .us] {
+            let caps = LaptopKeyboardLayout(preference).keys.first { $0.id == "capslock" }
+            XCTAssertEqual(caps?.kind, .key(0x39), "\(preference)")
+            XCTAssertEqual(caps?.label, "Caps", "\(preference)")
+            let control = LaptopKeyboardLayout(preference, capsLockRole: .control)
+                .keys.first { $0.id == "capslock" }
+            XCTAssertEqual(control?.kind, .modifier(.control), "\(preference)")
+            XCTAssertEqual(control?.label, "Ctrl", "\(preference)")
+        }
+        XCTAssertEqual(CapsLockRole.windowsRoles, [.capsLock, .control])
     }
 
     func testANoActionKeySendsNothingAndDoesNotLatch() {

@@ -99,10 +99,12 @@ public enum LaptopKeyboardPlatform: String, Hashable, Sendable, CaseIterable {
     case mac
 }
 
-/// What a Mac's Caps Lock key does. macOS lets the user give it another
-/// modifier's job, or none, in Keyboard > Modifier Keys; the deck offers the
-/// same so its picture matches the Mac it is pretending to be.
-public enum MacCapsLockRole: String, Hashable, Sendable, CaseIterable {
+/// What the Caps Lock key does.
+///
+/// macOS lets the user give it another modifier's job, or none, in Keyboard
+/// > Modifier Keys, and on Windows it is commonly remapped to Control; the
+/// deck offers the same so it behaves like the keyboard the user is used to.
+public enum CapsLockRole: String, Hashable, Sendable, CaseIterable {
     case capsLock
     case control
     case option
@@ -110,21 +112,26 @@ public enum MacCapsLockRole: String, Hashable, Sendable, CaseIterable {
     case escape
     case noAction
 
-    fileprivate func key(width: Double) -> LaptopKey {
+    /// The roles worth offering on a Windows host; the rest are Mac habits.
+    public static let windowsRoles: [CapsLockRole] = [.capsLock, .control]
+
+    fileprivate func key(width: Double, platform: LaptopKeyboardPlatform) -> LaptopKey {
         let id = "capslock"
+        let mac = platform == .mac
         switch self {
         case .capsLock:
-            return LaptopKey(id: id, label: width > 1.5 ? "caps lock" : "caps", kind: .key(0x39), width: width)
+            let label = mac ? (width > 1.5 ? "caps lock" : "caps") : "Caps"
+            return LaptopKey(id: id, label: label, kind: .key(0x39), width: width)
         case .control:
-            return LaptopKey(id: id, label: "control", kind: .modifier(.control), width: width)
+            return LaptopKey(id: id, label: mac ? "control" : "Ctrl", kind: .modifier(.control), width: width)
         case .option:
-            return LaptopKey(id: id, label: "⌥", kind: .modifier(.alt), width: width)
+            return LaptopKey(id: id, label: mac ? "⌥" : "Alt", kind: .modifier(.alt), width: width)
         case .command:
-            return LaptopKey(id: id, label: "⌘", kind: .modifier(.windows), width: width)
+            return LaptopKey(id: id, label: mac ? "⌘" : "Win", kind: .modifier(.windows), width: width)
         case .escape:
-            return LaptopKey(id: id, label: "esc", kind: .key(0x29), width: width)
+            return LaptopKey(id: id, label: mac ? "esc" : "Esc", kind: .key(0x29), width: width)
         case .noAction:
-            return LaptopKey(id: id, label: "caps", kind: .inert, width: width)
+            return LaptopKey(id: id, label: mac ? "caps" : "Caps", kind: .inert, width: width)
         }
     }
 }
@@ -139,26 +146,28 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
 
     public let rows: [LaptopKeyboardRow]
 
-    /// - Parameter capsLockRole: what the Mac layouts' Caps Lock key does.
-    ///   Ignored for Windows, whose Caps Lock position is 英数 on JIS.
+    /// - Parameter capsLockRole: what the Caps Lock key does.
     public init(
         _ layout: KeyboardLayoutPreference,
         platform: LaptopKeyboardPlatform = .windows,
-        capsLockRole: MacCapsLockRole = .capsLock
+        capsLockRole: CapsLockRole = .capsLock
     ) {
         // Automatic draws US, as `ASCIIKeystrokeMapper` assumes it.
         let isJapanese = layout == .japanese
+        let base: [LaptopKeyboardRow]
         switch platform {
         case .windows:
-            rows = [Self.functionRow] + (isJapanese ? Self.japaneseRows : Self.usRows)
+            base = [Self.functionRow] + (isJapanese ? Self.japaneseRows : Self.usRows)
         case .mac:
-            let middle = isJapanese ? Self.macJapaneseRows : Self.macUSRows
-            rows = [Self.macFunctionRow] + middle.map { row in
-                LaptopKeyboardRow(
-                    row.keys.map { $0.id == "capslock" ? capsLockRole.key(width: $0.width) : $0 },
-                    height: row.height
-                )
-            }
+            base = [Self.macFunctionRow] + (isJapanese ? Self.macJapaneseRows : Self.macUSRows)
+        }
+        rows = base.map { row in
+            LaptopKeyboardRow(
+                row.keys.map {
+                    $0.id == "capslock" ? capsLockRole.key(width: $0.width, platform: platform) : $0
+                },
+                height: row.height
+            )
         }
     }
 
@@ -275,7 +284,9 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
                 ]
         ),
         LaptopKeyboardRow(
-            [key("eisu", "英数", 0x39, width: 1.75)]
+            // 英数 is printed on this key too, and unshifted it does toggle
+            // the Japanese IME; what it is, though, is Caps Lock.
+            [key("capslock", "Caps", 0x39, width: 1.75)]
                 + letters("ASDFGHJKL")
                 + [
                     key("semicolon", ";", 0x33, shifted: "+"),

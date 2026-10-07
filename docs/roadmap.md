@@ -298,7 +298,7 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 | 実際に折り曲げたときの自動切替 | 確認済み（2026-10-07、シミュレータ）。縦向き + Partially Open で自動表示、Open で全画面に戻り、横向き + Partially Open では出ない |
 | 実ホストでのキー・ポインター | 確認済み（2026-10-07、Windows 11 Pro ARM64 VM、シミュレータ）。Win+R、英字と Shift の one-shot、Ctrl+N、半/全 → ローマ字 → 変換 → 確定、トラックパッドの移動・カーソル描画・タップで左クリック・右ボタン・長押しドラッグ、キーボードのみでの画面トラックパッド（カーソル位置でクリック）。2 本指タップとスクロールは XCUITest で合成できず **未確認** |
 
-| Mac 配列（JIS / US） | 準備のみ。`LaptopKeyboardPlatform.mac` で Magic Keyboard（テンキー無し）相当の配列を出せる。⌘ は GUI（Win）、⌥ は Alt、英数/かな は LANG2/LANG1 として送る。fn は送れる usage が無いため置かず、前方削除を最上段に置く。矢印は逆 T 字。UI からは選べず、Windows ホストでは常に Windows 配列（`LaptopDeck` の `platform` 既定値）。Mac ホスト（画面共有/VNC 等）のセッションができたら渡す。左下の Caps キーは macOS の「修飾キー」設定と同じく `MacCapsLockRole`（Caps Lock / control / option / command / escape / 何もしない）で役割を変えられる（Mac JIS / US とも。UI 未接続） |
+| Mac 配列（JIS / US） | 準備のみ。`LaptopKeyboardPlatform.mac` で Magic Keyboard（テンキー無し）相当の配列を出せる。⌘ は GUI（Win）、⌥ は Alt、英数/かな は LANG2/LANG1 として送る。fn は送れる usage が無いため置かず、前方削除を最上段に置く。矢印は逆 T 字。UI からは選べず、Windows ホストでは常に Windows 配列（`LaptopDeck` の `platform` 既定値）。Mac ホスト（画面共有/VNC 等）のセッションができたら渡す。左下の Caps キーは macOS の「修飾キー」設定と同じく `CapsLockRole`（Caps Lock / control / option / command / escape / 何もしない）で役割を変えられる（Mac JIS / US とも。UI 未接続。Windows 配列でも同じ仕組みで、メニューから Caps Lock / Ctrl を選べる） |
 
 実ホスト接続で見つけて直したもの（Phase 2 からの不具合）:
 

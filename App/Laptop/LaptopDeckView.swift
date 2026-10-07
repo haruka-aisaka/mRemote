@@ -27,6 +27,22 @@ enum LaptopDeckArrangement: String, CaseIterable {
     static let storageKey = "laptop-deck-arrangement"
 }
 
+extension CapsLockRole {
+    static let storageKey = "laptop-caps-lock-role"
+
+    /// For the menu, in the host's words.
+    var title: String {
+        switch self {
+        case .capsLock: return "Caps Lock"
+        case .control: return "Ctrl"
+        case .option: return "Option"
+        case .command: return "Command"
+        case .escape: return "Esc"
+        case .noAction: return "何もしない"
+        }
+    }
+}
+
 /// The lower half of a foldable in laptop posture: a PC keyboard and a
 /// trackpad with two buttons, in one view.
 ///
@@ -586,13 +602,12 @@ private final class KeyCapView: UIView {
 /// Puts the deck in SwiftUI and keeps it told about the gate and the layout.
 struct LaptopDeck: UIViewRepresentable {
     let layout: KeyboardLayoutPreference
-    /// Only Windows hosts exist today; a Mac host's session will pass `.mac`.
-    var platform: LaptopKeyboardPlatform = .windows
-    /// Mac layouts only; mirrors macOS's Modifier Keys setting.
-    var capsLockRole: MacCapsLockRole = .capsLock
     let arrangement: LaptopDeckArrangement
     let channel: LaptopDeckChannel
     let isInputEnabled: Bool
+    var capsLockRole: CapsLockRole = .capsLock
+    /// Only Windows hosts exist today; a Mac host's session will pass `.mac`.
+    var platform: LaptopKeyboardPlatform = .windows
 
     func makeUIView(context: Context) -> LaptopDeckView {
         let view = LaptopDeckView(

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import InputCore
 import SessionCore
 
 /// The floating button's menu (docs/ui-flow.md section 6.1).
@@ -14,6 +15,7 @@ struct SessionMenuSheet: View {
     @State private var confirmingDisconnect = false
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
+    @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
 
     var body: some View {
         NavigationStack {
@@ -128,6 +130,13 @@ struct SessionMenuSheet: View {
                     }
                     .disabled(model.laptopDeckPreference == .never)
                     .accessibilityIdentifier("session-laptop-deck-arrangement")
+                    Picker("Caps キー", selection: $capsLockRole) {
+                        ForEach(CapsLockRole.windowsRoles, id: \.self) { role in
+                            Text(role.title).tag(role)
+                        }
+                    }
+                    .disabled(model.laptopDeckPreference == .never)
+                    .accessibilityIdentifier("session-laptop-caps-role")
                 }
 
                 if model.clipboardPolicy != .disabled {

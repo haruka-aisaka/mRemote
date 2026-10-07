@@ -1,4 +1,5 @@
 import SwiftUI
+import InputCore
 import SessionCore
 
 /// Full screen, with one floating button. docs/ui-flow.md keeps the remote
@@ -13,6 +14,7 @@ struct SessionWorkspaceView: View {
     @State private var laptopChannel = LaptopDeckChannel()
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
+    @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
 
     var body: some View {
         ZStack {
@@ -119,7 +121,8 @@ struct SessionWorkspaceView: View {
                     layout: model.configuration.keyboardLayout,
                     arrangement: deckArrangement,
                     channel: laptopChannel,
-                    isInputEnabled: model.acceptsInput && scenePhase == .active
+                    isInputEnabled: model.acceptsInput && scenePhase == .active,
+                    capsLockRole: capsLockRole
                 )
                 .transition(.move(edge: .bottom))
             }
