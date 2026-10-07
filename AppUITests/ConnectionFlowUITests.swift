@@ -17,6 +17,17 @@ final class ConnectionFlowUITests: XCTestCase {
     /// plain element, and that changes between OS versions. Matching on the
     /// identifier across every type keeps the test about the flow rather than
     /// about SwiftUI's current accessibility shape.
+    /// Scrolls the session menu until `target` can be tapped. The drag
+    /// starts in the sheet's left margin: one through the middle can land on
+    /// a picker, which takes it as a press instead of a scroll.
+    private func scrollMenu(to target: XCUIElement) {
+        let menu = element("session-menu")
+        for _ in 0..<8 where !(target.exists && target.isHittable) {
+            menu.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.8))
+                .press(forDuration: 0.05, thenDragTo: menu.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.3)))
+        }
+    }
+
     private func element(_ identifier: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
@@ -114,6 +125,24 @@ final class ConnectionFlowUITests: XCTestCase {
         )
     }
 
+    /// Any device can put the PC keyboard on screen from the menu's action
+    /// list, and take it away again, without hunting for the picker.
+    func testTheMenuShowsAndHidesThePCKeyboard() {
+        element("profile-row-テスト接続先").tap()
+        _ = assertAppears("session-workspace", "connecting presents the workspace")
+
+        element("session-menu-button").tap()
+        _ = assertAppears("session-menu", "the floating menu opens")
+        element("session-toggle-laptop-deck").tap()
+        _ = assertAppears("laptop-deck", "the deck takes the lower half")
+        XCTAssertTrue(element("laptop-key-a").exists)
+
+        element("session-menu-button").tap()
+        _ = assertAppears("session-menu", "the floating menu opens again")
+        element("session-toggle-laptop-deck").tap()
+        XCTAssertTrue(element("laptop-deck").waitForNonExistence(timeout: 5), "hiding takes it away")
+    }
+
     /// The laptop deck can be forced on from the menu, which is how it is
     /// reached on a device - or a Simulator - that is not folded.
     func testTheLaptopDeckCanBeShownFromTheMenu() {
@@ -126,9 +155,7 @@ final class ConnectionFlowUITests: XCTestCase {
         _ = assertAppears("session-menu", "the floating menu opens")
         let picker = element("session-laptop-deck-picker")
         // The input section sits below the sheet's medium detent.
-        for _ in 0..<6 where !(picker.exists && picker.isHittable) {
-            element("session-menu").swipeUp()
-        }
+        scrollMenu(to: picker)
         XCTAssertTrue(picker.isHittable, "the menu offers the deck\n\(app.debugDescription)")
         picker.tap()
         let always = app.buttons["常に表示"].firstMatch
@@ -150,9 +177,7 @@ final class ConnectionFlowUITests: XCTestCase {
         // Keyboard only: the pad and its buttons go, the keys stay.
         element("session-menu-button").tap()
         let arrangement = element("session-laptop-deck-arrangement")
-        for _ in 0..<6 where !(arrangement.exists && arrangement.isHittable) {
-            element("session-menu").swipeUp()
-        }
+        scrollMenu(to: arrangement)
         arrangement.tap()
         let keyboardOnly = app.buttons["キーボードのみ（画面を触って操作）"].firstMatch
         XCTAssertTrue(keyboardOnly.waitForExistence(timeout: 5), "the arrangement picker lists its options")
@@ -164,9 +189,7 @@ final class ConnectionFlowUITests: XCTestCase {
 
         // Put the stored arrangement back for the next run.
         element("session-menu-button").tap()
-        for _ in 0..<6 where !(arrangement.exists && arrangement.isHittable) {
-            element("session-menu").swipeUp()
-        }
+        scrollMenu(to: arrangement)
         arrangement.tap()
         app.buttons["キーボード / トラックパッド"].firstMatch.tap()
         element("session-menu-close").tap()

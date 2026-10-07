@@ -15,6 +15,19 @@ struct SessionMenuSheet: View {
     @State private var confirmingDisconnect = false
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
+    @AppStorage(TouchPointerMode.storageKey) private var touchMode = TouchPointerMode.direct
+    @AppStorage(LaptopDeckPreference.storageKey) private var deckPreference = LaptopDeckPreference.automatic
+
+    private var touchModeHint: String {
+        switch touchMode {
+        case .direct:
+            String(localized: "タップでクリック、長押しで右クリック、なぞるとドラッグ、2 本指でスクロール。ピンチで拡大し、拡大中はピンチしたまま動かすと表示が動きます。")
+        case .trackpad:
+            String(localized: "なぞるとポインターが動きます。タップでクリック、2 本指タップで右クリック、2 本指でスクロール、押さえてから動かすとドラッグ。")
+        case .viewport:
+            String(localized: "タッチは Windows へ送りません。1 本指で表示を動かし、ピンチで拡大、ダブルタップで全体表示と 100% を切り替えます。")
+        }
+    }
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
     @AppStorage(LaptopKeyboardPlatform.storageKey) private var deckPlatform = LaptopKeyboardPlatform.windows
     @AppStorage(RemoteScalePreference.storageKey)
@@ -115,6 +128,19 @@ struct SessionMenuSheet: View {
                     }
                     .disabled(!model.state.acceptsInput)
                     .accessibilityIdentifier("session-show-keyboard")
+                    // The deck is not only for a foldable: any device can put
+                    // a PC keyboard and a trackpad on the lower half.
+                    Button {
+                        deckPreference = deckPreference == .always ? .never : .always
+                        dismiss()
+                    } label: {
+                        if deckPreference == .always {
+                            Label("手元キーボードを隠す", systemImage: "keyboard.chevron.compact.down")
+                        } else {
+                            Label("手元キーボード（PC 配列）を表示", systemImage: "keyboard.chevron.compact.down")
+                        }
+                    }
+                    .accessibilityIdentifier("session-toggle-laptop-deck")
                 }
 
                 Section("表示") {
@@ -135,7 +161,7 @@ struct SessionMenuSheet: View {
                         }
                     }
                     .accessibilityIdentifier("session-remote-scale-picker")
-                    Picker("折り曲げたときの解像度", selection: $foldPolicy) {
+                    Picker("手元キーボード表示中の解像度", selection: $foldPolicy) {
                         Text("画面に合わせて変える").tag(FoldResolutionPolicy.resizeToFit)
                         Text("変えずに縮小表示").tag(FoldResolutionPolicy.keepAndScale)
                     }
@@ -149,6 +175,17 @@ struct SessionMenuSheet: View {
                 }
 
                 Section("入力") {
+                    // Kept across sessions and launches, like the deck's
+                    // arrangement: it is about the user's hands, not the host.
+                    Picker("画面のタッチ", selection: $touchMode) {
+                        Text("タッチした場所を操作").tag(TouchPointerMode.direct)
+                        Text("トラックパッドとして使う").tag(TouchPointerMode.trackpad)
+                        Text("表示の移動だけ").tag(TouchPointerMode.viewport)
+                    }
+                    .accessibilityIdentifier("session-touch-mode-picker")
+                    Text(touchModeHint)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     // Live rather than a profile edit: which way a trackpad
                     // should scroll a remote desktop is settled by trying it.
                     Picker("スクロール方向", selection: Binding(
@@ -160,9 +197,9 @@ struct SessionMenuSheet: View {
                     }
                     .accessibilityIdentifier("session-scroll-picker")
                     // 自動 is the foldable's laptop posture; the other two
-                    // let any phone use the deck, or a folded one do without.
-                    Picker("画面下半分のキーボードとトラックパッド", selection: $model.laptopDeckPreference) {
-                        Text("折り曲げたとき").tag(LaptopDeckPreference.automatic)
+                    // let any device use the deck, or a folded one do without.
+                    Picker("手元キーボード", selection: $deckPreference) {
+                        Text("折りたたみ端末を折り曲げたとき").tag(LaptopDeckPreference.automatic)
                         Text("常に表示").tag(LaptopDeckPreference.always)
                         Text("表示しない").tag(LaptopDeckPreference.never)
                     }
@@ -174,7 +211,7 @@ struct SessionMenuSheet: View {
                         Text("トラックパッド / キーボード").tag(LaptopDeckArrangement.trackpadAboveKeyboard)
                         Text("キーボードのみ（画面を触って操作）").tag(LaptopDeckArrangement.keyboardOnly)
                     }
-                    .disabled(model.laptopDeckPreference == .never)
+                    .disabled(deckPreference == .never)
                     .accessibilityIdentifier("session-laptop-deck-arrangement")
                     // Only the picture and a few keys change: Command is sent
                     // as Win and Option as Alt either way.
@@ -183,7 +220,7 @@ struct SessionMenuSheet: View {
                             Text(platform.title).tag(platform)
                         }
                     }
-                    .disabled(model.laptopDeckPreference == .never)
+                    .disabled(deckPreference == .never)
                     .accessibilityIdentifier("session-laptop-platform")
                     .onChange(of: deckPlatform) { _, platform in
                         // A Mac-only role does not carry over to a PC's keys.
@@ -196,12 +233,12 @@ struct SessionMenuSheet: View {
                             Text(role.title(on: deckPlatform)).tag(role)
                         }
                     }
-                    .disabled(model.laptopDeckPreference == .never)
+                    .disabled(deckPreference == .never)
                     .accessibilityIdentifier("session-laptop-caps-role")
                     // Without buttons: tap to click, two-finger tap for the
                     // right button, hold then move to drag.
                     Toggle("トラックパッドのクリックボタン", isOn: $showsTrackpadButtons)
-                        .disabled(model.laptopDeckPreference == .never || !deckArrangement.hasTrackpad)
+                        .disabled(deckPreference == .never || !deckArrangement.hasTrackpad)
                         .accessibilityIdentifier("session-laptop-trackpad-buttons")
                 }
 

@@ -11,12 +11,13 @@ import SessionCore
 /// coalesced signal, and this view uploads only the damaged region before
 /// presenting. Metal composites and scales; it never decodes.
 ///
-/// Two input worlds share this view and they do not overlap. An indirect
-/// pointer - a trackpad or a mouse - drives the *remote* pointer: hover moves
-/// it, a click is a button, a two-finger scroll is a wheel. Direct touches
-/// drive the *local* viewport: one finger pans, pinch zooms, a double tap
-/// switches between fit and 100%. Sharing a gesture between the two is what
-/// makes a tablet RDP client feel unpredictable, so nothing here does.
+/// An indirect pointer - a trackpad or a mouse - drives the *remote* pointer:
+/// hover moves it, a click is a button, a two-finger scroll is a wheel.
+/// What a finger does is the user's choice (`TouchPointerMode`): click and
+/// drag where it touches, move the pointer as a trackpad, or only move the
+/// *local* viewport - one finger pans, a double tap switches between fit and
+/// 100%. Pinch zooms the viewport in every mode, and is the only gesture
+/// that never reaches the host, so no gesture means two things at once.
 ///
 /// Keyboard capture is here too, and it is the reason this project exists:
 /// the view is a plain `UIView` responder that never conforms to `UIKeyInput`
@@ -32,7 +33,7 @@ import SessionCore
 /// cannot be given an arbitrary bitmap as its pointer.
 @MainActor
 final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate,
-    UIPointerInteractionDelegate, RemotePointerControl {
+    UIPointerInteractionDelegate, RemotePointerControl, DirectPointerControl {
     private static let shaderSource = """
     #include <metal_stdlib>
     using namespace metal;
@@ -116,6 +117,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     private var pan = ViewportPoint.zero
     private var panOrigin = ViewportPoint.zero
     private var zoomOrigin: Double = 1
+    private var pinchStart = CGPoint.zero
     private var hasPresentedAFrame = false
     private var pointerRouter: PointerInputRouter
     private var keyboard = KeyboardEventArbiter()
@@ -131,11 +133,15 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// the cursor where the pointer is, not where it was on screen.
     private var relativePointerPixel: PixelPoint?
     private var relativeMotion = RelativePointerMotion()
-    /// With the laptop deck showing only its keyboard, a finger on the
-    /// desktop moves the remote pointer as a trackpad would, instead of
-    /// panning the view. Pinch still zooms.
-    private var directTouchesDriveTrackpad = false
+    /// What a finger on the desktop does: click where it is, move the
+    /// pointer as a trackpad would, or only pan the view. Pinch zooms in
+    /// all three.
+    private var touchMode = TouchPointerMode.viewport
     private lazy var directTrackpad = TrackpadGestureTracker { [weak self] in self }
+    private lazy var directTouch = DirectTouchGestureTracker { [weak self] in self }
+    /// Buttons held by a finger in direct mode, kept apart from the deck's
+    /// and the trackpad's for the same reason those are kept apart.
+    private var touchButtons: Set<PointerButton> = []
     private var viewportPan: UIPanGestureRecognizer?
     /// The size, in points, to ask the server for instead of this view's own:
     /// the whole screen while the laptop deck takes part of it and the user
@@ -432,11 +438,22 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+        let location = recognizer.location(in: self)
         switch recognizer.state {
         case .began:
             zoomOrigin = zoom
+            panOrigin = pan
+            pinchStart = location
         case .changed, .ended:
             zoom = ViewportTransform.clampZoom(zoomOrigin * Double(recognizer.scale))
+            // With one finger given to the host, moving the pinch is the way
+            // left to move the view.
+            if viewportPan?.isEnabled == false, recognizer.numberOfTouches >= 2 {
+                pan = ViewportPoint(
+                    x: panOrigin.x + Double(location.x - pinchStart.x),
+                    y: panOrigin.y + Double(location.y - pinchStart.y)
+                )
+            }
             updateTransform()
             setNeedsDisplay()
         default:
@@ -494,7 +511,8 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         }
         isInputEnabled = enabled
         accessibilityValue = enabled ? String(localized: "入力可") : String(localized: "入力不可")
-        directTrackpad.setEnabled(enabled && directTouchesDriveTrackpad)
+        directTrackpad.setEnabled(enabled && touchMode == .trackpad)
+        directTouch.setEnabled(enabled && touchMode == .direct)
         if enabled {
             if let held = HardwareKeyboardMonitor.shared.physicallyHeldUsages() {
                 keyboard.reconcile(physicallyHeld: held)
@@ -523,6 +541,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     func releaseHeldButtons() {
         indirectButtons = []
         laptopButtons = []
+        touchButtons = []
         deliver(pointerRouter.releaseAll())
     }
 
@@ -584,9 +603,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // it short of leaving the session.
         captureKeyboardIfPossible()
         guard handleIndirectPointer(touches, event: event, ending: false) else {
-            if directTouchesDriveTrackpad {
-                for touch in touches where touch.type == .direct {
-                    directTrackpad.began(touch, in: self)
+            for touch in touches where touch.type == .direct {
+                switch touchMode {
+                case .trackpad: directTrackpad.began(touch, in: self)
+                case .direct: directTouch.began(touch, in: self)
+                case .viewport: break
                 }
             }
             super.touchesBegan(touches, with: event)
@@ -596,8 +617,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard handleIndirectPointer(touches, event: event, ending: false) else {
-            if directTouchesDriveTrackpad {
-                directTrackpad.moved(touches.filter { $0.type == .direct }, in: self)
+            let direct: [UITouch] = touches.filter { $0.type == .direct }
+            switch touchMode {
+            case .trackpad: directTrackpad.moved(direct, in: self)
+            case .direct: directTouch.moved(direct, in: self)
+            case .viewport: break
             }
             super.touchesMoved(touches, with: event)
             return
@@ -606,11 +630,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard handleIndirectPointer(touches, event: event, ending: true) else {
-            if directTouchesDriveTrackpad {
-                for touch in touches where touch.type == .direct {
-                    directTrackpad.ended(touch, cancelled: false)
-                }
-            }
+            touchesFinished(touches, cancelled: false)
             super.touchesEnded(touches, with: event)
             return
         }
@@ -620,11 +640,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         guard handleIndirectPointer(touches, event: event, ending: true) else {
             // A pinch taking over cancels the touches, which ends whatever the
             // trackpad thought was happening without a click.
-            if directTouchesDriveTrackpad {
-                for touch in touches where touch.type == .direct {
-                    directTrackpad.ended(touch, cancelled: true)
-                }
-            }
+            touchesFinished(touches, cancelled: true)
             super.touchesCancelled(touches, with: event)
             return
         }
@@ -675,16 +691,47 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         return buttons
     }
 
-    // MARK: - Laptop deck
+    // MARK: - Touch
 
-    func setDirectTouchesDriveTrackpad(_ enabled: Bool) {
-        guard enabled != directTouchesDriveTrackpad else { return }
-        directTouchesDriveTrackpad = enabled
-        viewportPan?.isEnabled = !enabled
-        viewportDoubleTap?.isEnabled = !enabled
-        directTrackpad.setEnabled(enabled && isInputEnabled)
-        if !enabled { directTrackpad.reset() }
+    func setTouchMode(_ mode: TouchPointerMode) {
+        guard mode != touchMode else { return }
+        touchMode = mode
+        // One finger belongs to the host in the other two modes, and a
+        // double tap is a double click there, not a change of scale.
+        viewportPan?.isEnabled = mode == .viewport
+        viewportDoubleTap?.isEnabled = mode == .viewport
+        directTrackpad.setEnabled(mode == .trackpad && isInputEnabled)
+        directTouch.setEnabled(mode == .direct && isInputEnabled)
+        if mode != .trackpad { directTrackpad.reset() }
+        if mode != .direct { directTouch.reset() }
     }
+
+    private func touchesFinished(_ touches: Set<UITouch>, cancelled: Bool) {
+        for touch in touches where touch.type == .direct {
+            switch touchMode {
+            case .trackpad: directTrackpad.ended(touch, cancelled: cancelled)
+            case .direct: directTouch.ended(touch, in: self, cancelled: cancelled)
+            case .viewport: break
+            }
+        }
+    }
+
+    func movePointer(to point: CGPoint) {
+        hoverLocation = point
+        relativePointerPixel = nil
+        positionCursorLayer()
+        deliver(pointerRouter.moved(to: viewportPoint(point)))
+    }
+
+    func setTouchButtons(_ buttons: Set<PointerButton>, at point: CGPoint) {
+        hoverLocation = point
+        relativePointerPixel = nil
+        positionCursorLayer()
+        touchButtons = buttons
+        deliver(pointerRouter.buttonsChanged(to: buttons, at: viewportPoint(point)))
+    }
+
+    // MARK: - Laptop deck
 
     /// Keys from the laptop deck's keyboard. Downs are dropped while the gate
     /// is closed; ups never are, because an up the host is owed has to arrive

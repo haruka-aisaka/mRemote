@@ -2,6 +2,19 @@ import SwiftUI
 import InputCore
 import SessionCore
 
+/// What a finger on the desktop does. A mouse or a trackpad drives the
+/// remote pointer whichever this is; pinch always zooms the local view.
+enum TouchPointerMode: String, CaseIterable {
+    /// Taps and drags act where the finger is, as on a touch screen.
+    case direct
+    /// The desktop is a trackpad: the finger moves the pointer by travel.
+    case trackpad
+    /// Touch only pans and zooms the local view; nothing reaches the host.
+    case viewport
+
+    static let storageKey = "touch-pointer-mode"
+}
+
 /// Bridges the Metal surface into the SwiftUI workspace.
 ///
 /// The view is built once per session and reconfigured afterwards: rebuilding
@@ -15,8 +28,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     let scrollDirection: ScrollDirection
     /// Where the laptop deck finds this surface, when there is one.
     let laptopChannel: LaptopDeckChannel?
-    /// The deck shows only its keyboard, so the desktop is the trackpad.
-    let directTouchesDriveTrackpad: Bool
+    let touchMode: TouchPointerMode
     /// Points to ask the server for instead of the surface's own size.
     let renderSizeOverride: CGSize?
     /// False while the scene is inactive or the session is not connected. The
@@ -47,7 +59,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
 
     private func configure(_ view: RemoteDesktopView) {
         laptopChannel?.surface = view
-        view.setDirectTouchesDriveTrackpad(directTouchesDriveTrackpad)
+        view.setTouchMode(touchMode)
         view.setRenderSizeOverride(renderSizeOverride)
         view.onRenderSizeChange = onRenderSizeChange
         view.onDesktopSizeChange = onDesktopSizeChange

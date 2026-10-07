@@ -45,10 +45,6 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// it coming back: pasting it straight back needs no new offer, because
     /// the remote still holds it (docs/architecture.md section 9).
     private var lastReceivedText: String?
-    /// Whether the laptop deck - keyboard and trackpad on the lower half -
-    /// is shown. Per session and not saved: whether it is wanted depends on
-    /// how the device is being held, not on the host.
-    var laptopDeckPreference: LaptopDeckPreference = .automatic
     /// Built once in `init`; never replaced, so observation is not needed on
     /// the property itself - the controller is observable on its own.
     @ObservationIgnored private(set) var softwareKeyboard: SoftwareKeyboardController!
@@ -231,8 +227,11 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         switch event {
         case .stateChanged(let state, _):
             self.state = state
+            // Only awaitingUser has a challenge to answer. A review that
+            // timed out or a session that ended has none, and a sheet left up
+            // would answer a challenge the session no longer holds.
+            if state != .awaitingUser { pendingChallenge = nil }
             if state == .connected || state == .connecting {
-                pendingChallenge = nil
                 endReason = nil
             }
             if state == .connecting { transportSecurity = nil }
@@ -550,12 +549,19 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     }
 }
 
-/// When the laptop deck takes the lower half of the screen.
-enum LaptopDeckPreference: Hashable, CaseIterable {
+/// When the laptop deck takes the lower half of the screen. Any device can
+/// show it; only a foldable shows it by itself.
+enum LaptopDeckPreference: String, CaseIterable {
     /// In a foldable's laptop posture: half open, hinge across the screen.
+    /// A device without a hinge never reaches it.
     case automatic
     case always
     case never
+
+    /// Saved on the device and shared by every session: whether a PC
+    /// keyboard is wanted on screen is a matter of the device and the
+    /// user's hands, not of the host.
+    static let storageKey = "laptop-deck-preference"
 
     func showsDeck(posture: HingePosture, isPortrait: Bool) -> Bool {
         switch self {

@@ -133,4 +133,26 @@ final class AppEnvironmentTests: XCTestCase {
         XCTAssertNotNil(presented.pendingChallenge)
         XCTAssertEqual(presented.state, .awaitingUser)
     }
+
+    func testAReviewThatTimesOutTakesItsSheetDown() async throws {
+        let (environment, _) = makeEnvironment(
+            script: .requiresCertificateReview(.untrustedRoot)
+        )
+        await environment.start()
+        await environment.save(profile(), password: nil)
+        await environment.connect(to: try XCTUnwrap(environment.profiles.first))
+        let presented = try XCTUnwrap(environment.presentedSession)
+        XCTAssertNotNil(presented.pendingChallenge)
+
+        let found = await environment.sessions.session(for: presented.id)
+        let fake = try XCTUnwrap(found as? FakeRemoteSession)
+        await fake.simulateConnectionLoss(.connectionTimedOut)
+        let deadline = Date().addingTimeInterval(5)
+        while presented.state != .failed, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertEqual(presented.state, .failed)
+        XCTAssertNil(presented.pendingChallenge, "nothing is left to answer")
+    }
 }

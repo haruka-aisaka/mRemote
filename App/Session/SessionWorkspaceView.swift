@@ -19,6 +19,8 @@ struct SessionWorkspaceView: View {
     @State private var laptopChannel = LaptopDeckChannel()
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
+    @AppStorage(TouchPointerMode.storageKey) private var touchMode = TouchPointerMode.direct
+    @AppStorage(LaptopDeckPreference.storageKey) private var deckPreference = LaptopDeckPreference.automatic
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
     @AppStorage(LaptopKeyboardPlatform.storageKey) private var deckPlatform = LaptopKeyboardPlatform.windows
     @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
@@ -120,14 +122,16 @@ struct SessionWorkspaceView: View {
     /// which would rebuild the surface and drop its texture.
     @ViewBuilder
     private func split(in size: CGSize) -> some View {
-        let showsDeck = model.laptopDeckPreference.showsDeck(
+        let showsDeck = deckPreference.showsDeck(
             posture: hingePosture,
             isPortrait: size.height > size.width
         )
         VStack(spacing: 0) {
             ZStack {
                 desktop(
-                    touchesDriveTrackpad: showsDeck && !deckArrangement.hasTrackpad,
+                    // The keyboard-only deck has no pad of its own, so the
+                    // desktop is its trackpad whatever touch mode is chosen.
+                    touchMode: showsDeck && !deckArrangement.hasTrackpad ? .trackpad : touchMode,
                     // Keeping the resolution means asking for the whole screen
                     // while only part of it is the desktop.
                     renderSizeOverride: showsDeck && foldPolicy == .keepAndScale ? size : nil
@@ -151,7 +155,11 @@ struct SessionWorkspaceView: View {
                     showsTrackpadButtons: showsTrackpadButtons,
                     platform: deckPlatform
                 )
-                .transition(.move(edge: .bottom))
+                // Placed where it ends up rather than slid in: the desktop
+                // above resizes as the deck arrives, and the resize request
+                // that follows cut a slide short, leaving the deck parked
+                // below the screen with its keys out of reach.
+                .transition(.identity)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: showsDeck)
@@ -162,7 +170,7 @@ struct SessionWorkspaceView: View {
     }
 
     @ViewBuilder
-    private func desktop(touchesDriveTrackpad: Bool, renderSizeOverride: CGSize?) -> some View {
+    private func desktop(touchMode: TouchPointerMode, renderSizeOverride: CGSize?) -> some View {
         if let frameStore = model.frameStore {
             RemoteDesktopSurface(
                 frameStore: frameStore,
@@ -171,7 +179,7 @@ struct SessionWorkspaceView: View {
                 scaleMode: model.runtime.scale,
                 scrollDirection: model.runtime.scrollDirection,
                 laptopChannel: laptopChannel,
-                directTouchesDriveTrackpad: touchesDriveTrackpad,
+                touchMode: touchMode,
                 renderSizeOverride: renderSizeOverride,
                 // Input is gated on both halves of docs/architecture.md
                 // section 10: the session must be able to deliver it, and the

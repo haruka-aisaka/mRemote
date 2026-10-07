@@ -16,8 +16,15 @@ enum UITestConfiguration {
         ProcessInfo.processInfo.arguments.contains(launchArgument)
     }
 
+    /// Device settings a test changes through the UI, cleared on launch so
+    /// one test's choice is not the next one's starting point.
+    static let resetDefaultsKeys = [LaptopDeckPreference.storageKey]
+
     @MainActor
     static func makeEnvironment() -> AppEnvironment {
+        for key in resetDefaultsKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         let seeded = ConnectionProfile(
             displayName: "テスト接続先",
             endpoint: RemoteEndpoint(host: "desk.example", port: 3389),

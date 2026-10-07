@@ -470,6 +470,16 @@
         }
       }
     },
+    "なぞるとポインターが動きます。タップでクリック、2 本指タップで右クリック、2 本指でスクロール、押さえてから動かすとドラッグ。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Slide to move the pointer. Tap to click, tap with two fingers to right-click, use two fingers to scroll, and hold then move to drag."
+          }
+        }
+      }
+    },
     "ろ": {
       "localizations": {
         "en": {
@@ -850,6 +860,36 @@
         }
       }
     },
+    "タッチした場所を操作": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acts Where You Touch"
+          }
+        }
+      }
+    },
+    "タッチは Windows へ送りません。1 本指で表示を動かし、ピンチで拡大、ダブルタップで全体表示と 100% を切り替えます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touches are not sent to Windows. Drag with one finger to move the view, pinch to zoom, and double-tap to switch between Fit and 100%."
+          }
+        }
+      }
+    },
+    "タップでクリック、長押しで右クリック、なぞるとドラッグ、2 本指でスクロール。ピンチで拡大し、拡大中はピンチしたまま動かすと表示が動きます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to click, touch and hold to right-click, slide to drag, and use two fingers to scroll. Pinch to zoom; while zoomed in, move your pinch to move the view."
+          }
+        }
+      }
+    },
     "タップで単独で送信。長押しで次のキーと組み合わせ": {
       "localizations": {
         "en": {
@@ -896,6 +936,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Trackpad / Keyboard"
+          }
+        }
+      }
+    },
+    "トラックパッドとして使う": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works as a Trackpad"
           }
         }
       }
@@ -1820,6 +1870,46 @@
         }
       }
     },
+    "手元キーボード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On-Screen PC Keyboard"
+          }
+        }
+      }
+    },
+    "手元キーボードを隠す": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide On-Screen PC Keyboard"
+          }
+        }
+      }
+    },
+    "手元キーボード表示中の解像度": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolution with the PC Keyboard Shown"
+          }
+        }
+      }
+    },
+    "手元キーボード（PC 配列）を表示": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show On-Screen PC Keyboard"
+          }
+        }
+      }
+    },
     "手元側の配置": {
       "localizations": {
         "en": {
@@ -1840,22 +1930,12 @@
         }
       }
     },
-    "折り曲げたとき": {
+    "折りたたみ端末を折り曲げたとき": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "When Folded"
-          }
-        }
-      }
-    },
-    "折り曲げたときの解像度": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Resolution When Folded"
+            "value": "When a Foldable Is Folded"
           }
         }
       }
@@ -2190,12 +2270,12 @@
         }
       }
     },
-    "画面下半分のキーボードとトラックパッド": {
+    "画面のタッチ": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keyboard and Trackpad on the Lower Half"
+            "value": "Touching the Screen"
           }
         }
       }
@@ -2406,6 +2486,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Never"
+          }
+        }
+      }
+    },
+    "表示の移動だけ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only Moves the View"
           }
         }
       }
