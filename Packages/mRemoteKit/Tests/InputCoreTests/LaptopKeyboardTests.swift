@@ -27,11 +27,40 @@ final class LaptopKeyboardTests: XCTestCase {
         }
     }
 
-    func testKeyIdentifiersAreUnique() {
+    func testKeyIdentifiersAreUniqueExceptForAKeySpanningTwoRows() {
         for preference in KeyboardLayoutPreference.allCases {
-            let ids = LaptopKeyboardLayout(preference).keys.map(\.id)
-            XCTAssertEqual(Set(ids).count, ids.count, "\(preference)")
+            let rows = LaptopKeyboardLayout(preference).rows
+            var rowsOfID: [String: [Int]] = [:]
+            var keyOfID: [String: LaptopKey] = [:]
+            for (index, row) in rows.enumerated() {
+                let ids = row.keys.map(\.id)
+                XCTAssertEqual(Set(ids).count, ids.count, "\(preference) row \(index)")
+                for key in row.keys {
+                    rowsOfID[key.id, default: []].append(index)
+                    if let first = keyOfID[key.id] {
+                        XCTAssertEqual(first.kind, key.kind, "\(key.id) is one key")
+                    }
+                    keyOfID[key.id] = key
+                }
+            }
+            for (id, indices) in rowsOfID where indices.count > 1 {
+                XCTAssertEqual(indices.count, 2, "\(id) spans at most two rows")
+                XCTAssertEqual(indices[1], indices[0] + 1, "\(id) spans adjacent rows")
+            }
+            XCTAssertEqual(
+                LaptopKeyboardLayout(preference).keys.count,
+                rowsOfID.count,
+                "keys lists a spanning key once"
+            )
         }
+    }
+
+    func testTheJISEnterIsOneKeyAcrossTwoRows() {
+        let rows = LaptopKeyboardLayout(.japanese).rows
+        XCTAssertEqual(rows[2].keys.last?.id, "enter")
+        XCTAssertEqual(rows[3].keys.last?.id, "enter")
+        XCTAssertGreaterThan(rows[2].keys.last!.width, rows[3].keys.last!.width, "an inverted L")
+        XCTAssertEqual(LaptopKeyboardLayout(.us).keys.filter { $0.id == "enter" }.count, 1)
     }
 
     func testEveryKeyReachesTheHost() {
@@ -75,12 +104,12 @@ final class LaptopKeyboardTests: XCTestCase {
         XCTAssertNil(composer.repeatDown(usage: 0x04))
     }
 
-    func testTheTwoEnterKeysAreOneKeyOnTheHost() {
+    func testASecondFingerOnAKeyAlreadyDownIsNotASecondPress() {
         var composer = LaptopKeyboardComposer()
         XCTAssertEqual(keys(composer.touchDown(key("enter"))), ["28v"])
-        XCTAssertEqual(keys(composer.touchDown(key("enter-upper"))), [])
+        XCTAssertEqual(keys(composer.touchDown(key("enter"))), [])
         XCTAssertEqual(keys(composer.touchUp(key("enter"))), ["28^"])
-        XCTAssertEqual(keys(composer.touchUp(key("enter-upper"))), [])
+        XCTAssertEqual(keys(composer.touchUp(key("enter"))), [])
     }
 
     // MARK: - Modifiers

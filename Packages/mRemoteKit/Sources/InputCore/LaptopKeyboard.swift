@@ -16,7 +16,9 @@ public struct LaptopKey: Hashable, Sendable, Identifiable {
         case modifier(VirtualModifier)
     }
 
-    /// Unique within its layout, so a left and a right Shift are two keys.
+    /// Unique within a row, so a left and a right Shift are two keys. The
+    /// same identifier in two adjacent rows is one key drawn across both -
+    /// the JIS Enter, whose cap is an inverted L.
     public let id: String
     public let label: String
     /// What Shift produces, drawn small above the label. Nil when it is the
@@ -90,7 +92,12 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
         rows = [Self.functionRow] + (layout == .japanese ? Self.japaneseRows : Self.usRows)
     }
 
-    public var keys: [LaptopKey] { rows.flatMap(\.keys) }
+    /// Every key once, in reading order; a key spanning two rows is listed
+    /// where it starts.
+    public var keys: [LaptopKey] {
+        var seen: Set<String> = []
+        return rows.flatMap(\.keys).filter { seen.insert($0.id).inserted }
+    }
 
     // MARK: - Shared rows
 
@@ -177,7 +184,7 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
                 + [
                     key("at", "@", 0x2F, shifted: "`"),
                     key("bracketleft", "[", 0x30, shifted: "{"),
-                    key("enter-upper", "⏎", 0x28, width: 1.5),
+                    key("enter", "⏎", 0x28, width: 1.5),
                 ]
         ),
         LaptopKeyboardRow(
@@ -187,6 +194,7 @@ public struct LaptopKeyboardLayout: Hashable, Sendable {
                     key("semicolon", ";", 0x33, shifted: "+"),
                     key("colon", ":", 0x34, shifted: "*"),
                     key("bracketright", "]", 0x32, shifted: "}"),
+                    // The lower, narrower part of the same Enter.
                     key("enter", "⏎", 0x28, width: 1.25),
                 ]
         ),

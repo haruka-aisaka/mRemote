@@ -218,6 +218,7 @@ final class LaptopDeckView: UIView {
         let unitWidth = keyboard.width / CGFloat(LaptopKeyboardLayout.unitsPerRow)
 
         keyFrames = []
+        var parts: [String: [CGRect]] = [:]
         var y = keyboard.minY
         for row in layout.rows {
             let height = unitHeight * CGFloat(row.height)
@@ -226,11 +227,15 @@ final class LaptopDeckView: UIView {
                 let width = unitWidth * CGFloat(key.width)
                 let hitFrame = CGRect(x: x, y: y - gap / 2, width: width, height: height + gap)
                 keyFrames.append((hitFrame, key))
-                keyViews[key.id]?.frame = CGRect(x: x, y: y, width: width, height: height)
-                    .insetBy(dx: gap / 2, dy: 0)
+                parts[key.id, default: []].append(
+                    CGRect(x: x, y: y, width: width, height: height).insetBy(dx: gap / 2, dy: 0)
+                )
                 x += width
             }
             y += height + gap
+        }
+        for (id, rects) in parts {
+            keyViews[id]?.setParts(rects)
         }
     }
 
@@ -427,6 +432,11 @@ private final class KeyCapView: UIView {
     private let label = UILabel()
     private let shiftedLabel = UILabel()
     private let lockIndicator = UIView()
+    /// The cap's outline, so a key spanning two rows draws as one shape.
+    private let capLayer = CAShapeLayer()
+    /// Where the labels go, in the view's own coordinates: the first part of
+    /// a key that spans two rows, the whole key otherwise.
+    private var labelArea: CGRect = .zero
 
     var state: State = .idle {
         didSet {
@@ -440,8 +450,7 @@ private final class KeyCapView: UIView {
         self.onActivate = onActivate
         super.init(frame: .zero)
         isUserInteractionEnabled = false
-        layer.cornerRadius = 5
-        layer.cornerCurve = .continuous
+        layer.addSublayer(capLayer)
 
         label.text = key.label
         label.textColor = .white
@@ -477,31 +486,58 @@ private final class KeyCapView: UIView {
         return true
     }
 
+    /// The rectangles the key occupies, in the superview's coordinates, one
+    /// per row. Parts in consecutive rows are joined across the gap between
+    /// them, which is what turns the JIS Enter into one inverted L.
+    func setParts(_ parts: [CGRect]) {
+        guard let first = parts.first else { return }
+        var filled = parts
+        for index in filled.indices.dropLast() {
+            filled[index].size.height = filled[index + 1].minY - filled[index].minY
+        }
+        let union = parts.dropFirst().reduce(first) { $0.union($1) }
+        frame = union
+        let local = filled.map { $0.offsetBy(dx: -union.minX, dy: -union.minY) }
+        var path = CGPath(roundedRect: local[0], cornerWidth: 5, cornerHeight: 5, transform: nil)
+        for rect in local.dropFirst() {
+            path = path.union(CGPath(roundedRect: rect, cornerWidth: 5, cornerHeight: 5, transform: nil))
+        }
+        capLayer.path = path
+        labelArea = parts[0].offsetBy(dx: -union.minX, dy: -union.minY)
+        setNeedsLayout()
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
-        let small = bounds.height < 30
-        let size = min(bounds.height * (small ? 0.42 : 0.4), 17)
+        let area = labelArea.isEmpty ? bounds : labelArea
+        let small = area.height < 30
+        let size = min(area.height * (small ? 0.42 : 0.4), 17)
         label.font = .systemFont(ofSize: size, weight: key.label.count > 2 ? .regular : .medium)
         shiftedLabel.font = .systemFont(ofSize: size * 0.62)
         if shiftedLabel.isHidden {
-            label.frame = bounds.insetBy(dx: 2, dy: 1)
+            label.frame = area.insetBy(dx: 2, dy: 1)
         } else {
-            let half = bounds.height / 2
-            shiftedLabel.frame = CGRect(x: 2, y: 2, width: bounds.width - 4, height: half - 2)
-            label.frame = CGRect(x: 2, y: half - 2, width: bounds.width - 4, height: half)
+            let half = area.height / 2
+            shiftedLabel.frame = CGRect(x: area.minX + 2, y: area.minY + 2, width: area.width - 4, height: half - 2)
+            label.frame = CGRect(x: area.minX + 2, y: area.minY + half - 2, width: area.width - 4, height: half)
         }
-        lockIndicator.frame = CGRect(x: bounds.width - 9, y: 4, width: 5, height: 5)
+        lockIndicator.frame = CGRect(x: area.maxX - 9, y: area.minY + 4, width: 5, height: 5)
     }
 
     private func applyState() {
+        let fill: UIColor
         switch state {
         case .idle:
-            backgroundColor = key.isModifier ? UIColor(white: 0.17, alpha: 1) : UIColor(white: 0.22, alpha: 1)
+            fill = key.isModifier ? UIColor(white: 0.17, alpha: 1) : UIColor(white: 0.22, alpha: 1)
         case .pressed:
-            backgroundColor = UIColor(white: 0.45, alpha: 1)
+            fill = UIColor(white: 0.45, alpha: 1)
         case .active, .locked:
-            backgroundColor = .systemBlue
+            fill = .systemBlue
         }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        capLayer.fillColor = fill.cgColor
+        CATransaction.commit()
         lockIndicator.isHidden = state != .locked
         switch state {
         case .idle: accessibilityValue = key.isModifier ? "オフ" : nil
@@ -515,7 +551,7 @@ private final class KeyCapView: UIView {
         switch key.id {
         case "space": return "スペース"
         case "backspace": return "バックスペース"
-        case "enter", "enter-upper": return "エンター"
+        case "enter": return "エンター"
         case "up": return "上"
         case "down": return "下"
         case "left": return "左"
