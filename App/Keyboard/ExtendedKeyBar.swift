@@ -22,12 +22,12 @@ struct ExtendedKeyBar: View {
                         modifier("Alt", .alt)
                         modifier("Shift", .shift)
                         modifier("Win", .windows)
-                        key("無変換", .nonConvert)
-                        key("変換", .convert)
-                        symbolKey("arrow.left", .left, label: "左")
-                        symbolKey("arrow.down", .down, label: "下")
-                        symbolKey("arrow.up", .up, label: "上")
-                        symbolKey("arrow.right", .right, label: "右")
+                        key(String(localized: "無変換"), .nonConvert)
+                        key(String(localized: "変換"), .convert)
+                        symbolKey("arrow.left", .left, label: String(localized: "左"))
+                        symbolKey("arrow.down", .down, label: String(localized: "下"))
+                        symbolKey("arrow.up", .up, label: String(localized: "上"))
+                        symbolKey("arrow.right", .right, label: String(localized: "右"))
                         key("Home", .home)
                         key("End", .end)
                         key("PgUp", .pageUp)
@@ -71,13 +71,13 @@ struct ExtendedKeyBar: View {
             controller.togglePasteNextCommit()
         } label: {
             Label(
-                controller.pastesNextCommit ? "次の入力を貼り付けで送る（クリップボード上書き）" : "貼り付けで送る",
+                controller.pastesNextCommit ? String(localized: "次の入力を貼り付けで送る（クリップボード上書き）") : String(localized: "貼り付けで送る"),
                 systemImage: "doc.on.clipboard"
             )
         }
         .modifierStyle(isOn: controller.pastesNextCommit)
         .accessibilityHint("次に確定した文字を、リモートのクリップボードを上書きして貼り付けで送ります。Unicode 入力を受け付けないアプリ向け")
-        .accessibilityValue(controller.pastesNextCommit ? "オン" : "オフ")
+        .accessibilityValue(controller.pastesNextCommit ? String(localized: "オン") : String(localized: "オフ"))
         .accessibilityIdentifier("software-keyboard-paste-next")
     }
 
@@ -137,7 +137,7 @@ struct ExtendedKeyBar: View {
         }
         .modifierStyle(isOn: latch != .off)
         .disabled(controller.hasMarkedText)
-        .accessibilityValue(latch == .off ? "オフ" : latch == .oneShot ? "次の1キー" : "固定")
+        .accessibilityValue(latch == .off ? String(localized: "オフ") : latch == .oneShot ? String(localized: "次の1キー") : String(localized: "固定"))
         .accessibilityIdentifier("modifier-\(modifier.rawValue)")
     }
 }

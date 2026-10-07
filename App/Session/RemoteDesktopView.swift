@@ -203,7 +203,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         isOpaque = true
         isMultipleTouchEnabled = true
         isUserInteractionEnabled = true
-        accessibilityLabel = "リモートデスクトップ"
+        accessibilityLabel = String(localized: "リモートデスクトップ")
         accessibilityIdentifier = "remote-desktop-surface"
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
@@ -493,7 +493,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             return
         }
         isInputEnabled = enabled
-        accessibilityValue = enabled ? "入力可" : "入力不可"
+        accessibilityValue = enabled ? String(localized: "入力可") : String(localized: "入力不可")
         directTrackpad.setEnabled(enabled && directTouchesDriveTrackpad)
         if enabled {
             if let held = HardwareKeyboardMonitor.shared.physicallyHeldUsages() {

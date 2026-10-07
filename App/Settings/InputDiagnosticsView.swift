@@ -60,36 +60,36 @@ struct InputDiagnosticsView: View {
 
     static func label(_ outcome: InputOutcome) -> String {
         switch outcome {
-        case .forwarded: return "送信"
-        case .duplicate: return "重複 down"
-        case .orphan: return "対応のない up"
-        case .otherSource: return "別経路（未採用）"
-        case .quarantined: return "解放後の押下"
-        case .gated: return "入力停止中"
+        case .forwarded: return String(localized: "送信")
+        case .duplicate: return String(localized: "重複 down")
+        case .orphan: return String(localized: "対応のない up")
+        case .otherSource: return String(localized: "別経路（未採用）")
+        case .quarantined: return String(localized: "解放後の押下")
+        case .gated: return String(localized: "入力停止中")
         }
     }
 
     static func label(_ reason: InputReleaseReason) -> String {
         switch reason {
-        case .gateClosed: return "入力停止"
-        case .focusLost: return "フォーカス喪失"
-        case .pressesCancelled: return "押下キャンセル"
-        case .keyboardDisconnected: return "キーボード切断"
-        case .sourcePolicyChanged: return "経路設定の変更"
-        case .surfaceRemoved: return "画面終了"
+        case .gateClosed: return String(localized: "入力停止")
+        case .focusLost: return String(localized: "フォーカス喪失")
+        case .pressesCancelled: return String(localized: "押下キャンセル")
+        case .keyboardDisconnected: return String(localized: "キーボード切断")
+        case .sourcePolicyChanged: return String(localized: "経路設定の変更")
+        case .surfaceRemoved: return String(localized: "画面終了")
         }
     }
 
     static func keyName(_ usage: UInt16) -> String {
         switch usage {
-        case 0x90: return "かな"
-        case 0x91: return "英数"
-        case 0x87: return "ろ"
-        case 0x88: return "カタカナ"
+        case 0x90: return String(localized: "かな")
+        case 0x91: return String(localized: "英数")
+        case 0x87: return String(localized: "ろ")
+        case 0x88: return String(localized: "カタカナ")
         case 0x89: return "¥"
-        case 0x8A: return "変換"
-        case 0x8B: return "無変換"
-        case 0x94: return "半/全"
+        case 0x8A: return String(localized: "変換")
+        case 0x8B: return String(localized: "無変換")
+        case 0x94: return String(localized: "半/全")
         case 0x39: return "CapsLock"
         case 0xE0: return "L-Ctrl"
         case 0xE1: return "L-Shift"

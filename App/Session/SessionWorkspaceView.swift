@@ -44,7 +44,7 @@ struct SessionWorkspaceView: View {
         .onChange(of: model.transportSecurity) { _, security in
             // The audit display, at the moment it becomes true.
             guard security == .legacyRDP else { return }
-            withAnimation { toastText = "⚠︎ \(model.displayName) は古い RDP セキュリティで接続しています" }
+            withAnimation { toastText = String(localized: "⚠︎ \(model.displayName) は古い RDP セキュリティで接続しています") }
             Task {
                 try? await Task.sleep(for: .seconds(4))
                 withAnimation { if toastText?.hasPrefix("⚠︎") == true { toastText = nil } }

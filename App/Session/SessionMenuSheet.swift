@@ -41,7 +41,7 @@ struct SessionMenuSheet: View {
                     // a note when it was only allowed.
                     if model.isUsingLegacySecurity {
                         Label(
-                            "この接続は古い RDP セキュリティで通信しています。暗号は弱く、サーバーの確認もできません。",
+                            String(localized: "この接続は古い RDP セキュリティで通信しています。暗号は弱く、サーバーの確認もできません。"),
                             systemImage: "exclamationmark.shield"
                         )
                         .font(.footnote)
@@ -50,8 +50,8 @@ struct SessionMenuSheet: View {
                     } else if model.allowsLegacySecurity {
                         Label(
                             model.transportSecurity == nil
-                                ? "古い RDP セキュリティを許可した接続先です。"
-                                : "古い RDP セキュリティを許可した接続先ですが、この接続では使われていません。",
+                                ? String(localized: "古い RDP セキュリティを許可した接続先です。")
+                                : String(localized: "古い RDP セキュリティを許可した接続先ですが、この接続では使われていません。"),
                             systemImage: "shield.lefthalf.filled"
                         )
                         .font(.footnote)
@@ -142,8 +142,8 @@ struct SessionMenuSheet: View {
                     .accessibilityIdentifier("session-fold-resolution-picker")
                     if let size = model.desktopSizeText {
                         LabeledContent(
-                            "リモート解像度",
-                            value: model.supportsDynamicResolution ? "\(size)（可変）" : size
+                            String(localized: "リモート解像度"),
+                            value: model.supportsDynamicResolution ? String(localized: "\(size)（可変）") : size
                         )
                     }
                 }
@@ -233,7 +233,7 @@ struct SessionMenuSheet: View {
                 }
             }
             .confirmationDialog(
-                "\(model.displayName) を切断しますか？",
+                String(localized: "\(model.displayName) を切断しますか？"),
                 isPresented: $confirmingDisconnect,
                 titleVisibility: .visible
             ) {

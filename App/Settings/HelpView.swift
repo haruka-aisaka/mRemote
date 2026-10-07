@@ -7,13 +7,13 @@ struct HelpView: View {
         List {
             Section {
                 Text("iPad の Command キーは Windows キーとして送るため、Windows キーを含むショートカットの一部が届きません。キーバーの修飾キーは 1 回押すと次の 1 キーだけ、2 回押すと固定、3 回目で解除です。")
-                row("Command+Tab", "App 切り替えに使われます。Win+Tab はキーバーの Win を押してから Tab。")
-                row("Command+Space", "Spotlight に使われます。Win+Space はキーバーの Win を押してから Space。")
-                row("Command+H", "ホーム画面に使われます。Win+H はキーバーの Win を押してから H。")
-                row("Globe（地球儀）キー", "iPadOS のショートカットに使われ、Windows へは送りません。")
-                row("Control+Space", "iPadOS の入力切替に設定されていると届きません。キーバーの Ctrl を押してから Space。")
-                row("Caps Lock", "iPadOS の「ハードウェアキーボード」設定で Caps Lock による入力切替がオンだと、英字入力の切替に使われます。")
-                row("Ctrl+Alt+Del", "キーバーで Ctrl と Alt を押してから Del を押すと、Windows のセキュリティ画面（ロック、サインアウト、タスク マネージャーなど）が出ます。")
+                row("Command+Tab", String(localized: "App 切り替えに使われます。Win+Tab はキーバーの Win を押してから Tab。"))
+                row("Command+Space", String(localized: "Spotlight に使われます。Win+Space はキーバーの Win を押してから Space。"))
+                row("Command+H", String(localized: "ホーム画面に使われます。Win+H はキーバーの Win を押してから H。"))
+                row(String(localized: "Globe（地球儀）キー"), String(localized: "iPadOS のショートカットに使われ、Windows へは送りません。"))
+                row("Control+Space", String(localized: "iPadOS の入力切替に設定されていると届きません。キーバーの Ctrl を押してから Space。"))
+                row("Caps Lock", String(localized: "iPadOS の「ハードウェアキーボード」設定で Caps Lock による入力切替がオンだと、英字入力の切替に使われます。"))
+                row("Ctrl+Alt+Del", String(localized: "キーバーで Ctrl と Alt を押してから Del を押すと、Windows のセキュリティ画面（ロック、サインアウト、タスク マネージャーなど）が出ます。"))
             } header: {
                 Text("iPadOS が先に使うキー")
             }

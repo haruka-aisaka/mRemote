@@ -137,7 +137,7 @@ final class AppEnvironment {
     }
 
     func duplicate(_ profile: ConnectionProfile) async {
-        let copy = profile.duplicated(displayName: "\(profile.displayName) のコピー")
+        let copy = profile.duplicated(displayName: String(localized: "\(profile.displayName) のコピー"))
         await save(copy, password: nil)
     }
 
@@ -209,7 +209,7 @@ final class AppEnvironment {
             refreshAudioFocus()
             await model.start()
         } catch let error as SessionBudgetExceededError {
-            loadFailure = "同時接続はあと \(error.limit) セッションまでです。"
+            loadFailure = String(localized: "同時接続はあと \(error.limit) セッションまでです。")
         } catch {
             loadFailure = String(describing: error)
         }

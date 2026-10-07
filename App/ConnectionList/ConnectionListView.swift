@@ -111,7 +111,7 @@ struct ConnectionListView: View {
                             Button(role: .destructive) {
                                 Task { await session.disconnect() }
                             } label: {
-                                Label(session.state.isActive ? "切断" : "閉じる",
+                                Label(session.state.isActive ? String(localized: "切断") : String(localized: "閉じる"),
                                       systemImage: "xmark.circle")
                             }
                         }

@@ -120,7 +120,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     var statusText: String {
         if let reconnectAttempt {
-            return "再接続中 (\(reconnectAttempt)/\(reconnectSchedule.maximumAttempts))"
+            return String(localized: "再接続中 (\(reconnectAttempt)/\(reconnectSchedule.maximumAttempts))")
         }
         return Formatting.stateLabel(state)
     }
@@ -178,14 +178,14 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         switch state {
         case .failed:
             return StateBanner(
-                title: "接続が切れました",
+                title: String(localized: "接続が切れました"),
                 symbol: "exclamationmark.triangle",
                 detail: lastError.map(Formatting.errorLabel),
                 offersReconnect: true
             )
         case .disconnected:
             return StateBanner(
-                title: "切断されました",
+                title: String(localized: "切断されました"),
                 symbol: "rectangle.portrait.and.arrow.right",
                 detail: endReason.map(Formatting.endReasonLabel),
                 offersReconnect: true
@@ -298,7 +298,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
                 try? await Task.sleep(for: .milliseconds(20))
             }
             sendPasteChord()
-            clipboardMessage = "\(displayName) に貼り付けました"
+            clipboardMessage = String(localized: "\(displayName) に貼り付けました")
         } catch {
             clipboardMessage = Self.clipboardFailureText(error)
         }
@@ -315,7 +315,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         do {
             let text = try await clipboard.fetchRemoteClipboardText()
             lastReceivedText = text
-            clipboardMessage = "\(displayName) からコピーしました"
+            clipboardMessage = String(localized: "\(displayName) からコピーしました")
             return text
         } catch {
             clipboardMessage = Self.clipboardFailureText(error)
@@ -337,11 +337,11 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     private static func clipboardFailureText(_ error: Error) -> String {
         switch error as? ClipboardTransferError {
-        case .unavailable: return "クリップボードを使えません。接続設定の「クリップボード」で許可されているか、リモート側でクリップボードのリダイレクトが許可されているかを確認してください"
-        case .timedOut: return "リモートが応答しませんでした。少し待ってからもう一度試してください"
-        case .unsupportedContent: return "このテキストは送れません（大きすぎるか NUL を含みます）。長いテキストは分けて送ってください"
-        case .nothingToCopy: return "リモートにコピーされたテキストがありません。リモート側で先にコピーしてください"
-        case .failed, .none: return "クリップボードの転送に失敗しました。もう一度試してください"
+        case .unavailable: return String(localized: "クリップボードを使えません。接続設定の「クリップボード」で許可されているか、リモート側でクリップボードのリダイレクトが許可されているかを確認してください")
+        case .timedOut: return String(localized: "リモートが応答しませんでした。少し待ってからもう一度試してください")
+        case .unsupportedContent: return String(localized: "このテキストは送れません（大きすぎるか NUL を含みます）。長いテキストは分けて送ってください")
+        case .nothingToCopy: return String(localized: "リモートにコピーされたテキストがありません。リモート側で先にコピーしてください")
+        case .failed, .none: return String(localized: "クリップボードの転送に失敗しました。もう一度試してください")
         }
     }
 

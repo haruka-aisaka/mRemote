@@ -16,7 +16,7 @@ struct LicensesView: View {
         Dependency(name: "FreeRDP", version: "3.31.1", license: "Apache-2.0"),
         Dependency(name: "WinPR", version: "3.31.1", license: "Apache-2.0"),
         Dependency(name: "OpenSSL", version: "4.0.1", license: "Apache-2.0"),
-        Dependency(name: "TPCircularBuffer", version: "FreeRDP 3.31.1 同梱", license: "MIT"),
+        Dependency(name: "TPCircularBuffer", version: String(localized: "FreeRDP 3.31.1 同梱"), license: "MIT"),
     ]
 
     var body: some View {

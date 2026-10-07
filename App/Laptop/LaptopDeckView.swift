@@ -43,13 +43,13 @@ extension CapsLockRole {
         case (.option, .windows): return "Alt"
         case (.command, .windows): return "Win"
         case (.escape, .windows): return "Esc"
-        case (.noAction, .windows): return "何もしない"
+        case (.noAction, .windows): return String(localized: "何もしない")
         case (.capsLock, .mac): return "⇪ Caps Lock"
         case (.control, .mac): return "^ Control（Ctrl）"
         case (.option, .mac): return "⌥ Option（Alt）"
         case (.command, .mac): return "⌘ Command（Win）"
         case (.escape, .mac): return "⎋ Escape"
-        case (.noAction, .mac): return "アクションなし"
+        case (.noAction, .mac): return String(localized: "アクションなし")
         }
     }
 }
@@ -123,13 +123,13 @@ final class LaptopDeckView: UIView {
         pad.layer.borderWidth = 1
         pad.isUserInteractionEnabled = false
         pad.isAccessibilityElement = true
-        pad.accessibilityLabel = "トラックパッド"
+        pad.accessibilityLabel = String(localized: "トラックパッド")
         pad.accessibilityIdentifier = "laptop-trackpad"
         addSubview(pad)
 
         for (button, title, identifier) in [
-            (leftButton, "左クリック", "laptop-button-left"),
-            (rightButton, "右クリック", "laptop-button-right"),
+            (leftButton, String(localized: "左クリック"), "laptop-button-left"),
+            (rightButton, String(localized: "右クリック"), "laptop-button-right"),
         ] {
             button.backgroundColor = UIColor(white: 0.2, alpha: 1)
             button.layer.cornerRadius = 8
@@ -197,7 +197,7 @@ final class LaptopDeckView: UIView {
     /// deck that looks live but ignores every key is the worst of both.
     private func applyInputEnabledAppearance() {
         alpha = isInputEnabled ? 1 : 0.6
-        accessibilityValue = isInputEnabled ? "入力可" : "入力不可"
+        accessibilityValue = isInputEnabled ? String(localized: "入力可") : String(localized: "入力不可")
     }
 
     func releaseEverything() {
@@ -546,7 +546,7 @@ private final class KeyCapView: UIView {
         accessibilityTraits = .keyboardKey
         accessibilityIdentifier = "laptop-key-\(key.id)"
         if key.sendsWhenTappedAlone {
-            accessibilityHint = "タップで単独で送信。長押しで次のキーと組み合わせ"
+            accessibilityHint = String(localized: "タップで単独で送信。長押しで次のキーと組み合わせ")
         }
         applyState()
     }
@@ -625,25 +625,25 @@ private final class KeyCapView: UIView {
         CATransaction.commit()
         lockIndicator.isHidden = state != .locked
         switch state {
-        case .idle: accessibilityValue = key.isModifier ? "オフ" : nil
+        case .idle: accessibilityValue = key.isModifier ? String(localized: "オフ") : nil
         case .pressed: accessibilityValue = nil
-        case .active: accessibilityValue = "次の1キー"
-        case .locked: accessibilityValue = "固定"
+        case .active: accessibilityValue = String(localized: "次の1キー")
+        case .locked: accessibilityValue = String(localized: "固定")
         }
     }
 
     private static func spokenName(for key: LaptopKey) -> String {
         switch key.id {
-        case "space": return "スペース"
-        case "backspace": return "バックスペース"
-        case "enter": return "エンター"
-        case "command-left", "command-right": return "コマンド"
-        case "alt-left", "alt-right": return key.label == "⌥" ? "オプション" : key.label
-        case "delete": return key.label == "⌦" ? "前方削除" : key.label
-        case "up": return "上"
-        case "down": return "下"
-        case "left": return "左"
-        case "right": return "右"
+        case "space": return String(localized: "スペース")
+        case "backspace": return String(localized: "バックスペース")
+        case "enter": return String(localized: "エンター")
+        case "command-left", "command-right": return String(localized: "コマンド")
+        case "alt-left", "alt-right": return key.label == "⌥" ? String(localized: "オプション") : key.label
+        case "delete": return key.label == "⌦" ? String(localized: "前方削除") : key.label
+        case "up": return String(localized: "上")
+        case "down": return String(localized: "下")
+        case "left": return String(localized: "左")
+        case "right": return String(localized: "右")
         default: return key.label
         }
     }

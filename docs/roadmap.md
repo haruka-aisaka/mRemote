@@ -338,7 +338,7 @@ iPhone Duo（Xcode 27.1 beta のシミュレータ）向け。仕様は docs/ui-
 
 ## 9. Phase 7 — リリース仕上げ
 
-- accessibility、String Catalog、日本語/英語文言
+- accessibility、String Catalog、日本語/英語文言（2026-10-07: `App/Localizable.xcstrings` を追加。開発言語は日本語のまま、画面の文言 271 件に英訳。`String` で組み立てる文言は `String(localized:)` にした。手元キーボードのキー表示（半/全・無変換など）は物理キーの刻印に合わせて訳さない。ログ用の文字列は対象外。コマンドラインのビルドはカタログへキーを足さないので、`tools/l10n/missing-keys.py <DerivedData>/Build/Intermediates.noindex` で漏れを確認する。英訳はネイティブ確認前）
 - エラー/help、予約 shortcut と background 制約の説明（文言と help 画面は 2026-10-07 に用意。予約 shortcut の実機記録と英語化が残り）
 - performance/energy/thermal tuning、network condition test
 - security review、fuzz/negative test、privacy manifest/用途説明

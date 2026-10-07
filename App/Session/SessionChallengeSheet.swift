@@ -48,7 +48,7 @@ struct SessionChallengeSheet: View {
             if challenge.storedCredentialWasRejected {
                 Section {
                     Label(
-                        "保存済みのパスワードが拒否されました。もう一度入力してください。",
+                        String(localized: "保存済みのパスワードが拒否されました。もう一度入力してください。"),
                         systemImage: "exclamationmark.triangle"
                     )
                     .foregroundStyle(.orange)
@@ -104,7 +104,7 @@ struct SessionChallengeSheet: View {
             }
 
             Section("証明書") {
-                LabeledContent("接続先", value: "\(challenge.host):\(challenge.port)")
+                LabeledContent(String(localized: "challenge.computer", defaultValue: "接続先"), value: "\(challenge.host):\(challenge.port)")
                 LabeledContent("発行先", value: challenge.subject)
                 LabeledContent("発行者", value: challenge.issuer)
                 LabeledContent("有効期間", value: validity(for: challenge))
@@ -132,15 +132,15 @@ struct SessionChallengeSheet: View {
             if challenge.disposition.allowsUserApproval {
                 Section {
                     Button(challenge.disposition.isIdentityChange
-                        ? "変更を承知のうえで今回のみ接続"
-                        : "今回のみ信頼") {
+                        ? String(localized: "変更を承知のうえで今回のみ接続")
+                        : String(localized: "今回のみ信頼")) {
                         onTrust(false)
                     }
                     .accessibilityIdentifier("certificate-trust-once")
 
                     Button(challenge.disposition.isIdentityChange
-                        ? "新しい証明書に置き換えて保存"
-                        : "この接続先で常に信頼") {
+                        ? String(localized: "新しい証明書に置き換えて保存")
+                        : String(localized: "この接続先で常に信頼")) {
                         onTrust(true)
                     }
                     .accessibilityIdentifier("certificate-trust-always")
@@ -166,47 +166,47 @@ struct SessionChallengeSheet: View {
     private func headline(for disposition: CertificateDisposition) -> String {
         switch disposition {
         case .untrustedRoot:
-            return "システムが信頼していない証明書です"
+            return String(localized: "システムが信頼していない証明書です")
         case .serverPurposeUnmet:
-            return "iOS のサーバー証明書要件を満たしていません"
+            return String(localized: "iOS のサーバー証明書要件を満たしていません")
         case .hostnameUnverifiable:
-            return "ホスト名を検証できていません"
+            return String(localized: "ホスト名を検証できていません")
         case .rejected(let reason):
             return reason
         case .fingerprintChanged:
-            return "以前と異なる証明書が提示されました"
+            return String(localized: "以前と異なる証明書が提示されました")
         }
     }
 
     private func explanation(for challenge: CertificateChallenge) -> String {
         switch challenge.disposition {
         case .untrustedRoot:
-            return """
+            return String(localized: """
             自己署名または独自 CA の証明書です。チェーンと有効期間は確認済みですが、\
             この証明書を保証する第三者はいません。下のフィンガープリントが接続先の\
             サーバーのものであることを、別の手段で確認してください。
-            """
+            """)
         case .serverPurposeUnmet:
-            return """
+            return String(localized: """
             チェーンと有効期間は確認済みですが、iOS がサーバー証明書に求める要件を\
             満たしていません。Windows のリモートデスクトップが既定で作る証明書は\
             この状態になることがあります。識別の根拠はフィンガープリントだけです。
-            """
+            """)
         case .hostnameUnverifiable:
-            return """
+            return String(localized: """
             接続先を IP アドレスで指定したため、証明書のホスト名は検証されていません。\
             Windows の自己署名証明書はコンピューター名しか持たないため、IP 指定では\
             照合が成立しません。識別の根拠はフィンガープリントだけです。
-            """
+            """)
         case .rejected(let reason):
-            return "\(reason) 承認しても安全にはならないため、接続は中止されます。"
+            return String(localized: "\(reason) 承認しても安全にはならないため、接続は中止されます。")
         case .fingerprintChanged:
-            return """
+            return String(localized: """
             この接続先には以前に承認した証明書があり、今回はそれと異なる証明書が\
             提示されました。サーバーの証明書を更新した場合にも起こりますが、通信が\
             傍受されている場合にも同じことが起こります。心当たりがなければ承認せず、\
             サーバー側で証明書を確認してください。
-            """
+            """)
         }
     }
 
@@ -215,7 +215,7 @@ struct SessionChallengeSheet: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         guard challenge.notBefore != .distantPast, challenge.notAfter != .distantFuture else {
-            return "読み取れません"
+            return String(localized: "読み取れません")
         }
         return "\(formatter.string(from: challenge.notBefore)) 〜 \(formatter.string(from: challenge.notAfter))"
     }

@@ -1,0 +1,2665 @@
+{
+  "sourceLanguage": "ja",
+  "strings": {
+    "%@\n%@": {
+      "shouldTranslate": false
+    },
+    "%@ · %@": {
+      "shouldTranslate": false
+    },
+    "%@ からコピーしました": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied from %@"
+          }
+        }
+      }
+    },
+    "%@ にサインイン": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign In to %@"
+          }
+        }
+      }
+    },
+    "%@ に自動で停止します": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stops automatically at %@"
+          }
+        }
+      }
+    },
+    "%@ に貼り付けました": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pasted to %@"
+          }
+        }
+      }
+    },
+    "%@ のコピー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy of %@"
+          }
+        }
+      }
+    },
+    "%@ を切断しますか？": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect %@?"
+          }
+        }
+      }
+    },
+    "%@ 承認しても安全にはならないため、接続は中止されます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Accepting it wouldn't make the connection safe, so it will be cancelled."
+          }
+        }
+      }
+    },
+    "%@（可変）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (adjustable)"
+          }
+        }
+      }
+    },
+    "%lld%%": {
+      "shouldTranslate": false
+    },
+    "(読み取れません)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(unreadable)"
+          }
+        }
+      }
+    },
+    "100%": {
+      "shouldTranslate": false
+    },
+    "App 切り替えに使われます。Win+Tab はキーバーの Win を押してから Tab。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switches apps. For Win+Tab, tap Win on the key bar, then Tab."
+          }
+        }
+      }
+    },
+    "Caps キー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Caps Key"
+          }
+        }
+      }
+    },
+    "FreeRDP 3.31.1 同梱": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bundled with FreeRDP 3.31.1"
+          }
+        }
+      }
+    },
+    "GC": {
+      "shouldTranslate": false
+    },
+    "Globe（地球儀）キー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Globe key"
+          }
+        }
+      }
+    },
+    "NLA 必須": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NLA Required"
+          }
+        }
+      }
+    },
+    "SHA-256 フィンガープリント": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA-256 Fingerprint"
+          }
+        }
+      }
+    },
+    "Spotlight に使われます。Win+Space はキーバーの Win を押してから Space。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens Spotlight. For Win+Space, tap Win on the key bar, then Space."
+          }
+        }
+      }
+    },
+    "TLS 必須": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TLS Required"
+          }
+        }
+      }
+    },
+    "UIKit": {
+      "shouldTranslate": false
+    },
+    "US": {
+      "shouldTranslate": false
+    },
+    "Windows の「設定 > 時刻と言語 > 言語と地域」で日本語の「言語のオプション」を開き、Microsoft IME の「キーボード オプション > キーとタッチのカスタマイズ」で「キーの割り当て」をオンにし、無変換キーを「IME-オフ」、変換キーを「IME-オン」にします。サインインし直すと効きます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Windows Settings > Time & language > Language & region, open Language options for Japanese. Under Microsoft IME > Keyboard options > Key and touch customization, turn on key assignment and set the Muhenkan key to IME-Off and the Henkan key to IME-On. It takes effect after you sign in again."
+          }
+        }
+      }
+    },
+    "Windows の拡大率": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Windows Scale"
+          }
+        }
+      }
+    },
+    "challenge.computer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computer"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続先"
+          }
+        }
+      }
+    },
+    "iOS のサーバー証明書要件を満たしていません": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It doesn't meet iOS's requirements for server certificates"
+          }
+        }
+      }
+    },
+    "iPad の Command キーは Windows キーとして送るため、Windows キーを含むショートカットの一部が届きません。キーバーの修飾キーは 1 回押すと次の 1 キーだけ、2 回押すと固定、3 回目で解除です。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The iPad's Command key is sent as the Windows key, so some Windows-key shortcuts never reach the app. A modifier on the key bar applies to the next key after one tap, stays on after two, and turns off on the third."
+          }
+        }
+      }
+    },
+    "iPadOS が先に使うキー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keys iPadOS Keeps"
+          }
+        }
+      }
+    },
+    "iPadOS の「ハードウェアキーボード」設定で Caps Lock による入力切替がオンだと、英字入力の切替に使われます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If switching input sources with Caps Lock is on in iPadOS's Hardware Keyboard settings, Caps Lock switches to and from the Latin input source."
+          }
+        }
+      }
+    },
+    "iPadOS のショートカットに使われ、Windows へは送りません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used for iPadOS shortcuts and not sent to Windows."
+          }
+        }
+      }
+    },
+    "iPadOS の入力切替に設定されていると届きません。キーバーの Ctrl を押してから Space。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Doesn't arrive if iPadOS uses it to switch input sources. Tap Ctrl on the key bar, then Space."
+          }
+        }
+      }
+    },
+    "profile-editor.section.computer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computer"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続先"
+          }
+        }
+      }
+    },
+    "↑": {
+      "shouldTranslate": false
+    },
+    "↓": {
+      "shouldTranslate": false
+    },
+    "⚠︎ %@ は古い RDP セキュリティで接続しています": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⚠︎ %@ is connected with legacy RDP security"
+          }
+        }
+      }
+    },
+    "かな": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kana"
+          }
+        }
+      }
+    },
+    "このアカウントはリモート接続を許可されていません。リモート側で「リモートデスクトップ ユーザー」に加えるか、管理者に確認してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This account isn't allowed to sign in remotely. Add it to Remote Desktop Users on the remote computer, or ask its administrator."
+          }
+        }
+      }
+    },
+    "このセッションを切断": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect This Session"
+          }
+        }
+      }
+    },
+    "このテキストは送れません（大きすぎるか NUL を含みます）。長いテキストは分けて送ってください": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This text can't be sent (too large or contains NUL). Send long text in parts"
+          }
+        }
+      }
+    },
+    "このデバイスに保存": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save on This Device"
+          }
+        }
+      }
+    },
+    "この接続では音声が無効です（接続設定で変更できます）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio is off for this computer (change it in the computer's settings)"
+          }
+        }
+      }
+    },
+    "この接続は古い RDP セキュリティで通信しています。暗号は弱く、サーバーの確認もできません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This connection uses legacy RDP security. The encryption is weak and the server can't be verified."
+          }
+        }
+      }
+    },
+    "この接続先だけ、TLS/NLA を使えないサーバーへ古い RDP セキュリティで接続できるようにします。暗号は弱く、サーバーが本物かどうかの確認もできません。信頼できるネットワーク上の、自分が管理するマシンにだけ使ってください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lets this computer only be reached with legacy RDP security when the server can't use TLS/NLA. The encryption is weak and the server's identity can't be checked. Use it only for machines you manage on a network you trust."
+          }
+        }
+      }
+    },
+    "この接続先で常に信頼": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always Trust for This Computer"
+          }
+        }
+      }
+    },
+    "この接続先には以前に承認した証明書があり、今回はそれと異なる証明書が提示されました。サーバーの証明書を更新した場合にも起こりますが、通信が傍受されている場合にも同じことが起こります。心当たりがなければ承認せず、サーバー側で証明書を確認してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You accepted a different certificate for this computer before. This happens when the server's certificate is renewed, but it also happens when the connection is being intercepted. If you don't know why it changed, don't accept it; check the certificate on the server."
+          }
+        }
+      }
+    },
+    "この端末で再生": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play on This Device"
+          }
+        }
+      }
+    },
+    "この証明書は承認できません。接続を中止してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This certificate can't be accepted. Cancel the connection."
+          }
+        }
+      }
+    },
+    "しない": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        }
+      }
+    },
+    "しばらくすると OS が接続を閉じることがあります。戻ったときに切断されていたら「再接続」を押してください。RDP の切断はサインアウトではないので、同じデスクトップに戻ります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After a while the system may close the connection. If it's disconnected when you come back, tap Reconnect. Disconnecting RDP doesn't sign you out, so you return to the same desktop."
+          }
+        }
+      }
+    },
+    "する": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On"
+          }
+        }
+      }
+    },
+    "ろ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ro"
+          }
+        }
+      }
+    },
+    "アクションなし": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Action"
+          }
+        }
+      }
+    },
+    "アプリ内部のエラーです。もう一度接続してください。続く場合は、この詳細を添えて報告してください。（%@）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An internal error occurred. Try connecting again. If it keeps happening, please report it with this detail. (%@)"
+          }
+        }
+      }
+    },
+    "エラー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error"
+          }
+        }
+      }
+    },
+    "エンター": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter"
+          }
+        }
+      }
+    },
+    "オフ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        }
+      }
+    },
+    "オプション": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Option"
+          }
+        }
+      }
+    },
+    "オン": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On"
+          }
+        }
+      }
+    },
+    "カタカナ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Katakana"
+          }
+        }
+      }
+    },
+    "キャンセル": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "キーバーで Ctrl と Alt を押してから Del を押すと、Windows のセキュリティ画面（ロック、サインアウト、タスク マネージャーなど）が出ます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap Ctrl and Alt on the key bar, then Del, to open the Windows security screen (Lock, Sign out, Task Manager, and so on)."
+          }
+        }
+      }
+    },
+    "キーボード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard"
+          }
+        }
+      }
+    },
+    "キーボード / トラックパッド": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard / Trackpad"
+          }
+        }
+      }
+    },
+    "キーボード / 拡張キー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard / Extra Keys"
+          }
+        }
+      }
+    },
+    "キーボードのみ（画面を触って操作）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard only (touch the screen to point)"
+          }
+        }
+      }
+    },
+    "キーボードの見た目": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard Style"
+          }
+        }
+      }
+    },
+    "キーボードを閉じる": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide Keyboard"
+          }
+        }
+      }
+    },
+    "キーボードレイアウト": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard Layout"
+          }
+        }
+      }
+    },
+    "キーボード切断": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard disconnected"
+          }
+        }
+      }
+    },
+    "クリップボード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clipboard"
+          }
+        }
+      }
+    },
+    "クリップボードの転送に失敗しました。もう一度試してください": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clipboard transfer failed. Try again"
+          }
+        }
+      }
+    },
+    "クリップボードを使えません。接続設定の「クリップボード」で許可されているか、リモート側でクリップボードのリダイレクトが許可されているかを確認してください": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The clipboard isn't available. Check that Clipboard is allowed in the computer's settings and that the remote computer allows clipboard redirection"
+          }
+        }
+      }
+    },
+    "コマンド": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command"
+          }
+        }
+      }
+    },
+    "サインインに時間がかかりすぎたため、サーバーが切断しました。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server disconnected because signing in took too long."
+          }
+        }
+      }
+    },
+    "サーバーとの通信が想定外の形で終わりました。もう一度接続してください。続く場合は、この詳細を添えて報告してください。（%@）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The connection to the server ended unexpectedly. Try connecting again. If it keeps happening, please report it with this detail. (%@)"
+          }
+        }
+      }
+    },
+    "サーバーと共通のセキュリティ方式がありません。サーバーが TLS/NLA を許可せず古い RDP セキュリティのみを受け付けている可能性があります。必要なら接続設定の「接続方式」で明示的に許可できます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server and this app have no security protocol in common. The server may refuse TLS/NLA and accept only legacy RDP security. If needed, you can allow it explicitly under Security Protocol in the computer's settings."
+          }
+        }
+      }
+    },
+    "サーバー側でこのセッションが切断されました。別の端末が同じユーザーで接続した場合もこうなります。取り返さないよう、自動では再接続しません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server disconnected this session. This also happens when another device signs in as the same user. To avoid taking the session back, it won't reconnect automatically."
+          }
+        }
+      }
+    },
+    "サーバー側でサインアウトされました。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You were signed out on the server."
+          }
+        }
+      }
+    },
+    "サーバー証明書の確認": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verify Server Certificate"
+          }
+        }
+      }
+    },
+    "サーバー証明書を信頼しなかったため中止しました。接続し直すと、もう一度確認できます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped because the server certificate wasn't trusted. Connect again to review it again."
+          }
+        }
+      }
+    },
+    "システムが信頼していない証明書です": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system doesn't trust this certificate"
+          }
+        }
+      }
+    },
+    "スクロール方向": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scroll Direction"
+          }
+        }
+      }
+    },
+    "スペース": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Space"
+          }
+        }
+      }
+    },
+    "セキュリティ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Security"
+          }
+        }
+      }
+    },
+    "セッション": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session"
+          }
+        }
+      }
+    },
+    "セッションを切り替える": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch Session"
+          }
+        }
+      }
+    },
+    "セッションメニュー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session Menu"
+          }
+        }
+      }
+    },
+    "ソフトウェアキーボード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Software Keyboard"
+          }
+        }
+      }
+    },
+    "タップで単独で送信。長押しで次のキーと組み合わせ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap to send it alone. Hold to combine it with the next key."
+          }
+        }
+      }
+    },
+    "チェーンと有効期間は確認済みですが、iOS がサーバー証明書に求める要件を満たしていません。Windows のリモートデスクトップが既定で作る証明書はこの状態になることがあります。識別の根拠はフィンガープリントだけです。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The chain and validity period are checked, but the certificate doesn't meet iOS's requirements for server certificates. The certificate Windows Remote Desktop creates by default can be like this. Only the fingerprint identifies the server."
+          }
+        }
+      }
+    },
+    "チャネル": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Channels"
+          }
+        }
+      }
+    },
+    "トラックパッド": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trackpad"
+          }
+        }
+      }
+    },
+    "トラックパッド / キーボード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trackpad / Keyboard"
+          }
+        }
+      }
+    },
+    "トラックパッドのクリックボタン": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trackpad Click Buttons"
+          }
+        }
+      }
+    },
+    "ドメイン（任意）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Domain (optional)"
+          }
+        }
+      }
+    },
+    "ネットワークに到達できません。iPhone/iPad のネットワーク接続と、VPN が必要な接続先ならその接続を確認してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The network can't be reached. Check this device's network connection, and the VPN if the computer needs one."
+          }
+        }
+      }
+    },
+    "バックグラウンドに移ったとき": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In the Background"
+          }
+        }
+      }
+    },
+    "バックスペース": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backspace"
+          }
+        }
+      }
+    },
+    "パスワード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Password"
+          }
+        }
+      }
+    },
+    "パスワードは Keychain にのみ保存され、接続設定のファイルやログには残りません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The password is stored only in the Keychain, never in the settings file or logs."
+          }
+        }
+      }
+    },
+    "パスワードは Keychain にのみ保存され、接続設定ファイルには書き込まれません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The password is stored only in the Keychain and never written to the settings file."
+          }
+        }
+      }
+    },
+    "フォーカス喪失": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Focus lost"
+          }
+        }
+      }
+    },
+    "ヘルプ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Help"
+          }
+        }
+      }
+    },
+    "ホストIME": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Host IME"
+          }
+        }
+      }
+    },
+    "ホスト名が見つかりません。ホスト名のつづりを確認するか、IP アドレスで指定してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The host name can't be found. Check its spelling, or use the IP address instead."
+          }
+        }
+      }
+    },
+    "ホスト名または IP": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Host name or IP"
+          }
+        }
+      }
+    },
+    "ホスト名を検証できていません": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The host name couldn't be verified"
+          }
+        }
+      }
+    },
+    "ホーム画面に使われます。Win+H はキーバーの Win を押してから H。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Goes to the Home Screen. For Win+H, tap Win on the key bar, then H."
+          }
+        }
+      }
+    },
+    "ポート": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port"
+          }
+        }
+      }
+    },
+    "メモリなどが足りず接続を始められませんでした。ほかのセッションを閉じてからもう一度試してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough memory or other resources to start the connection. Close other sessions and try again."
+          }
+        }
+      }
+    },
+    "ユーザー名": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "User Name"
+          }
+        }
+      }
+    },
+    "ライセンス": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Licenses"
+          }
+        }
+      }
+    },
+    "リモートが応答しませんでした。少し待ってからもう一度試してください": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The remote computer didn't respond. Wait a moment and try again"
+          }
+        }
+      }
+    },
+    "リモートでテキストをコピーすると、ここから端末へコピーできます": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy text on the remote computer to bring it to this device from here"
+          }
+        }
+      }
+    },
+    "リモートにコピーされたテキストがありません。リモート側で先にコピーしてください": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There's no copied text on the remote computer. Copy something there first"
+          }
+        }
+      }
+    },
+    "リモートにテキストがあります": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The remote computer has text"
+          }
+        }
+      }
+    },
+    "リモートのテキストを端末へコピー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Remote Text to This Device"
+          }
+        }
+      }
+    },
+    "リモートデスクトップ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote Desktop"
+          }
+        }
+      }
+    },
+    "リモート解像度": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote Resolution"
+          }
+        }
+      }
+    },
+    "レイアウト": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout"
+          }
+        }
+      }
+    },
+    "レガシー RDP セキュリティ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legacy RDP Security"
+          }
+        }
+      }
+    },
+    "レガシー RDP セキュリティは暗号強度が低く、資格情報の保護も弱くなります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legacy RDP security uses weak encryption and protects credentials poorly."
+          }
+        }
+      }
+    },
+    "レガシー RDP セキュリティを許可しますか？": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow Legacy RDP Security?"
+          }
+        }
+      }
+    },
+    "一括解放": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release all"
+          }
+        }
+      }
+    },
+    "上": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up"
+          }
+        }
+      }
+    },
+    "下": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Down"
+          }
+        }
+      }
+    },
+    "今回のみ信頼": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trust Once"
+          }
+        }
+      }
+    },
+    "以前と異なる証明書が提示されました": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server presented a different certificate than before"
+          }
+        }
+      }
+    },
+    "以前に承認したフィンガープリント": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previously Accepted Fingerprint"
+          }
+        }
+      }
+    },
+    "何もしない": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing"
+          }
+        }
+      }
+    },
+    "保存": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save"
+          }
+        }
+      }
+    },
+    "保存済みのパスワードが拒否されました。もう一度入力してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The saved password was rejected. Enter it again."
+          }
+        }
+      }
+    },
+    "入力": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input"
+          }
+        }
+      }
+    },
+    "入力と音声は、表に出ているセッションだけに届きます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input and audio go only to the session on screen."
+          }
+        }
+      }
+    },
+    "入力モード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input Mode"
+          }
+        }
+      }
+    },
+    "入力不可": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input off"
+          }
+        }
+      }
+    },
+    "入力停止": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input paused"
+          }
+        }
+      }
+    },
+    "入力停止中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input paused"
+          }
+        }
+      }
+    },
+    "入力可": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input on"
+          }
+        }
+      }
+    },
+    "入力診断": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input Diagnostics"
+          }
+        }
+      }
+    },
+    "全体設定に従う": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Default"
+          }
+        }
+      }
+    },
+    "再接続": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnect"
+          }
+        }
+      }
+    },
+    "再接続中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnecting"
+          }
+        }
+      }
+    },
+    "再接続中 (%lld/%lld)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnecting (%lld/%lld)"
+          }
+        }
+      }
+    },
+    "切り替え、キーボード、クリップボード、切断など": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch sessions, keyboard, clipboard, disconnect, and more"
+          }
+        }
+      }
+    },
+    "切断": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
+        }
+      }
+    },
+    "切断されました": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnected"
+          }
+        }
+      }
+    },
+    "切断中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnecting"
+          }
+        }
+      }
+    },
+    "切断済み": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnected"
+          }
+        }
+      }
+    },
+    "初期モード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Mode"
+          }
+        }
+      }
+    },
+    "初期倍率": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Zoom"
+          }
+        }
+      }
+    },
+    "別のアプリに切り替える、ホーム画面に戻る、画面をロックすると、押していたキーとボタンは離され、音声は止まります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When you switch apps, go to the Home Screen, or lock the device, held keys and buttons are released and audio stops."
+          }
+        }
+      }
+    },
+    "別の接続が同じユーザーでサインインし、このセッションを引き継ぎました。取り返さないよう、自動では再接続しません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another connection signed in as the same user and took over this session. To avoid taking it back, it won't reconnect automatically."
+          }
+        }
+      }
+    },
+    "別経路（未採用）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other source (not used)"
+          }
+        }
+      }
+    },
+    "削除": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        }
+      }
+    },
+    "前方削除": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward Delete"
+          }
+        }
+      }
+    },
+    "半/全": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hankaku/Zenkaku"
+          }
+        }
+      }
+    },
+    "双方向": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Both Ways"
+          }
+        }
+      }
+    },
+    "双方向は転送を許可する方向の設定です。クリップボードを常時監視するものではなく、転送はコピー/貼り付け操作を起点にします。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This sets which directions transfers are allowed. The clipboard is never watched; transfers start only when you copy or paste."
+          }
+        }
+      }
+    },
+    "反転": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reversed"
+          }
+        }
+      }
+    },
+    "受信のみ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receive Only"
+          }
+        }
+      }
+    },
+    "古い RDP セキュリティ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legacy RDP Security"
+          }
+        }
+      }
+    },
+    "古い RDP セキュリティを許可した接続先です。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This computer allows legacy RDP security."
+          }
+        }
+      }
+    },
+    "古い RDP セキュリティを許可した接続先ですが、この接続では使われていません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This computer allows legacy RDP security, but this connection doesn't use it."
+          }
+        }
+      }
+    },
+    "右": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right"
+          }
+        }
+      }
+    },
+    "右クリック": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right Click"
+          }
+        }
+      }
+    },
+    "右上の + から Windows の接続先を追加します。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a Windows computer with + at the top right."
+          }
+        }
+      }
+    },
+    "同時接続はあと %lld セッションまでです。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can open %lld more session(s) at the same time."
+          }
+        }
+      }
+    },
+    "名前": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        }
+      }
+    },
+    "固定": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Locked"
+          }
+        }
+      }
+    },
+    "変えずに縮小表示": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep and Scale Down"
+          }
+        }
+      }
+    },
+    "変換": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Henkan"
+          }
+        }
+      }
+    },
+    "変換中: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Composing: %@"
+          }
+        }
+      }
+    },
+    "変更を承知のうえで今回のみ接続": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect Once Despite the Change"
+          }
+        }
+      }
+    },
+    "完了": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        }
+      }
+    },
+    "完全な notice と SPDX SBOM はリポジトリの ThirdParty/ にあります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The full notices and the SPDX SBOM are in ThirdParty/ in the repository."
+          }
+        }
+      }
+    },
+    "実行中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running"
+          }
+        }
+      }
+    },
+    "対応のない up": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unmatched up"
+          }
+        }
+      }
+    },
+    "左": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left"
+          }
+        }
+      }
+    },
+    "左クリック": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left Click"
+          }
+        }
+      }
+    },
+    "常に表示": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always"
+          }
+        }
+      }
+    },
+    "待機中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idle"
+          }
+        }
+      }
+    },
+    "応答がないまま時間切れになりました。リモートの電源とネットワーク、ファイアウォールで RDP（通常 3389）が許可されているかを確認してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The connection timed out with no response. Check that the remote computer is on and reachable, and that its firewall allows RDP (usually port 3389)."
+          }
+        }
+      }
+    },
+    "手元IME": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local IME"
+          }
+        }
+      }
+    },
+    "手元IME は iPad で変換して確定した文字だけを送ります（Windows 側の IME はオフにしてください）。ホストIME は英数キーボードの打鍵をそのまま送り、Windows 側の IME で変換します。セッション中にキーバーで切り替えられます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local IME sends only text you compose and commit on this device (turn the Windows IME off). Host IME sends keystrokes from the English keyboard as they are, for the Windows IME to convert. You can switch during a session on the key bar."
+          }
+        }
+      }
+    },
+    "手元側の配置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lower Half Layout"
+          }
+        }
+      }
+    },
+    "承認は %@:%u とこのフィンガープリントの組み合わせにだけ適用されます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approval applies only to %@:%u with this fingerprint."
+          }
+        }
+      }
+    },
+    "折り曲げたとき": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When Folded"
+          }
+        }
+      }
+    },
+    "折り曲げたときの解像度": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolution When Folded"
+          }
+        }
+      }
+    },
+    "押下キャンセル": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Presses cancelled"
+          }
+        }
+      }
+    },
+    "接続": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        }
+      }
+    },
+    "接続が切れました": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection Lost"
+          }
+        }
+      }
+    },
+    "接続は維持されています": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Still connected"
+          }
+        }
+      }
+    },
+    "接続を中止しました。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection cancelled."
+          }
+        }
+      }
+    },
+    "接続を拒否されました。ポート番号と、リモート側でリモートデスクトップが有効になっているかを確認してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The connection was refused. Check the port number and that Remote Desktop is turned on on the remote computer."
+          }
+        }
+      }
+    },
+    "接続中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting"
+          }
+        }
+      }
+    },
+    "接続先": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computers"
+          }
+        }
+      }
+    },
+    "接続先がありません": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Computers"
+          }
+        }
+      }
+    },
+    "接続先を IP アドレスで指定したため、証明書のホスト名は検証されていません。Windows の自己署名証明書はコンピューター名しか持たないため、IP 指定では照合が成立しません。識別の根拠はフィンガープリントだけです。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Because the computer is given by IP address, the certificate's host name isn't verified. A Windows self-signed certificate names only the computer, so it can't match an IP address. Only the fingerprint identifies the server."
+          }
+        }
+      }
+    },
+    "接続先を編集": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Computer"
+          }
+        }
+      }
+    },
+    "接続先を読み込めません": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't Load Computers"
+          }
+        }
+      }
+    },
+    "接続先を追加": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Computer"
+          }
+        }
+      }
+    },
+    "接続先一覧へ戻る（接続を維持）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to Computers (stay connected)"
+          }
+        }
+      }
+    },
+    "接続方式": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Security Protocol"
+          }
+        }
+      }
+    },
+    "接続済み": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
+          }
+        }
+      }
+    },
+    "操作がなかったため、サーバーが切断しました。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server disconnected because the session was idle."
+          }
+        }
+      }
+    },
+    "新しいセッションで接続": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect in a New Session"
+          }
+        }
+      }
+    },
+    "新しい証明書に置き換えて保存": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace with the New Certificate"
+          }
+        }
+      }
+    },
+    "日本語 106/109": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Japanese 106/109"
+          }
+        }
+      }
+    },
+    "暗号化した通信を始められませんでした。接続設定の「接続方式」がサーバーの設定と合っているか確認してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't start an encrypted connection. Check that Security Protocol in the computer's settings matches the server."
+          }
+        }
+      }
+    },
+    "最終接続 %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last connected %@"
+          }
+        }
+      }
+    },
+    "有効": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On"
+          }
+        }
+      }
+    },
+    "有効期間": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valid Period"
+          }
+        }
+      }
+    },
+    "未確定（まだ送信されていません）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not committed (not sent yet)"
+          }
+        }
+      }
+    },
+    "標準": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Natural"
+          }
+        }
+      }
+    },
+    "次に確定した文字を、リモートのクリップボードを上書きして貼り付けで送ります。Unicode 入力を受け付けないアプリ向け": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sends the next committed text by pasting it, replacing the remote clipboard. For apps that don't accept Unicode input."
+          }
+        }
+      }
+    },
+    "次の1キー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next key only"
+          }
+        }
+      }
+    },
+    "次の入力を貼り付けで送る（クリップボード上書き）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste next input (replaces clipboard)"
+          }
+        }
+      }
+    },
+    "無効": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        }
+      }
+    },
+    "無変換": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muhenkan"
+          }
+        }
+      }
+    },
+    "画面に合わせて変える": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resize to Fit"
+          }
+        }
+      }
+    },
+    "画面に合わせる": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fit to Screen"
+          }
+        }
+      }
+    },
+    "画面下半分のキーボードとトラックパッド": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard and Trackpad on the Lower Half"
+          }
+        }
+      }
+    },
+    "画面終了": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen closed"
+          }
+        }
+      }
+    },
+    "発行先": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Issued To"
+          }
+        }
+      }
+    },
+    "発行者": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Issuer"
+          }
+        }
+      }
+    },
+    "確定": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commit"
+          }
+        }
+      }
+    },
+    "確認待ち": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for You"
+          }
+        }
+      }
+    },
+    "経路設定の変更": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source policy changed"
+          }
+        }
+      }
+    },
+    "結果": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Result"
+          }
+        }
+      }
+    },
+    "編集": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        }
+      }
+    },
+    "自動": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic"
+          }
+        }
+      }
+    },
+    "自動再接続": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto Reconnect"
+          }
+        }
+      }
+    },
+    "自動（安全な方式のみ）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic (secure only)"
+          }
+        }
+      }
+    },
+    "自動（端末に合わせる）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic (match this device)"
+          }
+        }
+      }
+    },
+    "自己署名または独自 CA の証明書です。チェーンと有効期間は確認済みですが、この証明書を保証する第三者はいません。下のフィンガープリントが接続先のサーバーのものであることを、別の手段で確認してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This certificate is self-signed or from a private CA. The chain and validity period are checked, but no third party vouches for it. Confirm by some other means that the fingerprint below belongs to the server."
+          }
+        }
+      }
+    },
+    "英数": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eisu"
+          }
+        }
+      }
+    },
+    "英数/かな、変換/無変換、修飾キーなど文字を生まないキーだけを、メモリ上に最大 %lld 件記録します。保存も送信もしません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Records up to %lld presses of keys that don't type characters (Eisu/Kana, Henkan/Muhenkan, modifiers, and so on) in memory only. Nothing is saved or sent."
+          }
+        }
+      }
+    },
+    "英数/かなで Windows の IME を切り替える": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch the Windows IME with Eisu/Kana"
+          }
+        }
+      }
+    },
+    "英数→無変換、かな→変換の変換が保証されるのは日本語レイアウトのみです。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eisu → Muhenkan and Kana → Henkan are guaranteed only with the Japanese layout."
+          }
+        }
+      }
+    },
+    "英数→無変換、かな→変換の変換が保証されるのは日本語レイアウトのみです。接続先ごとに上書きできます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eisu → Muhenkan and Kana → Henkan are guaranteed only with the Japanese layout. Each computer can override this."
+          }
+        }
+      }
+    },
+    "英数は無変換、かなは変換として送ります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eisu is sent as Muhenkan, and Kana as Henkan."
+          }
+        }
+      }
+    },
+    "表示": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
+          }
+        }
+      }
+    },
+    "表示しない": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Never"
+          }
+        }
+      }
+    },
+    "表示倍率": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zoom"
+          }
+        }
+      }
+    },
+    "複製": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duplicate"
+          }
+        }
+      }
+    },
+    "解放後の押下": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press after release"
+          }
+        }
+      }
+    },
+    "記録": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Log"
+          }
+        }
+      }
+    },
+    "設定": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "許可する": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow"
+          }
+        }
+      }
+    },
+    "診断": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics"
+          }
+        }
+      }
+    },
+    "証明書": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Certificate"
+          }
+        }
+      }
+    },
+    "認証に失敗しました。ユーザー名・パスワード・ドメインを確認してください。Microsoft アカウントはメールアドレスをユーザー名にします。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in failed. Check the user name, password, and domain. For a Microsoft account, use its email address as the user name."
+          }
+        }
+      }
+    },
+    "読み取れません": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unreadable"
+          }
+        }
+      }
+    },
+    "貼り付けで送る": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send by Paste"
+          }
+        }
+      }
+    },
+    "資格情報": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Credentials"
+          }
+        }
+      }
+    },
+    "資格情報が必要です": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Credentials Required"
+          }
+        }
+      }
+    },
+    "追加": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add"
+          }
+        }
+      }
+    },
+    "送れないキーとバックグラウンド": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsendable Keys and Background"
+          }
+        }
+      }
+    },
+    "送信": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent"
+          }
+        }
+      }
+    },
+    "送信のみ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send Only"
+          }
+        }
+      }
+    },
+    "通信の保護": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection Security"
+          }
+        }
+      }
+    },
+    "通常": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Natural"
+          }
+        }
+      }
+    },
+    "重複 down": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duplicate down"
+          }
+        }
+      }
+    },
+    "閉じる": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        }
+      }
+    },
+    "非文字キーを記録": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record Non-Character Keys"
+          }
+        }
+      }
+    },
+    "音声": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio"
+          }
+        }
+      }
+    },
+    "音声を再生": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play Audio"
+          }
+        }
+      }
+    },
+    "音声再生": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio Playback"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

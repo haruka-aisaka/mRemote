@@ -521,7 +521,7 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
             evaluation = try ServerTrustEvaluator().evaluate(presented)
         } catch {
             logger.certificate("evaluation failed: \(error)")
-            settle(snapshot, accepted: false, detail: "証明書を評価できません")
+            settle(snapshot, accepted: false, detail: "evaluation failed")
             return
         }
         logger.certificate(evaluation.evidenceDescription)
@@ -566,8 +566,8 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
                 leafSHA256: leafSHA256,
                 chainSHA256: evaluation.certificateFingerprints.chainSHA256
                     .joined(separator: ","),
-                subject: summary?.subject ?? "(読み取れません)",
-                issuer: summary?.issuer ?? "(読み取れません)",
+                subject: summary?.subject ?? String(localized: "(読み取れません)"),
+                issuer: summary?.issuer ?? String(localized: "(読み取れません)"),
                 // A certificate whose validity cannot be parsed still has to
                 // be reviewable; the dates are shown as unknown rather than
                 // invented, and the fingerprint is the identity either way.

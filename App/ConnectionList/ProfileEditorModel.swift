@@ -63,7 +63,7 @@ final class ProfileEditorModel: Identifiable {
 
     var isEditing: Bool { existing != nil }
 
-    var title: String { isEditing ? "接続先を編集" : "接続先を追加" }
+    var title: String { isEditing ? String(localized: "接続先を編集") : String(localized: "接続先を追加") }
 
     var port: UInt16? {
         guard let value = UInt16(portText.trimmingCharacters(in: .whitespaces)), value > 0 else {

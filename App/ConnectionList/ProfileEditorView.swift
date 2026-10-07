@@ -9,7 +9,7 @@ struct ProfileEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("接続先") {
+                Section(String(localized: "profile-editor.section.computer", defaultValue: "接続先")) {
                     TextField("名前", text: $model.displayName)
                         .accessibilityIdentifier("profile-name-field")
                     TextField("ホスト名または IP", text: $model.host)
@@ -36,14 +36,14 @@ struct ProfileEditorView: View {
 
                 Section("キーボード") {
                     InheritablePicker(
-                        title: "レイアウト",
+                        title: String(localized: "レイアウト"),
                         selection: $model.keyboardLayout,
                         options: KeyboardLayoutPreference.allCases,
                         label: keyboardLabel
                     )
                     if model.showsJapaneseKeyWarning {
                         Label(
-                            "英数→無変換、かな→変換の変換が保証されるのは日本語レイアウトのみです。",
+                            String(localized: "英数→無変換、かな→変換の変換が保証されるのは日本語レイアウトのみです。"),
                             systemImage: "exclamationmark.triangle"
                         )
                         .font(.footnote)
@@ -71,7 +71,7 @@ struct ProfileEditorView: View {
                     }
                     if model.showsLegacySecurityWarning {
                         Label(
-                            "レガシー RDP セキュリティは暗号強度が低く、資格情報の保護も弱くなります。",
+                            String(localized: "レガシー RDP セキュリティは暗号強度が低く、資格情報の保護も弱くなります。"),
                             systemImage: "exclamationmark.triangle"
                         )
                         .font(.footnote)
@@ -80,22 +80,22 @@ struct ProfileEditorView: View {
 
                 Section("チャネル") {
                     InheritablePicker(
-                        title: "音声再生",
+                        title: String(localized: "音声再生"),
                         selection: $model.audioPlayback,
                         options: [true, false],
-                        label: { $0 ? "有効" : "無効" }
+                        label: { $0 ? String(localized: "有効") : String(localized: "無効") }
                     )
                     InheritablePicker(
-                        title: "クリップボード",
+                        title: String(localized: "クリップボード"),
                         selection: $model.clipboardPolicy,
                         options: ClipboardPolicy.allCases,
                         label: clipboardLabel
                     )
                     InheritablePicker(
-                        title: "スクロール方向",
+                        title: String(localized: "スクロール方向"),
                         selection: $model.scrollDirection,
                         options: ScrollDirection.allCases,
-                        label: { $0 == .normal ? "通常" : "反転" }
+                        label: { $0 == .normal ? String(localized: "通常") : String(localized: "反転") }
                     )
                 }
             }
@@ -122,27 +122,27 @@ struct ProfileEditorView: View {
 
     private func keyboardLabel(_ value: KeyboardLayoutPreference) -> String {
         switch value {
-        case .japanese: return "日本語 106/109"
+        case .japanese: return String(localized: "日本語 106/109")
         case .us: return "US"
-        case .automatic: return "自動"
+        case .automatic: return String(localized: "自動")
         }
     }
 
     private func clipboardLabel(_ value: ClipboardPolicy) -> String {
         switch value {
-        case .disabled: return "無効"
-        case .bidirectional: return "双方向"
-        case .sendOnly: return "送信のみ"
-        case .receiveOnly: return "受信のみ"
+        case .disabled: return String(localized: "無効")
+        case .bidirectional: return String(localized: "双方向")
+        case .sendOnly: return String(localized: "送信のみ")
+        case .receiveOnly: return String(localized: "受信のみ")
         }
     }
 
     private func securityLabel(_ value: SecurityPolicy) -> String {
         switch value {
-        case .secureAutomatic: return "自動（安全な方式のみ）"
-        case .nlaRequired: return "NLA 必須"
-        case .tlsRequired: return "TLS 必須"
-        case .legacyExplicit: return "レガシー RDP セキュリティ"
+        case .secureAutomatic: return String(localized: "自動（安全な方式のみ）")
+        case .nlaRequired: return String(localized: "NLA 必須")
+        case .tlsRequired: return String(localized: "TLS 必須")
+        case .legacyExplicit: return String(localized: "レガシー RDP セキュリティ")
         }
     }
 }
