@@ -2,7 +2,7 @@ import SwiftUI
 import SessionCore
 
 /// What the keyboard button next to the menu button brings up when no
-/// keyboard is showing.
+/// keyboard is showing: the keyboard used last.
 enum KeyboardButtonTarget: String, CaseIterable {
     /// The system keyboard with the extended key bar, as in the Windows App.
     case softwareKeyboard

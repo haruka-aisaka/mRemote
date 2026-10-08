@@ -17,8 +17,13 @@ protocol RemotePointerControl: AnyObject {
 /// - one finger moves the pointer, by travel rather than position;
 /// - a tap is a left click, a two-finger tap a right click;
 /// - two fingers moving scroll;
-/// - a finger held still and then moved drags with the left button, which
-///   is how a pad without buttons drags at all.
+/// - a tap and then a finger put down again and moved drags with the left
+///   button, as in the Windows App; two taps are a double click;
+/// - a finger held still and then moved also drags.
+///
+/// A tap's click waits `doubleTapInterval` for a second touch, so that a
+/// drag starting from it is a press alone: sent at once, the click would
+/// make the drag's press a double click, which opens what it was to drag.
 ///
 /// The owner forwards its touches; this keeps no reference to them beyond
 /// their identity and last position.
@@ -48,12 +53,17 @@ final class TrackpadGestureTracker {
     private var lastTime: TimeInterval = 0
     private var isDragging = false
     private var cancelLongPress: (() -> Void)?
+    /// A tap's left click, held back for a second touch.
+    private var cancelPendingClick: (() -> Void)?
+    /// This touch came down while a tap's click was held back.
+    private var isSecondTouch = false
 
     private(set) var isEnabled = false
 
     static let tapTravel: CGFloat = 8
     static let tapDuration: TimeInterval = 0.3
     static let dragHold: TimeInterval = 0.45
+    static let doubleTapInterval: TimeInterval = 0.25
 
     init(
         target: @escaping () -> (any RemotePointerControl)?,
@@ -80,8 +90,16 @@ final class TrackpadGestureTracker {
     }
 
     /// Forgets the sequence, releasing a drag's button on the way: the
-    /// button must not outlive the finger that held it.
+    /// button must not outlive the finger that held it. A click still held
+    /// back is dropped with it.
     func reset() {
+        cancelPendingClick?()
+        cancelPendingClick = nil
+        isSecondTouch = false
+        resetTouches()
+    }
+
+    private func resetTouches() {
         disarmLongPress()
         if isDragging {
             isDragging = false
@@ -114,9 +132,14 @@ final class TrackpadGestureTracker {
 
     func began(_ sample: Sample) {
         if touches.isEmpty {
-            reset()
+            resetTouches()
             startTime = sample.timestamp
             lastTime = sample.timestamp
+            // Down again while the tap's click waits: what this touch does
+            // decides what the click becomes.
+            isSecondTouch = cancelPendingClick != nil
+            cancelPendingClick?()
+            cancelPendingClick = nil
         }
         touches[sample.id] = sample.location
         maximumTouches = max(maximumTouches, touches.count)
@@ -125,6 +148,9 @@ final class TrackpadGestureTracker {
             cancelLongPress = schedule(Self.dragHold) { [weak self] in self?.beginDrag() }
         } else {
             disarmLongPress()
+            // Two fingers are a scroll or a right click, not a drag: the
+            // first tap was a click after all.
+            sendHeldClick()
         }
     }
 
@@ -147,6 +173,11 @@ final class TrackpadGestureTracker {
         lastTime = timestamp
         if travel >= Self.tapTravel, !isDragging {
             disarmLongPress()
+            if isSecondTouch, touches.count == 1, isEnabled {
+                isSecondTouch = false
+                isDragging = true
+                target()?.setLaptopButton(.left, pressed: true)
+            }
         }
 
         guard isEnabled, let target = target() else { return }
@@ -167,11 +198,34 @@ final class TrackpadGestureTracker {
             && !isDragging
             && travel < Self.tapTravel
             && timestamp - startTime < Self.tapDuration
+        let heldClick = isSecondTouch
         if wasTap, isEnabled {
             haptics.impactOccurred()
-            target()?.clickRemote(maximumTouches >= 2 ? .right : .left)
+            if maximumTouches >= 2 {
+                target()?.clickRemote(.right)
+            } else if heldClick {
+                // The second tap: a double click, both clicks now.
+                isSecondTouch = false
+                target()?.clickRemote(.left)
+                target()?.clickRemote(.left)
+            } else {
+                cancelPendingClick = schedule(Self.doubleTapInterval) { [weak self] in
+                    guard let self else { return }
+                    self.cancelPendingClick = nil
+                    if self.isEnabled { self.target()?.clickRemote(.left) }
+                }
+            }
         }
-        reset()
+        // A second touch that was neither a tap nor a drag (held, then let
+        // go) still owes the first tap its click.
+        sendHeldClick()
+        resetTouches()
+    }
+
+    private func sendHeldClick() {
+        guard isSecondTouch else { return }
+        isSecondTouch = false
+        if isEnabled { target()?.clickRemote(.left) }
     }
 
     private func disarmLongPress() {
@@ -182,6 +236,8 @@ final class TrackpadGestureTracker {
     private func beginDrag() {
         cancelLongPress = nil
         guard isEnabled, touches.count == 1, travel < Self.tapTravel, !isDragging else { return }
+        // Held after a tap: the drag is what the tap led to.
+        isSecondTouch = false
         isDragging = true
         haptics.impactOccurred(intensity: 1)
         target()?.setLaptopButton(.left, pressed: true)

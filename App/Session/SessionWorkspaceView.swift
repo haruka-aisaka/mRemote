@@ -173,11 +173,14 @@ struct SessionWorkspaceView: View {
     private func split(in size: CGSize, safeArea: EdgeInsets) -> some View {
         let isPortrait = size.height > size.width
         // The Mac has its own keyboard and trackpad.
-        let showsDeck = !Platform.isMac && deckPreference.showsDeck(
+        let wantsDeck = !Platform.isMac && deckPreference.showsDeck(
             posture: hingePosture,
             isPortrait: isPortrait,
             landscapeWhenFolded: showsDeckFoldedInLandscape
         )
+        // One keyboard at a time: while the iOS keyboard is up the deck
+        // steps aside (at a hinge it comes back when the keyboard goes).
+        let showsDeck = wantsDeck && !model.softwareKeyboard.isVisible
         let hingeAcross = hingePosture == .partiallyOpen && isPortrait
         let splitsDeck = splitsDeckInLandscape && !isPortrait && canFloatDeck
         let fraction = isPortrait ? deckFractionPortrait
@@ -292,9 +295,19 @@ struct SessionWorkspaceView: View {
             model.setExtendedDisplaySize(nil)
         }
         .animation(.easeInOut(duration: 0.25), value: showsDeck)
-        .onChange(of: showsDeck, initial: true) { _, shows in
+        .onChange(of: wantsDeck, initial: true) { _, wants in
             // The deck is the keyboard now; the system one would only cover it.
-            if shows { model.softwareKeyboard.hide() }
+            if wants { model.softwareKeyboard.hide() }
+        }
+        .onChange(of: model.softwareKeyboard.isVisible) { _, visible in
+            guard visible else { return }
+            keyboardButtonTarget = .softwareKeyboard
+            // Brought up over a deck the user had shown: switched to, so it
+            // does not come back when this keyboard is put away.
+            if deckPreference == .always { deckPreference = .never }
+        }
+        .onChange(of: deckPreference) { _, preference in
+            if preference == .always { keyboardButtonTarget = .laptopDeck }
         }
     }
 
@@ -491,8 +504,8 @@ struct SessionWorkspaceView: View {
         }
     }
 
-    /// Whichever keyboard is up goes away; with none up, the one the user
-    /// chose for this button comes up.
+    /// Whichever keyboard is up goes away; with none up, the one used last
+    /// comes up.
     private func toggleKeyboard(showsDeck: Bool) {
         if model.softwareKeyboard.isVisible {
             model.softwareKeyboard.hide()

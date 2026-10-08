@@ -31,11 +31,17 @@ final class TrackpadGestureTrackerTests: XCTestCase {
     /// Stand-ins for UITouch identity; kept alive for the test's length.
     private let fingers = [NSObject(), NSObject()]
     private var pendingLongPress: (@MainActor () -> Void)?
+    /// A tap's click, held back for a second touch.
+    private var pendingClick: (@MainActor () -> Void)?
 
     private func makeTracker() -> TrackpadGestureTracker {
         let tracker = TrackpadGestureTracker(
             target: { [recorder] in recorder },
-            schedule: { [unowned self] _, action in
+            schedule: { [unowned self] delay, action in
+                if delay == TrackpadGestureTracker.doubleTapInterval {
+                    pendingClick = action
+                    return { [unowned self] in pendingClick = nil }
+                }
                 pendingLongPress = action
                 return { [unowned self] in pendingLongPress = nil }
             }
@@ -54,6 +60,53 @@ final class TrackpadGestureTrackerTests: XCTestCase {
         let tracker = makeTracker()
         tracker.began(sample(0, 100, 100, at: 0))
         tracker.ended(id: id(0), at: 0.1, cancelled: false)
+        XCTAssertEqual(recorder.events, [], "held back for a second touch")
+        pendingClick?()
+        XCTAssertEqual(recorder.events, ["click left"])
+    }
+
+    func testTwoTapsAreADoubleClick() {
+        let tracker = makeTracker()
+        tracker.began(sample(0, 100, 100, at: 0))
+        tracker.ended(id: id(0), at: 0.1, cancelled: false)
+        tracker.began(sample(0, 102, 101, at: 0.2))
+        XCTAssertNil(pendingClick)
+        tracker.ended(id: id(0), at: 0.3, cancelled: false)
+        XCTAssertEqual(recorder.events, ["click left", "click left"])
+        XCTAssertNil(pendingClick)
+    }
+
+    func testATapThenATouchMovedDragsWithoutAClick() {
+        let tracker = makeTracker()
+        tracker.began(sample(0, 100, 100, at: 0))
+        tracker.ended(id: id(0), at: 0.1, cancelled: false)
+        tracker.began(sample(0, 100, 100, at: 0.2))
+        tracker.moved([sample(0, 112, 100, at: 0.25)])
+        tracker.moved([sample(0, 160, 100, at: 0.3)])
+        tracker.ended(id: id(0), at: 0.5, cancelled: false)
+        XCTAssertEqual(recorder.events, ["left down", "move", "left up"],
+                       "a press alone: an earlier click would make it a double click")
+        XCTAssertNil(pendingClick)
+    }
+
+    func testATapThenTwoFingersIsAClickAndAScroll() {
+        let tracker = makeTracker()
+        tracker.began(sample(0, 100, 100, at: 0))
+        tracker.ended(id: id(0), at: 0.1, cancelled: false)
+        tracker.began(sample(0, 100, 100, at: 0.2))
+        tracker.began(sample(1, 140, 100, at: 0.2))
+        tracker.moved([sample(0, 100, 80, at: 0.25), sample(1, 140, 80, at: 0.25)])
+        tracker.ended(id: id(0), at: 0.4, cancelled: false)
+        tracker.ended(id: id(1), at: 0.4, cancelled: false)
+        XCTAssertEqual(recorder.events, ["click left", "scroll"])
+    }
+
+    func testATapThenASlowTouchStillClicks() {
+        let tracker = makeTracker()
+        tracker.began(sample(0, 100, 100, at: 0))
+        tracker.ended(id: id(0), at: 0.1, cancelled: false)
+        tracker.began(sample(0, 100, 100, at: 0.2))
+        tracker.ended(id: id(0), at: 0.2 + TrackpadGestureTracker.tapDuration + 0.05, cancelled: false)
         XCTAssertEqual(recorder.events, ["click left"])
     }
 
@@ -122,6 +175,7 @@ final class TrackpadGestureTrackerTests: XCTestCase {
         XCTAssertEqual(recorder.events, ["left down", "left up"], "the button does not outlive the gate")
         tracker.began(sample(0, 100, 100, at: 1))
         tracker.ended(id: id(0), at: 1.1, cancelled: false)
+        pendingClick?()
         XCTAssertEqual(recorder.events.count, 2)
     }
 

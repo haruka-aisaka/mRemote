@@ -21,9 +21,9 @@ struct SessionMenuSheet: View {
     private var touchModeHint: String {
         switch touchMode {
         case .direct:
-            String(localized: "タップでクリック、長押しで右クリック、なぞるとドラッグ、2 本指でスクロール。ピンチで拡大し、拡大中はピンチしたまま動かすと表示が動きます。")
+            String(localized: "Windows にはタッチとして送ります（タップ、長押しで右クリック、なぞるとスクロールや選択）。ほかの接続先ではタップでクリック、長押しで右クリック、なぞるとドラッグ、2 本指でスクロール。どちらもピンチで拡大し、拡大中はピンチしたまま動かすと表示が動きます。")
         case .trackpad:
-            String(localized: "なぞるとポインターが動きます。タップでクリック、2 本指タップで右クリック、2 本指でスクロール、押さえてから動かすとドラッグ。")
+            String(localized: "なぞるとポインターが動きます。タップでクリック、2 本指タップで右クリック、2 本指でスクロール。タップしてすぐもう一度触れて動かすか、押さえてから動かすとドラッグ。")
         case .viewport:
             String(localized: "タッチは Windows へ送りません。1 本指で表示を動かし、ピンチで拡大、ダブルタップで全体表示と 100% を切り替えます。")
         case .touch:
@@ -43,7 +43,6 @@ struct SessionMenuSheet: View {
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
     @AppStorage(LaptopDeckPreference.foldedLandscapeStorageKey) private var showsDeckFoldedInLandscape = false
-    @AppStorage(KeyboardButtonTarget.storageKey) private var keyboardButtonTarget = KeyboardButtonTarget.softwareKeyboard
     @AppStorage(FloatingButtonsIdleStyle.storageKey) private var buttonsIdleStyle = FloatingButtonsIdleStyle.dim
     @AppStorage(KeyShortcutList.storageKey) private var shortcuts = KeyShortcutList.standard
     @AppStorage(ExternalDisplayMode.storageKey) private var externalMode = ExternalDisplayMode.desktop
@@ -156,19 +155,12 @@ struct SessionMenuSheet: View {
                         dismiss()
                     } label: {
                         if deckPreference == .always {
-                            Label("手元キーボードを隠す", systemImage: "keyboard.chevron.compact.down")
+                            Label("フル PC キーボードを隠す", systemImage: "keyboard.chevron.compact.down")
                         } else {
-                            Label("手元キーボード（PC 配列）を表示", systemImage: "keyboard.chevron.compact.down")
+                            Label("フル PC キーボードを表示", systemImage: "keyboard.chevron.compact.down")
                         }
                     }
                     .accessibilityIdentifier("session-toggle-laptop-deck")
-                    // The button above this menu's: what it brings up when no
-                    // keyboard is showing. Whatever is showing, it hides.
-                    Picker("キーボードボタン", selection: $keyboardButtonTarget) {
-                        Text("iOS のキーボード").tag(KeyboardButtonTarget.softwareKeyboard)
-                        Text("手元キーボード（PC 配列）").tag(KeyboardButtonTarget.laptopDeck)
-                    }
-                    .accessibilityIdentifier("session-keyboard-button-target")
                 }
 
                 Section("ショートカット") {
@@ -213,14 +205,14 @@ struct SessionMenuSheet: View {
                         }
                     }
                     .accessibilityIdentifier("session-remote-scale-picker")
-                    Picker("手元キーボード表示中の解像度", selection: $foldPolicy) {
+                    Picker("フル PC キーボード表示中の解像度", selection: $foldPolicy) {
                         Text("画面に合わせて変える").tag(FoldResolutionPolicy.resizeToFit)
                         Text("変えずに縮小表示").tag(FoldResolutionPolicy.keepAndScale)
                         Text("表示中の大きさで固定").tag(FoldResolutionPolicy.lockToDeck)
                     }
                     .accessibilityIdentifier("session-fold-resolution-picker")
                     if foldPolicy == .lockToDeck {
-                        Text("手元キーボードを隠しても、表示中と同じ解像度のまま大きく表示します。")
+                        Text("フル PC キーボードを隠しても、表示中と同じ解像度のまま大きく表示します。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -317,14 +309,14 @@ struct SessionMenuSheet: View {
                     .accessibilityIdentifier("session-scroll-picker")
                     // 自動 is the foldable's laptop posture; the other two
                     // let any device use the deck, or a folded one do without.
-                    Picker("手元キーボード", selection: $deckPreference) {
+                    Picker("フル PC キーボード", selection: $deckPreference) {
                         Text("折りたたみ端末を折り曲げたとき").tag(LaptopDeckPreference.automatic)
                         Text("常に表示").tag(LaptopDeckPreference.always)
                         Text("表示しない").tag(LaptopDeckPreference.never)
                     }
                     .accessibilityIdentifier("session-laptop-deck-picker")
                     if canFloatDeck {
-                        Picker("手元キーボードの位置", selection: $deckPlacement) {
+                        Picker("フル PC キーボードの位置", selection: $deckPlacement) {
                             Text("画面の下").tag(LaptopDeckPlacement.docked)
                             Text("フローティング").tag(LaptopDeckPlacement.floating)
                         }
@@ -336,7 +328,7 @@ struct SessionMenuSheet: View {
                          : String(localized: "上端のつまみを上下にドラッグすると高さを変えられます。ダブルタップで元の高さに戻ります。折りたたみ端末を折り曲げているときはヒンジの位置に固定します。"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                    Button("手元キーボードの大きさを元に戻す") {
+                    Button("フル PC キーボードの大きさを元に戻す") {
                         DeckLayout.resetSizes()
                     }
                     .accessibilityIdentifier("session-laptop-deck-reset")
@@ -350,12 +342,12 @@ struct SessionMenuSheet: View {
                     if model.deviceHasHinge {
                         // The system decides which way the screen turns; this
                         // only decides whether folding sideways means a deck.
-                        Toggle("横向きで折り曲げたときも手元キーボードを出す", isOn: $showsDeckFoldedInLandscape)
+                        Toggle("横向きで折り曲げたときもフル PC キーボードを出す", isOn: $showsDeckFoldedInLandscape)
                             .disabled(deckPreference != .automatic)
                             .accessibilityIdentifier("session-folded-landscape-toggle")
                         Text(showsDeckFoldedInLandscape
-                             ? String(localized: "本のように横向きで少し折ったときも、手元キーボードを画面の下に出します（左右分割の設定に従います）。")
-                             : String(localized: "手元キーボードが出るのは、縦向き（ラップトップの形）で折り曲げたときだけです。"))
+                             ? String(localized: "本のように横向きで少し折ったときも、フル PC キーボードを画面の下に出します（左右分割の設定に従います）。")
+                             : String(localized: "フル PC キーボードが出るのは、縦向き（ラップトップの形）で折り曲げたときだけです。"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

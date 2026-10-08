@@ -76,7 +76,7 @@ struct ShortcutListEditor: View {
                 }
                 .accessibilityIdentifier("shortcut-add")
             } footer: {
-                Text("iOS のキーボードの上のキーバーと、手元キーボードの上の列に、この順で並びます。1 回のタップで修飾キーごと送ります。")
+                Text("iOS のキーボードの上のキーバーと、フル PC キーボードの上の列に、この順で並びます。1 回のタップで修飾キーごと送ります。")
             }
 
             let unused = KeyShortcut.suggestions.filter { suggestion in
@@ -96,7 +96,7 @@ struct ShortcutListEditor: View {
             }
 
             Section {
-                Toggle("手元キーボードにも並べる", isOn: $showsDeckStrip)
+                Toggle("フル PC キーボードにも並べる", isOn: $showsDeckStrip)
                     .accessibilityIdentifier("shortcut-deck-strip-toggle")
                 Button("最初の状態に戻す", role: .destructive) {
                     list = .standard

@@ -81,7 +81,7 @@ final class ProfileEditorModel: Identifiable {
             isImport = false
             displayName = ""
             host = ""
-            portText = "3389"
+            portText = ""
             username = ""
             domain = ""
             keyboardLayout = .inherit
@@ -103,7 +103,7 @@ final class ProfileEditorModel: Identifiable {
             base = profile.configuration.rdp
             displayName = profile.displayName
             host = profile.endpoint.host
-            portText = String(profile.endpoint.port)
+            portText = profile.endpoint.port == Self.defaultPort ? "" : String(profile.endpoint.port)
             username = profile.account.username ?? ""
             domain = profile.account.domain ?? ""
             let rdp = profile.configuration.rdp ?? RDPConfiguration()
@@ -155,20 +155,23 @@ final class ProfileEditorModel: Identifiable {
             : isImport ? String(localized: "接続先を読み込む") : String(localized: "接続先を追加")
     }
 
-    var port: UInt16? {
-        guard let value = UInt16(portText.trimmingCharacters(in: .whitespaces)), value > 0 else {
-            return nil
-        }
+    /// What an empty port field means.
+    static let defaultPort: UInt16 = 3389
+
+    /// Nil only for something that is not a port; an empty field is 3389.
+    var port: UInt16? { Self.parsePort(portText, default: Self.defaultPort) }
+
+    private static func parsePort(_ text: String, default fallback: UInt16) -> UInt16? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return fallback }
+        guard let value = UInt16(trimmed), value > 0 else { return nil }
         return value
     }
 
     var trimmedHost: String { host.trimmingCharacters(in: .whitespaces) }
 
     var gatewayPort: UInt16? {
-        guard let value = UInt16(gatewayPortText.trimmingCharacters(in: .whitespaces)), value > 0 else {
-            return nil
-        }
-        return value
+        Self.parsePort(gatewayPortText, default: RDPGatewayConfiguration.defaultPort)
     }
 
     var trimmedGatewayHost: String { gatewayHost.trimmingCharacters(in: .whitespaces) }

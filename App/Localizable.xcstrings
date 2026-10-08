@@ -461,17 +461,7 @@
         }
       }
     },
-    "iOS のキーボード": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iOS keyboard"
-          }
-        }
-      }
-    },
-    "iOS のキーボードの上のキーバーと、手元キーボードの上の列に、この順で並びます。1 回のタップで修飾キーごと送ります。": {
+    "iOS のキーボードの上のキーバーと、フル PC キーボードの上の列に、この順で並びます。1 回のタップで修飾キーごと送ります。": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -813,12 +803,12 @@
         }
       }
     },
-    "なぞるとポインターが動きます。タップでクリック、2 本指タップで右クリック、2 本指でスクロール、押さえてから動かすとドラッグ。": {
+    "なぞるとポインターが動きます。タップでクリック、2 本指タップで右クリック、2 本指でスクロール。タップしてすぐもう一度触れて動かすか、押さえてから動かすとドラッグ。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Slide to move the pointer. Tap to click, tap with two fingers to right-click, use two fingers to scroll, and hold then move to drag."
+            "value": "Slide to move the pointer. Tap to click, tap with two fingers to right-click, and use two fingers to scroll. To drag, tap and then touch again and move, or touch and hold, then move."
           }
         }
       }
@@ -1039,16 +1029,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hide keyboard"
-          }
-        }
-      }
-    },
-    "キーボードボタン": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keyboard button"
           }
         }
       }
@@ -1373,12 +1353,12 @@
         }
       }
     },
-    "タップでクリック、長押しで右クリック、なぞるとドラッグ、2 本指でスクロール。ピンチで拡大し、拡大中はピンチしたまま動かすと表示が動きます。": {
+    "Windows にはタッチとして送ります（タップ、長押しで右クリック、なぞるとスクロールや選択）。ほかの接続先ではタップでクリック、長押しで右クリック、なぞるとドラッグ、2 本指でスクロール。どちらもピンチで拡大し、拡大中はピンチしたまま動かすと表示が動きます。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tap to click, touch and hold to right-click, slide to drag, and use two fingers to scroll. Pinch to zoom; while zoomed in, move your pinch to move the view."
+            "value": "Windows gets them as touches (tap, press and hold for a right click, slide to scroll or select). Elsewhere a tap clicks, press and hold right-clicks, a slide drags and two fingers scroll. Either way, pinch to zoom, and while zoomed, move the pinch to move the view."
           }
         }
       }
@@ -2703,17 +2683,17 @@
         }
       }
     },
-    "手元キーボード": {
+    "フル PC キーボード": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On-Screen PC Keyboard"
+            "value": "Full PC Keyboard"
           }
         }
       }
     },
-    "手元キーボードが出るのは、縦向き（ラップトップの形）で折り曲げたときだけです。": {
+    "フル PC キーボードが出るのは、縦向き（ラップトップの形）で折り曲げたときだけです。": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2723,7 +2703,7 @@
         }
       }
     },
-    "手元キーボードにも並べる": {
+    "フル PC キーボードにも並べる": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2733,7 +2713,7 @@
         }
       }
     },
-    "手元キーボードの位置": {
+    "フル PC キーボードの位置": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2743,7 +2723,7 @@
         }
       }
     },
-    "手元キーボードの大きさ": {
+    "フル PC キーボードの大きさ": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2753,7 +2733,7 @@
         }
       }
     },
-    "手元キーボードの大きさを元に戻す": {
+    "フル PC キーボードの大きさを元に戻す": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2763,7 +2743,7 @@
         }
       }
     },
-    "手元キーボードの高さ": {
+    "フル PC キーボードの高さ": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2773,7 +2753,7 @@
         }
       }
     },
-    "手元キーボードを移動": {
+    "フル PC キーボードを移動": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2783,7 +2763,7 @@
         }
       }
     },
-    "手元キーボードを隠しても、表示中と同じ解像度のまま大きく表示します。": {
+    "フル PC キーボードを隠しても、表示中と同じ解像度のまま大きく表示します。": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2793,17 +2773,17 @@
         }
       }
     },
-    "手元キーボードを隠す": {
+    "フル PC キーボードを隠す": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hide On-Screen PC Keyboard"
+            "value": "Hide Full PC Keyboard"
           }
         }
       }
     },
-    "手元キーボード表示中の解像度": {
+    "フル PC キーボード表示中の解像度": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2813,22 +2793,12 @@
         }
       }
     },
-    "手元キーボード（PC 配列）": {
+    "フル PC キーボードを表示": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "PC keyboard"
-          }
-        }
-      }
-    },
-    "手元キーボード（PC 配列）を表示": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show On-Screen PC Keyboard"
+            "value": "Show Full PC Keyboard"
           }
         }
       }
@@ -3233,7 +3203,7 @@
         }
       }
     },
-    "本のように横向きで少し折ったときも、手元キーボードを画面の下に出します（左右分割の設定に従います）。": {
+    "本のように横向きで少し折ったときも、フル PC キーボードを画面の下に出します（左右分割の設定に従います）。": {
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3263,7 +3233,7 @@
         }
       }
     },
-    "横向きで折り曲げたときも手元キーボードを出す": {
+    "横向きで折り曲げたときもフル PC キーボードを出す": {
       "localizations": {
         "en": {
           "stringUnit": {

@@ -21,6 +21,20 @@ final class ProfileEditorModelTests: XCTestCase {
         XCTAssertTrue(model.isValid)
     }
 
+    func testAnEmptyPortIsTheRDPDefault() throws {
+        let model = ProfileEditorModel(mode: .create)
+        model.host = "desk.example"
+        XCTAssertEqual(model.portText, "", "a new connection starts with the port left blank")
+        XCTAssertTrue(model.isValid)
+        let profile = try XCTUnwrap(model.makeProfile())
+        XCTAssertEqual(profile.endpoint.port, 3389)
+        // Editing shows a 3389 connection's port blank again, any other as typed.
+        XCTAssertEqual(ProfileEditorModel(mode: .edit(profile)).portText, "")
+        model.portText = " 3390 "
+        let other = try XCTUnwrap(model.makeProfile())
+        XCTAssertEqual(ProfileEditorModel(mode: .edit(other)).portText, "3390")
+    }
+
     func testAnImportIsANewProfileThatKeepsTheFilesSettings() throws {
         let file = RDPFile(text: "full address:s:pc.example:3390\nusername:s:CORP\\taro\naudiomode:i:2")
         let imported = try XCTUnwrap(file.profile(named: "会社"))

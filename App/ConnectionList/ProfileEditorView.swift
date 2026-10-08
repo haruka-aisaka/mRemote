@@ -32,9 +32,12 @@ struct ProfileEditorView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityIdentifier("profile-host-field")
-                    TextField("ポート", text: $model.portText)
-                        .keyboardType(.numberPad)
-                        .accessibilityIdentifier("profile-port-field")
+                    LabeledContent("ポート") {
+                        TextField("ポート", text: $model.portText, prompt: Text(verbatim: "3389"))
+                            .multilineTextAlignment(.trailing)
+                            .keyboardType(.numberPad)
+                            .accessibilityIdentifier("profile-port-field")
+                    }
                 }
 
                 Section {

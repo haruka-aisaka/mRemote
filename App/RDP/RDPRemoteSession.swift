@@ -768,6 +768,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             } else {
                 negotiatedChannels.remove(channel)
             }
+            if channel == .rdpei { pointerSink.setTouchChannelOpen(isConnected) }
             logger.session("channel \(channel.name) connected=\(isConnected)")
 
         case let .certificateChallenge(review):

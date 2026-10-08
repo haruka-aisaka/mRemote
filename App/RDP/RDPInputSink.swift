@@ -34,6 +34,8 @@ final class RDPInputSink: MacInputSink, @unchecked Sendable {
     /// that have no position of their own, so the last known one is kept here
     /// rather than made up at the call site.
     private var lastPixel = PixelPoint(x: 0, y: 0)
+    /// The server opened RDPEI, so a touch arrives as one.
+    private var touchChannelOpen = false
 
     var acceptsInput: Bool {
         lock.lock()
@@ -46,8 +48,21 @@ final class RDPInputSink: MacInputSink, @unchecked Sendable {
         lock.lock()
         self.native = native
         if native == nil { isAccepting = false }
+        touchChannelOpen = false
         lastPixel = PixelPoint(x: 0, y: 0)
         resetMacStateLocked(features: 0)
+        lock.unlock()
+    }
+
+    var acceptsTouch: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isAccepting && native != nil && touchChannelOpen
+    }
+
+    func setTouchChannelOpen(_ open: Bool) {
+        lock.lock()
+        touchChannelOpen = open
         lock.unlock()
     }
 

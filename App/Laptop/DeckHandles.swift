@@ -33,7 +33,7 @@ struct DeckResizeHandle: View {
                 .onEnded { _ in startFraction = nil }
         )
         .accessibilityElement()
-        .accessibilityLabel("手元キーボードの高さ")
+        .accessibilityLabel("フル PC キーボードの高さ")
         .accessibilityValue("\(Int((fraction * 100).rounded()))%")
         .accessibilityAdjustableAction { direction in
             let step = direction == .increment ? 0.05 : -0.05
@@ -99,7 +99,7 @@ struct FloatingDeckPanel<Content: View>: View {
                     }
             )
             .accessibilityElement()
-            .accessibilityLabel("手元キーボードを移動")
+            .accessibilityLabel("フル PC キーボードを移動")
             .accessibilityIdentifier("laptop-deck-move-handle")
             Image(systemName: "arrow.up.left.and.arrow.down.right")
                 .font(.system(size: 13, weight: .semibold))
@@ -115,7 +115,7 @@ struct FloatingDeckPanel<Content: View>: View {
                         }
                 )
                 .accessibilityElement()
-                .accessibilityLabel("手元キーボードの大きさ")
+                .accessibilityLabel("フル PC キーボードの大きさ")
                 .accessibilityIdentifier("laptop-deck-size-handle")
         }
         .frame(height: Self.barHeight)

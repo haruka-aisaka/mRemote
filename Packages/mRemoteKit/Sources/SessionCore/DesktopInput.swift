@@ -139,11 +139,16 @@ public protocol DesktopInputSink: AnyObject, Sendable {
     /// Touch and pen, for a session that can carry them. Dropped otherwise.
     func send(touch: TouchInput)
     func send(pen: PenInput)
+
+    /// The host takes touches as touches (Windows, once its touch channel is
+    /// open), rather than having them turned into the mouse.
+    var acceptsTouch: Bool { get }
 }
 
 public extension DesktopInputSink {
     func send(touch: TouchInput) {}
     func send(pen: PenInput) {}
+    var acceptsTouch: Bool { false }
 }
 
 /// A sink that can carry the Mac's own input, for a Mac server that agreed
