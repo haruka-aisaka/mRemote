@@ -23,6 +23,28 @@ final class LaptopKeyboardTests: XCTestCase {
         }
     }
 
+    func testTheSplitKeyboardDividesWhereTheHandsDo() {
+        for (name, layout) in allLayouts {
+            let halves = LaptopKeyboardHalves(layout)
+            let left = Set(halves.left.flatMap(\.keys).map(\.id))
+            let right = Set(halves.right.flatMap(\.keys).map(\.id))
+            XCTAssertTrue(left.isSuperset(of: ["f6", "digit5", "t", "g", "b", "space"]), name)
+            XCTAssertTrue(right.isSuperset(of: ["f7", "digit6", "y", "h", "n", "space-right"]), name)
+            XCTAssertTrue(left.isDisjoint(with: right), name)
+            // Nothing lost and nothing doubled but the space bar.
+            XCTAssertEqual(left.union(right).subtracting(["space-right"]), Set(layout.keys.map(\.id)), name)
+            for (index, row) in layout.rows.enumerated() {
+                XCTAssertEqual(
+                    halves.left[index].totalWidth + halves.right[index].totalWidth,
+                    row.totalWidth,
+                    accuracy: 0.001,
+                    "\(name) row \(index)"
+                )
+            }
+            XCTAssertLessThan(halves.unitsPerHalf, LaptopKeyboardLayout.unitsPerRow, name)
+        }
+    }
+
     func testEveryRowFillsTheSameWidth() {
         for (preference, layout) in allLayouts {
             for (index, row) in layout.rows.enumerated() {

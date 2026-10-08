@@ -39,6 +39,7 @@ struct SessionMenuSheet: View {
     private var safeAreaPolicy = DesktopSafeAreaPolicy.avoid
     @AppStorage(LaptopDeckPlacement.storageKey) private var deckPlacement = LaptopDeckPlacement.docked
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
+    @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -260,6 +261,13 @@ struct SessionMenuSheet: View {
                          : String(localized: "上端のつまみを上下にドラッグすると高さを変えられます。折りたたみ端末を折り曲げているときはヒンジの位置に固定します。"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    if canFloatDeck {
+                        // Thumbs on a wide screen: the halves at the sides,
+                        // the trackpad between them.
+                        Toggle("横向きでは左右に分ける", isOn: $splitsDeckInLandscape)
+                            .disabled(deckPreference == .never)
+                            .accessibilityIdentifier("session-laptop-split-toggle")
+                    }
                     // Kept across sessions and launches: how the deck is laid
                     // out is a matter of the user's hands, not of the host.
                     Picker("手元側の配置", selection: $deckArrangement) {

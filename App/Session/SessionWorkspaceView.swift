@@ -30,8 +30,11 @@ struct SessionWorkspaceView: View {
     @AppStorage(LaptopDeckPlacement.storageKey) private var deckPlacement = LaptopDeckPlacement.docked
     @AppStorage("laptop-deck-height-portrait") private var deckFractionPortrait = 0.5
     @AppStorage("laptop-deck-height-landscape") private var deckFractionLandscape = 0.5
+    /// Split, the keys sit at the sides and need less height.
+    @AppStorage("laptop-deck-height-split") private var deckFractionSplit = 0.3
     @AppStorage(FloatingDeckFrame.storageKey) private var floatingDeckFrame = FloatingDeckFrame.standard
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
+    @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
 
     var body: some View {
         ZStack {
@@ -143,7 +146,9 @@ struct SessionWorkspaceView: View {
         let isPortrait = size.height > size.width
         let showsDeck = deckPreference.showsDeck(posture: hingePosture, isPortrait: isPortrait)
         let hingeAcross = hingePosture == .partiallyOpen && isPortrait
-        let fraction = isPortrait ? deckFractionPortrait : deckFractionLandscape
+        let splitsDeck = splitsDeckInLandscape && !isPortrait && canFloatDeck
+        let fraction = isPortrait ? deckFractionPortrait
+            : splitsDeck ? deckFractionSplit : deckFractionLandscape
         let docked: DeckLayout = hingeAcross ? .atHinge : .docked(fraction: fraction)
         let deck: DeckLayout = !showsDeck ? .hidden
             : hingeAcross ? .atHinge
@@ -183,11 +188,14 @@ struct SessionWorkspaceView: View {
                     VStack(spacing: 0) {
                         if case .docked = deck {
                             DeckResizeHandle(
-                                fraction: isPortrait ? $deckFractionPortrait : $deckFractionLandscape,
+                                fraction: isPortrait ? $deckFractionPortrait
+                                    : splitsDeck ? $deckFractionSplit : $deckFractionLandscape,
                                 screenHeight: size.height
                             )
                         }
-                        laptopDeck
+                        // Halves at the sides for the thumbs, on a screen wide
+                        // enough to hold the device by them.
+                        laptopDeck(split: splitsDeck)
                     }
                     .frame(height: layout.deckHeight)
                     // Placed where it ends up rather than slid in: the desktop
@@ -199,7 +207,7 @@ struct SessionWorkspaceView: View {
             }
             if deck == .floating {
                 FloatingDeckPanel(frame: $floatingDeckFrame) {
-                    laptopDeck
+                    laptopDeck(split: false)
                 }
                 .padding(layout.safeArea)
                 .transition(.opacity)
@@ -218,7 +226,7 @@ struct SessionWorkspaceView: View {
         UIDevice.current.userInterfaceIdiom == .pad || hingePosture != .unavailable
     }
 
-    private var laptopDeck: some View {
+    private func laptopDeck(split: Bool) -> some View {
         LaptopDeck(
             layout: model.configuration.keyboardLayout,
             arrangement: deckArrangement,
@@ -226,7 +234,8 @@ struct SessionWorkspaceView: View {
             isInputEnabled: model.acceptsInput && scenePhase == .active,
             capsLockRole: capsLockRole,
             showsTrackpadButtons: showsTrackpadButtons,
-            platform: deckPlatform
+            platform: deckPlatform,
+            isSplit: split
         )
     }
 

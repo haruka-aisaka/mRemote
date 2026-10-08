@@ -25,6 +25,9 @@ enum LaptopDeckArrangement: String, CaseIterable {
     var hasTrackpad: Bool { self != .keyboardOnly }
 
     static let storageKey = "laptop-deck-arrangement"
+    /// Whether a docked deck splits into halves at the sides in landscape,
+    /// on an iPad or a foldable.
+    static let splitInLandscapeStorageKey = "laptop-deck-split-landscape"
     /// Whether the pad has left and right buttons under it. Without them the
     /// pad takes their room: a tap is a left click, a two-finger tap a right
     /// click, and hold-then-move drags.
@@ -83,6 +86,9 @@ final class LaptopDeckView: UIView {
     private var layout: LaptopKeyboardLayout
     private var arrangement: LaptopDeckArrangement
     private var showsTrackpadButtons = true
+    /// The keys in two halves at the sides with the trackpad between, for
+    /// thumbs on a wide screen.
+    private var isSplit = false
     private var composer = LaptopKeyboardComposer()
     private var isInputEnabled = false
 
@@ -166,6 +172,21 @@ final class LaptopDeckView: UIView {
         setNeedsLayout()
     }
 
+    func setSplit(_ split: Bool) {
+        guard split != isSplit else { return }
+        releaseEverything()
+        isSplit = split
+        keyViews.values.forEach { $0.removeFromSuperview() }
+        keyViews = [:]
+        buildKeys()
+        setNeedsLayout()
+    }
+
+    /// Every key drawn now: the split keyboard draws its space bar twice.
+    private var drawnKeys: [LaptopKey] {
+        isSplit ? LaptopKeyboardHalves(layout).keys : layout.keys
+    }
+
     func setTrackpadButtons(_ shows: Bool) {
         guard shows != showsTrackpadButtons else { return }
         releaseEverything()
@@ -221,7 +242,7 @@ final class LaptopDeckView: UIView {
     // MARK: - Layout
 
     private func buildKeys() {
-        for key in layout.keys {
+        for key in drawnKeys {
             let view = KeyCapView(key: key) { [weak self] key in
                 self?.accessibilityTap(key)
             }
@@ -237,6 +258,10 @@ final class LaptopDeckView: UIView {
         guard area.width > 0, area.height > 0 else { return }
 
         let spacing: CGFloat = 10
+        if isSplit {
+            layoutSplit(in: area, spacing: spacing)
+            return
+        }
         let keyboardHeight: CGFloat
         let keyboardY: CGFloat
         let lower: CGRect
@@ -273,17 +298,67 @@ final class LaptopDeckView: UIView {
     }
 
     private func layoutKeys(in keyboard: CGRect) {
-        let totalRowHeight = layout.rows.reduce(0) { $0 + $1.height }
-        let gap: CGFloat = 4
-        let unitHeight = (keyboard.height - gap * CGFloat(layout.rows.count - 1)) / CGFloat(totalRowHeight)
         let unitWidth = keyboard.width / CGFloat(LaptopKeyboardLayout.unitsPerRow)
-
         keyFrames = []
         var parts: [String: [CGRect]] = [:]
+        layoutRows(layout.rows, in: keyboard, unitWidth: unitWidth, trailing: false, parts: &parts)
+        for (id, rects) in parts {
+            keyViews[id]?.setParts(rects)
+        }
+    }
+
+    /// The left half against the left edge and the right half against the
+    /// right, each row from the outside in, so the thumbs find the same keys
+    /// at the same reach; the trackpad, if any, between them.
+    private func layoutSplit(in area: CGRect, spacing: CGFloat) {
+        let halves = LaptopKeyboardHalves(layout)
+        let middleWidth = arrangement.hasTrackpad ? max(area.width * 0.24, 160) : area.width * 0.04
+        let halfWidth = (area.width - middleWidth - spacing * 2) / 2
+        let unitWidth = halfWidth / CGFloat(halves.unitsPerHalf)
+        // Keys taller than a thumb only make the reach longer.
+        let height = min(area.height, unitWidth * 5.6)
+        let keysY = area.maxY - height
+        keyFrames = []
+        var parts: [String: [CGRect]] = [:]
+        layoutRows(
+            halves.left,
+            in: CGRect(x: area.minX, y: keysY, width: halfWidth, height: height),
+            unitWidth: unitWidth,
+            trailing: false,
+            parts: &parts
+        )
+        layoutRows(
+            halves.right,
+            in: CGRect(x: area.maxX - halfWidth, y: keysY, width: halfWidth, height: height),
+            unitWidth: unitWidth,
+            trailing: true,
+            parts: &parts
+        )
+        for (id, rects) in parts {
+            keyViews[id]?.setParts(rects)
+        }
+        if arrangement.hasTrackpad {
+            layoutTrackpad(
+                in: CGRect(x: area.minX + halfWidth + spacing, y: area.minY, width: middleWidth, height: area.height),
+                fillsWidth: true
+            )
+        }
+    }
+
+    private func layoutRows(
+        _ rows: [LaptopKeyboardRow],
+        in keyboard: CGRect,
+        unitWidth: CGFloat,
+        trailing: Bool,
+        parts: inout [String: [CGRect]]
+    ) {
+        let totalRowHeight = rows.reduce(0) { $0 + $1.height }
+        let gap: CGFloat = 4
+        let unitHeight = (keyboard.height - gap * CGFloat(rows.count - 1)) / CGFloat(totalRowHeight)
         var y = keyboard.minY
-        for row in layout.rows {
+        for row in rows {
             let height = unitHeight * CGFloat(row.height)
-            var x = keyboard.minX
+            var x = trailing ? keyboard.maxX - unitWidth * CGFloat(row.totalWidth) : keyboard.minX
             for key in row.keys {
                 let width = unitWidth * CGFloat(key.width)
                 let hitFrame = CGRect(x: x, y: y - gap / 2, width: width, height: height + gap)
@@ -295,16 +370,13 @@ final class LaptopDeckView: UIView {
             }
             y += height + gap
         }
-        for (id, rects) in parts {
-            keyViews[id]?.setParts(rects)
-        }
     }
 
     /// The pad with its two buttons below it, on the user's side, as on a
     /// laptop: the buttons sit under the thumbs whichever way round the
     /// keyboard is.
-    private func layoutTrackpad(in lower: CGRect) {
-        let padWidth = min(lower.width, max(lower.width * 0.72, 300))
+    private func layoutTrackpad(in lower: CGRect, fillsWidth: Bool = false) {
+        let padWidth = fillsWidth ? lower.width : min(lower.width, max(lower.width * 0.72, 300))
         let buttonHeight = hasButtons ? min(40, lower.height * 0.22) : 0
         let padHeight = lower.height - (hasButtons ? buttonHeight + 6 : 0)
         let padFrame = CGRect(
@@ -457,7 +529,7 @@ final class LaptopDeckView: UIView {
     }
 
     private func refreshKeys() {
-        for key in layout.keys {
+        for key in drawnKeys {
             guard let view = keyViews[key.id] else { continue }
             switch key.kind {
             case .modifier(let modifier):
@@ -659,6 +731,7 @@ struct LaptopDeck: UIViewRepresentable {
     var showsTrackpadButtons = true
     /// Only Windows hosts exist today; a Mac host's session will pass `.mac`.
     var platform: LaptopKeyboardPlatform = .windows
+    var isSplit = false
 
     func makeUIView(context: Context) -> LaptopDeckView {
         let view = LaptopDeckView(
@@ -667,6 +740,7 @@ struct LaptopDeck: UIViewRepresentable {
             channel: channel
         )
         view.setTrackpadButtons(showsTrackpadButtons)
+        view.setSplit(isSplit)
         view.setInputEnabled(isInputEnabled)
         return view
     }
@@ -675,6 +749,7 @@ struct LaptopDeck: UIViewRepresentable {
         view.setLayout(LaptopKeyboardLayout(layout, platform: platform, capsLockRole: capsLockRole))
         view.setArrangement(arrangement)
         view.setTrackpadButtons(showsTrackpadButtons)
+        view.setSplit(isSplit)
         view.setInputEnabled(isInputEnabled)
     }
 

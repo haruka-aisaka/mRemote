@@ -2330,6 +2330,16 @@
         }
       }
     },
+    "横向きでは左右に分ける": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Split in landscape"
+          }
+        }
+      }
+    },
     "次に確定した文字を、リモートのクリップボードを上書きして貼り付けで送ります。Unicode 入力を受け付けないアプリ向け": {
       "localizations": {
         "en": {

@@ -663,3 +663,72 @@ public struct LaptopKeyboardComposer: Sendable {
         return events
     }
 }
+
+/// The keyboard cut in two for thumbs, as the iPad's split keyboard is: the
+/// left hand's keys, and the right hand's.
+public struct LaptopKeyboardHalves: Hashable, Sendable {
+    public let left: [LaptopKeyboardRow]
+    public let right: [LaptopKeyboardRow]
+
+    /// The first key of the right half on each row: the usual line between
+    /// the hands, F6|F7, 5|6, T|Y, G|H, B|N.
+    private static let rightHalfStarts: Set<String> = ["f7", "digit6", "y", "h", "n"]
+
+    public init(_ layout: LaptopKeyboardLayout) {
+        var left: [LaptopKeyboardRow] = []
+        var right: [LaptopKeyboardRow] = []
+        for row in layout.rows {
+            let halves = Self.split(row)
+            left.append(LaptopKeyboardRow(halves.left, height: row.height))
+            right.append(LaptopKeyboardRow(halves.right, height: row.height))
+        }
+        self.left = left
+        self.right = right
+    }
+
+    /// Every key once, in reading order, the left half first.
+    public var keys: [LaptopKey] {
+        var seen: Set<String> = []
+        return (left + right).flatMap(\.keys).filter { seen.insert($0.id).inserted }
+    }
+
+    /// The widest row of either half, in key units.
+    public var unitsPerHalf: Double {
+        (left + right).map(\.totalWidth).max() ?? 0
+    }
+
+    private static func split(_ row: LaptopKeyboardRow) -> (left: [LaptopKey], right: [LaptopKey]) {
+        let keys = row.keys
+        if let index = keys.firstIndex(where: { rightHalfStarts.contains($0.id) }) {
+            return (Array(keys[..<index]), Array(keys[index...]))
+        }
+        // The space bar goes to both thumbs, half as wide in each half.
+        if let index = keys.firstIndex(where: { $0.id == "space" }) {
+            let space = keys[index]
+            let half = space.width / 2
+            return (
+                Array(keys[..<index]) + [Self.resized(space, id: space.id, width: half)],
+                [Self.resized(space, id: space.id + "-right", width: half)] + Array(keys[(index + 1)...])
+            )
+        }
+        // A row with no landmark is cut where its middle falls.
+        var position = 0.0
+        let middle = row.totalWidth / 2
+        let index = keys.firstIndex { key in
+            defer { position += key.width }
+            return position + key.width / 2 >= middle
+        } ?? keys.count
+        return (Array(keys[..<index]), Array(keys[index...]))
+    }
+
+    private static func resized(_ key: LaptopKey, id: String, width: Double) -> LaptopKey {
+        LaptopKey(
+            id: id,
+            label: key.label,
+            shiftedLabel: key.shiftedLabel,
+            kind: key.kind,
+            width: width,
+            sendsWhenTappedAlone: key.sendsWhenTappedAlone
+        )
+    }
+}
