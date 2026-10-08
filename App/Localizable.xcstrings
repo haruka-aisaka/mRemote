@@ -258,6 +258,16 @@
         }
       }
     },
+    "iOS のキーボードの上のキーバーと、手元キーボードの上の列に、この順で並びます。1 回のタップで修飾キーごと送ります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "They appear in this order on the key bar above the iOS keyboard and in the row above the PC keyboard. One tap sends the key with its modifiers."
+          }
+        }
+      }
+    },
     "iOS のサーバー証明書要件を満たしていません": {
       "localizations": {
         "en": {
@@ -530,6 +540,16 @@
         }
       }
     },
+    "よく使うもの": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Common Shortcuts"
+          }
+        }
+      }
+    },
     "ろ": {
       "localizations": {
         "en": {
@@ -626,6 +646,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cancel"
+          }
+        }
+      }
+    },
+    "キー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key"
           }
         }
       }
@@ -876,6 +906,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "The system doesn't trust this certificate"
+          }
+        }
+      }
+    },
+    "ショートカット": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcuts"
+          }
+        }
+      }
+    },
+    "ショートカットを編集": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Shortcuts"
+          }
+        }
+      }
+    },
+    "ショートカットを追加": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Shortcut"
           }
         }
       }
@@ -1460,6 +1520,16 @@
         }
       }
     },
+    "修飾キー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifier Keys"
+          }
+        }
+      }
+    },
     "元の高さに戻す": {
       "localizations": {
         "en": {
@@ -1840,6 +1910,16 @@
         }
       }
     },
+    "名前（省略するとキーの組み合わせ）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name (the keys if left empty)"
+          }
+        }
+      }
+    },
     "固定": {
       "localizations": {
         "en": {
@@ -2016,6 +2096,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "The PC keyboard comes up only when folded upright, like a laptop."
+          }
+        }
+      }
+    },
+    "手元キーボードにも並べる": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show on the PC Keyboard Too"
           }
         }
       }
@@ -2376,6 +2466,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Couldn't start an encrypted connection. Check that Security Protocol in the computer's settings matches the server."
+          }
+        }
+      }
+    },
+    "最初の状態に戻す": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore Defaults"
           }
         }
       }
@@ -2996,6 +3096,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Add"
+          }
+        }
+      }
+    },
+    "送るのはキーの位置です。記号キーは接続先のキーボード配列によって入る文字が変わります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Key positions are sent: what a symbol key types depends on the host's keyboard layout."
+          }
+        }
+      }
+    },
+    "送る内容": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sends"
           }
         }
       }

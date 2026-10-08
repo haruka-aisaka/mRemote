@@ -43,6 +43,7 @@ struct SessionMenuSheet: View {
     @AppStorage(LaptopDeckPreference.foldedLandscapeStorageKey) private var showsDeckFoldedInLandscape = false
     @AppStorage(KeyboardButtonTarget.storageKey) private var keyboardButtonTarget = KeyboardButtonTarget.softwareKeyboard
     @AppStorage(FloatingButtonsIdleStyle.storageKey) private var buttonsIdleStyle = FloatingButtonsIdleStyle.dim
+    @AppStorage(KeyShortcutList.storageKey) private var shortcuts = KeyShortcutList.standard
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -160,6 +161,30 @@ struct SessionMenuSheet: View {
                         Text("手元キーボード（PC 配列）").tag(KeyboardButtonTarget.laptopDeck)
                     }
                     .accessibilityIdentifier("session-keyboard-button-target")
+                }
+
+                Section("ショートカット") {
+                    ForEach(shortcuts.shortcuts) { shortcut in
+                        Button {
+                            Task { await model.sendFromMenu(shortcut) }
+                        } label: {
+                            LabeledContent {
+                                if shortcut.displayTitle != shortcut.keysDescription {
+                                    Text(shortcut.keysDescription)
+                                }
+                            } label: {
+                                Label(shortcut.displayTitle, systemImage: "command")
+                            }
+                        }
+                        .disabled(!model.state.acceptsInput)
+                        .accessibilityIdentifier("menu-shortcut-\(shortcut.keysDescription)")
+                    }
+                    NavigationLink {
+                        ShortcutListEditor()
+                    } label: {
+                        Label("ショートカットを編集", systemImage: "slider.horizontal.3")
+                    }
+                    .accessibilityIdentifier("session-edit-shortcuts")
                 }
 
                 Section("表示") {

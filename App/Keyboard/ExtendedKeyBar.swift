@@ -7,6 +7,7 @@ import SessionCore
 /// and 確定/キャンセル while something is being composed.
 struct ExtendedKeyBar: View {
     @Bindable var controller: SoftwareKeyboardController
+    @AppStorage(KeyShortcutList.storageKey) private var shortcuts = KeyShortcutList.standard
 
     var body: some View {
         VStack(spacing: 6) {
@@ -33,6 +34,14 @@ struct ExtendedKeyBar: View {
                         key("PgUp", .pageUp)
                         key("PgDn", .pageDown)
                         key("Del", .deleteForward)
+                        ForEach(shortcuts.shortcuts) { shortcut in
+                            Button(shortcut.displayTitle) { controller.send(shortcut) }
+                                .buttonStyle(.bordered)
+                                .tint(.orange)
+                                .disabled(controller.hasMarkedText)
+                                .accessibilityHint(shortcut.keysDescription)
+                                .accessibilityIdentifier("shortcut-\(shortcut.keysDescription)")
+                        }
                         if controller.canPaste {
                             pasteToggle
                         }

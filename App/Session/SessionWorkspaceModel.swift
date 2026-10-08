@@ -326,6 +326,21 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         }
     }
 
+    /// One of the user's shortcuts, as a whole chord.
+    func send(_ shortcut: KeyShortcut) {
+        guard acceptsInput, let inputSink else { return }
+        shortcut.inputs.forEach(inputSink.send)
+    }
+
+    /// From the menu: close it, wait for the gate, then send.
+    func sendFromMenu(_ shortcut: KeyShortcut) async {
+        isMenuPresented = false
+        for _ in 0..<50 where !acceptsInput {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        send(shortcut)
+    }
+
     private func sendPasteChord() {
         guard acceptsInput, let inputSink else { return }
         // Left Control + V as HID usages; the session maps them to its own

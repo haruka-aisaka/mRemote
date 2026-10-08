@@ -52,6 +52,10 @@ struct SettingsView: View {
                         Text("通常").tag(ScrollDirection.normal)
                         Text("反転").tag(ScrollDirection.reversed)
                     }
+                    NavigationLink("ショートカット") {
+                        ShortcutListEditor()
+                    }
+                    .accessibilityIdentifier("settings-shortcuts")
                 }
 
                 Section {

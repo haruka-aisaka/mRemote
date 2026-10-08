@@ -103,6 +103,13 @@ final class SoftwareKeyboardController {
         deliver(composer.press(key))
     }
 
+    /// A shortcut is its own chord: the latched modifiers neither apply to
+    /// it nor are spent by it.
+    func send(_ shortcut: KeyShortcut) {
+        guard !hasMarkedText else { return }
+        deliver(shortcut.inputs.map(SoftwareKeyboardOutput.key))
+    }
+
     func tapModifier(_ modifier: VirtualModifier) {
         guard !hasMarkedText else { return }
         composer.tapModifier(modifier)

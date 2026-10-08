@@ -1,5 +1,6 @@
 import Foundation
 import AppleAdapters
+import InputCore
 import Persistence
 import SessionCore
 
@@ -25,6 +26,8 @@ enum UITestConfiguration {
         LaptopDeckArrangement.splitInLandscapeStorageKey,
         KeyboardButtonTarget.storageKey,
         FloatingButtonsIdleStyle.storageKey,
+        KeyShortcutList.storageKey,
+        DeckShortcutStrip.storageKey,
         FoldResolutionPolicy.storageKey,
         DesktopSafeAreaPolicy.storageKey,
         DeckLayout.portraitFractionKey,

@@ -148,6 +148,33 @@ final class ConnectionFlowUITests: XCTestCase {
         XCTAssertTrue(element("laptop-deck").waitForNonExistence(timeout: 5), "the button hides the deck")
     }
 
+    /// The user's shortcuts ride on the key bar and the deck, and the list
+    /// is edited from the session menu.
+    func testShortcutsAppearOnTheBarsAndCanBeAdded() {
+        element("profile-row-テスト接続先").tap()
+        _ = assertAppears("session-workspace", "connecting presents the workspace")
+
+        element("session-keyboard-button").tap()
+        let barShortcut = assertAppears("shortcut-Ctrl+Alt+Delete", "the key bar carries the standard shortcuts")
+        barShortcut.tap()
+        element("software-keyboard-close").tap()
+
+        element("session-menu-button").tap()
+        let edit = element("session-edit-shortcuts")
+        scrollMenu(to: edit)
+        edit.tap()
+        let suggestion = assertAppears("shortcut-suggestion-Win+D", "the editor offers common shortcuts")
+        suggestion.tap()
+        _ = assertAppears("shortcut-row-Win+D", "a suggestion joins the list")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        element("session-menu-close").tap()
+
+        element("session-menu-button").tap()
+        _ = assertAppears("session-menu", "the floating menu opens")
+        element("session-toggle-laptop-deck").tap()
+        _ = assertAppears("deck-shortcut-Win+D", "the deck carries the new shortcut")
+    }
+
     func testTheMenuShowsAndHidesThePCKeyboard() {
         element("profile-row-テスト接続先").tap()
         _ = assertAppears("session-workspace", "connecting presents the workspace")

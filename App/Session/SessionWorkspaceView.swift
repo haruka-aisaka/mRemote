@@ -37,6 +37,8 @@ struct SessionWorkspaceView: View {
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
     @AppStorage(LaptopDeckPreference.foldedLandscapeStorageKey) private var showsDeckFoldedInLandscape = false
     @AppStorage(KeyboardButtonTarget.storageKey) private var keyboardButtonTarget = KeyboardButtonTarget.softwareKeyboard
+    @AppStorage(KeyShortcutList.storageKey) private var shortcuts = KeyShortcutList.standard
+    @AppStorage(DeckShortcutStrip.storageKey) private var showsDeckShortcuts = true
 
     var body: some View {
         ZStack {
@@ -235,6 +237,18 @@ struct SessionWorkspaceView: View {
     }
 
     private func laptopDeck(split: Bool) -> some View {
+        VStack(spacing: 0) {
+            if showsDeckShortcuts, !shortcuts.shortcuts.isEmpty {
+                ShortcutStrip(
+                    shortcuts: shortcuts.shortcuts,
+                    isEnabled: model.acceptsInput && scenePhase == .active
+                ) { model.send($0) }
+            }
+            laptopKeys(split: split)
+        }
+    }
+
+    private func laptopKeys(split: Bool) -> some View {
         LaptopDeck(
             layout: model.configuration.keyboardLayout,
             arrangement: deckArrangement,
