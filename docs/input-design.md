@@ -240,15 +240,20 @@ effectiveDelta = deviceDelta × sensitivity × (isReversed ? -1 : 1)
 
 ## 9. タッチ操作
 
-要件の中心はマウスだが、iPhone やポインターのない iPad でも操作できるよう、画面へのタッチの扱いを三方式から選べる（セッションメニュー「画面のタッチ」、全セッション共通、既定は直接タッチ）。いずれもマウスと同じ `PointerInputRouter` を通る。マウス・トラックパッドの入力は方式に関係なくリモートポインターを動かす。
+要件の中心はマウスだが、iPhone やポインターのない iPad でも操作できるよう、画面へのタッチの扱いを四方式から選べる（セッションメニュー「画面のタッチ」、全セッション共通、既定は直接タッチ）。いずれもマウスと同じ `PointerInputRouter` を通る。マウス・トラックパッドの入力は方式に関係なくリモートポインターを動かす。
 
 | 方式 | 1 本指 | 2 本指 | ローカル表示 |
 |---|---|---|---|
 | 直接タッチ（`DirectTouchGestureTracker`） | tap: その位置で左 click。0.5 秒以内・24pt 以内の 2 回目の tap は 1 回目と同じ位置を押し、double click として届く。長押し 0.5 秒: 右 click。なぞる: 押した位置から左ドラッグ | 移動: スクロール。tap: 右 click | pinch で zoom。zoom 中は pinch したまま動かすと viewport 移動 |
 | トラックパッド（`TrackpadGestureTracker`） | なぞる: 相対移動。tap: 左 click。押さえてから動かす: ドラッグ | 移動: スクロール。tap: 右 click | 同上。ポインターが端に寄ると表示が追従 |
 | 表示の移動だけ | viewport 移動。double tap: Fit/100% 切替 | — | pinch で zoom |
+| Windows のタッチとして送る（RDPEI） | 指ごとに contact（0〜9、空いている最小番号）として down/move/up を送る | 同じく。pinch・スワイプは Windows 側のジェスチャー | zoom しない（pinch を Windows に渡す） |
 
 pinch が成立すると UIKit が touch を cancel するため、途中のドラッグはボタンを離して終わり、click は送らない。折りたたみ端末で手元デッキをキーボードのみにしたときは、選択に関係なくトラックパッド方式になる。
+
+タッチと Apple Pencil は bridge ABI 4 の `mr_rdp_session_send_touch` / `send_pen` で送る。キーと同じ有界キューを通り、down は対応する up/cancel の空きを予約する。入力の門が閉じるとき（メニュー、フォーカス喪失、方式の切替）は、置いている指をすべて cancel、ペンを up にしてから閉じる。RDPEI がまだ無いとき（ログイン画面など）は FreeRDP がタッチを左ボタンに置き換える。
+
+Apple Pencil は方式に関係なくペンとして送る（iPad、「Apple Pencil をペンとして送る」、既定オン）。筆圧は force / maximumPossibleForce、傾きは altitude と azimuth から X/Y の度数、回転は iPadOS 17.5 以降の roll。ペンのボタン（barrel/eraser）は Apple Pencil に無いので送らない。
 
 ## 10. ソフトウェアキーボード（終盤実装）
 
