@@ -592,6 +592,70 @@ static int test_pen_hover_and_moves_coalesce(void)
     return 1;
 }
 
+static mr_input_command mac_command(mrx_message_type type)
+{
+    mr_input_command command;
+    memset(&command, 0, sizeof(command));
+    command.kind = MR_INPUT_COMMAND_MACRDPX;
+    command.value.macrdpx.type = type;
+    return command;
+}
+
+static int test_mac_moves_and_scrolls_coalesce(void)
+{
+    mr_input_command_queue queue;
+    mr_input_command move = mac_command(MRX_MSG_POINTER);
+    mr_input_command scroll = mac_command(MRX_MSG_SCROLL);
+    mr_input_command out;
+    CHECK(mr_input_command_queue_init(&queue, 8u));
+    move.value.macrdpx.u.pointer.x = 1.0f;
+    CHECK(mr_input_command_queue_enqueue(&queue, &move) == MR_INPUT_ENQUEUE_QUEUED);
+    move.value.macrdpx.u.pointer.x = 2.0f;
+    CHECK(mr_input_command_queue_enqueue(&queue, &move) == MR_INPUT_ENQUEUE_COALESCED);
+    scroll.value.macrdpx.u.scroll.phase = MRX_PHASE_BEGAN;
+    scroll.value.macrdpx.u.scroll.delta_y = 1.0f;
+    CHECK(mr_input_command_queue_enqueue(&queue, &scroll) == MR_INPUT_ENQUEUE_QUEUED);
+    /* BEGAN does not merge; CHANGED events do, summing their deltas. */
+    scroll.value.macrdpx.u.scroll.phase = MRX_PHASE_CHANGED;
+    CHECK(mr_input_command_queue_enqueue(&queue, &scroll) == MR_INPUT_ENQUEUE_QUEUED);
+    scroll.value.macrdpx.u.scroll.delta_y = 2.5f;
+    CHECK(mr_input_command_queue_enqueue(&queue, &scroll) == MR_INPUT_ENQUEUE_COALESCED);
+    scroll.value.macrdpx.u.scroll.phase = MRX_PHASE_ENDED;
+    scroll.value.macrdpx.u.scroll.delta_y = 0.0f;
+    CHECK(mr_input_command_queue_enqueue(&queue, &scroll) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_count(&queue) == 4u);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.macrdpx.u.pointer.x == 2.0f);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out));
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.macrdpx.u.scroll.delta_y == 3.5f);
+    return 1;
+}
+
+static int test_mac_key_and_button_owe_their_release(void)
+{
+    mr_input_command_queue queue;
+    mr_input_command down = mac_command(MRX_MSG_KEY);
+    mr_input_command up = mac_command(MRX_MSG_KEY);
+    mr_input_command click = mac_command(MRX_MSG_POINTER);
+    mr_input_command filler = mac_command(MRX_MSG_MODIFIERS);
+    CHECK(mr_input_command_queue_init(&queue, 4u));
+    down.value.macrdpx.u.key.keycode = 13u;
+    up.value.macrdpx.u.key.keycode = 13u;
+    up.value.macrdpx.u.key.action = MRX_KEY_UP;
+    click.value.macrdpx.u.pointer.action = MRX_POINTER_DOWN;
+    click.value.macrdpx.u.pointer.button = MRX_BUTTON_RIGHT;
+    CHECK(mr_input_command_queue_enqueue(&queue, &down) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_reserved_count(&queue) == 1u);
+    CHECK(mr_input_command_queue_enqueue(&queue, &click) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_reserved_count(&queue) == 2u);
+    /* Full: the reserved ups still fit, other messages are dropped. */
+    CHECK(mr_input_command_queue_enqueue(&queue, &filler) == MR_INPUT_ENQUEUE_DROPPED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &up) == MR_INPUT_ENQUEUE_QUEUED);
+    click.value.macrdpx.u.pointer.action = MRX_POINTER_UP;
+    CHECK(mr_input_command_queue_enqueue(&queue, &click) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_reserved_count(&queue) == 0u);
+    return 1;
+}
+
 int main(void)
 {
     const test_case tests[] = {
@@ -615,7 +679,9 @@ int main(void)
         { "unicode tap", test_unicode_tap_owes_nothing_and_drops_when_full },
         { "touch release", test_touch_contacts_owe_their_release },
         { "touch lift slot", test_a_full_queue_keeps_room_for_a_lift },
-        { "pen coalescing", test_pen_hover_and_moves_coalesce }
+        { "pen coalescing", test_pen_hover_and_moves_coalesce },
+        { "mac move/scroll coalescing", test_mac_moves_and_scrolls_coalesce },
+        { "mac key/button release", test_mac_key_and_button_owe_their_release }
     };
     size_t index;
     for (index = 0u; index < sizeof(tests) / sizeof(tests[0]); ++index) {

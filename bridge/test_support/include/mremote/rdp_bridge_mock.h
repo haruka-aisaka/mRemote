@@ -90,6 +90,11 @@ typedef void (*mr_rdp_mock_capture_observer)(
     const uint8_t *bytes,
     size_t byte_count);
 
+/* ABI 6. */
+typedef void (*mr_rdp_mock_macrdpx_observer)(
+    void *context,
+    const mrx_message *message);
+
 typedef struct mr_rdp_mock_channel_transition {
     mr_rdp_channel_kind channel;
     mr_rdp_channel_transition transition;
@@ -146,6 +151,13 @@ typedef struct mr_rdp_mock_script {
     mr_rdp_mock_image_offer_observer on_offer_clipboard_image;
     mr_rdp_mock_files_offer_observer on_offer_clipboard_files;
     mr_rdp_mock_capture_observer on_send_audio_capture;
+    /* ABI 6. With MACRDPX in the session's flags: the server messages
+     * emitted after connect, in order (a server HELLO first, normally), with
+     * the caps negotiated from the session's offer and the HELLO's. Borrowed
+     * through run returning. */
+    const mrx_message *macrdpx_messages;
+    size_t macrdpx_message_count;
+    mr_rdp_mock_macrdpx_observer on_send_macrdpx;
 } mr_rdp_mock_script;
 
 void mr_rdp_mock_script_init(mr_rdp_mock_script *script);

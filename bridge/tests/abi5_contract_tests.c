@@ -220,7 +220,7 @@ static int test_remote_program_validation(void)
     static const char arguments[] = "C:\\temp\\a.txt";
     mr_rdp_config config;
     initialize_config(&config, 1u);
-    REQUIRE(config.abi_version == 5u);
+    REQUIRE(config.abi_version == MR_RDP_BRIDGE_ABI_VERSION && MR_RDP_BRIDGE_ABI_VERSION >= 5u);
     REQUIRE(config.remote_program == NULL);
     config.remote_arguments = arguments;
     config.remote_arguments_length = sizeof(arguments) - 1u;

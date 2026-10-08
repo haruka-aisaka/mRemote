@@ -98,6 +98,8 @@ if ((DRY_RUN)); then
   exit 0
 fi
 
+[[ -f "$REPO_ROOT/external/macrdpx/include/macrdpx/macrdpx.h" ]] ||
+  die "external/macrdpx is missing; run: git submodule update --init"
 [[ ! -e "$OUTPUT_PATH" ]] || die "output already exists; choose a fresh --output path: $OUTPUT_PATH"
 mkdir -p "$BUILD_ROOT/device" "$BUILD_ROOT/simulator" "$BUILD_ROOT/maccatalyst" "$(dirname "$OUTPUT_PATH")"
 
@@ -130,8 +132,10 @@ build_slice() {
     control_deadline.c \
     input_command_queue.c \
     h264_decoder.c \
-    freerdp_backend.c; do
-    object="$slice_root/${source%.c}.o"
+    freerdp_backend.c \
+    ../../external/macrdpx/src/codec.c \
+    ../../external/macrdpx/src/keys.c; do
+    object="$slice_root/$(basename "${source%.c}").o"
     xcrun --sdk "$sdk" clang \
       -target "$target" \
       -isysroot "$sdk_path" \
@@ -139,6 +143,7 @@ build_slice() {
       -ffile-prefix-map="$REPO_ROOT=/usr/src/mRemote" \
       -Wall -Wextra -Wpedantic -Werror \
       -I "$REPO_ROOT/bridge/include" \
+      -I "$REPO_ROOT/external/macrdpx/include" \
       -I "$REPO_ROOT/bridge/src" \
       -isystem "$headers" \
       -c "$REPO_ROOT/bridge/src/$source" \
@@ -163,14 +168,21 @@ build_slice \
   maccatalyst ios-arm64-maccatalyst macosx \
   "arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-macabi"
 
+# The public headers: the bridge's, and the MACRDPX ones it includes (ABI 6).
+headers_root="$BUILD_ROOT/headers"
+rm -rf "$headers_root"
+mkdir -p "$headers_root"
+cp -R "$REPO_ROOT/bridge/include/." "$headers_root/"
+cp -R "$REPO_ROOT/external/macrdpx/include/." "$headers_root/"
+
 log "creating $BRIDGE_XCFRAMEWORK_NAME"
 xcodebuild -create-xcframework \
   -library "$BUILD_ROOT/device/libmRemoteRDPBridge.a" \
-  -headers "$REPO_ROOT/bridge/include" \
+  -headers "$headers_root" \
   -library "$BUILD_ROOT/simulator/libmRemoteRDPBridge.a" \
-  -headers "$REPO_ROOT/bridge/include" \
+  -headers "$headers_root" \
   -library "$BUILD_ROOT/maccatalyst/libmRemoteRDPBridge.a" \
-  -headers "$REPO_ROOT/bridge/include" \
+  -headers "$headers_root" \
   -output "$OUTPUT_PATH"
 
 # Keep deterministic device, simulator, Mac Catalyst metadata ordering across

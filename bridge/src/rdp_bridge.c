@@ -682,7 +682,7 @@ static mr_rdp_status mr_bridge_channel_event(
     mr_rdp_channel_event event;
     mr_rdp_status status;
     uint64_t sequence;
-    if (channel < MR_RDP_CHANNEL_CLIPRDR || channel > MR_RDP_CHANNEL_RAIL ||
+    if (channel < MR_RDP_CHANNEL_CLIPRDR || channel > MR_RDP_CHANNEL_MACRDPX ||
         transition > MR_RDP_CHANNEL_CONNECTED) {
         return MR_RDP_ERROR_INVALID_DATA;
     }
@@ -1177,6 +1177,53 @@ static mr_rdp_status mr_bridge_audio_capture(
     return MR_RDP_STATUS_OK;
 }
 
+/* ABI 6. Only server-to-client types reach the application. */
+static int mr_macrdpx_from_server(mrx_message_type type)
+{
+    return type == MRX_MSG_HELLO || type == MRX_MSG_STREAM_STATUS ||
+        type == MRX_MSG_INPUT_SOURCE;
+}
+
+static int mr_macrdpx_to_server(mrx_message_type type)
+{
+    return type == MRX_MSG_KEYBOARD_INFO || type == MRX_MSG_KEY ||
+        type == MRX_MSG_MODIFIERS || type == MRX_MSG_POINTER ||
+        type == MRX_MSG_SCROLL || type == MRX_MSG_STREAM_CONFIG;
+}
+
+static mr_rdp_status mr_bridge_macrdpx_message(
+    void *context,
+    const mrx_message *message,
+    uint32_t negotiated_caps)
+{
+    mr_rdp_session *session = (mr_rdp_session *)context;
+    mr_rdp_macrdpx_callback callback;
+    mr_rdp_macrdpx_event event;
+    uint8_t scratch[MRX_HEADER_BYTES + 2u * MRX_MAX_NAME_BYTES];
+    size_t written = 0u;
+    if (session == NULL || message == NULL || !mr_macrdpx_from_server(message->type) ||
+        (negotiated_caps & ~session->config.macrdpx_caps) != 0u ||
+        mrx_encode(message, scratch, sizeof(scratch), &written) != MRX_OK) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (mr_bridge_invoke_check(session) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    callback = session->callbacks.on_macrdpx;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (callback == NULL) {
+        return MR_RDP_STATUS_OK;
+    }
+    memset(&event, 0, sizeof(event));
+    event.struct_size = (uint32_t)sizeof(event);
+    event.negotiated_caps = negotiated_caps;
+    event.generation = session->config.generation;
+    event.message = message;
+    callback(session->callback_context, &event);
+    return MR_RDP_STATUS_OK;
+}
+
 void mr_rdp_clipboard_image_offer_init(mr_rdp_clipboard_image_offer *offer)
 {
     if (offer == NULL) {
@@ -1396,7 +1443,13 @@ static mr_rdp_status mr_validate_config(const mr_rdp_config *config, size_t *out
                                  MR_RDP_CHANNEL_FLAG_DRIVE |
                                  MR_RDP_CHANNEL_FLAG_TOUCH |
                                  MR_RDP_CHANNEL_FLAG_MICROPHONE |
-                                 MR_RDP_CHANNEL_FLAG_H264)) != 0u) {
+                                 MR_RDP_CHANNEL_FLAG_H264 |
+                                 MR_RDP_CHANNEL_FLAG_MACRDPX)) != 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if (((config->channel_flags & MR_RDP_CHANNEL_FLAG_MACRDPX) != 0u) !=
+            (config->macrdpx_caps != 0u) ||
+        config->reserved_abi6 != 0u) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     if (mr_validate_gateway(config) != MR_RDP_STATUS_OK ||
@@ -1609,6 +1662,7 @@ mr_rdp_status mr_rdp_session_create_internal(
             goto fail;
         }
     }
+    session->config.macrdpx_caps = config->macrdpx_caps;
     session->callback_context = context;
     session->state = MR_RDP_SESSION_CREATED;
 
@@ -1639,6 +1693,7 @@ mr_rdp_status mr_rdp_session_create_internal(
     host.clipboard_image = mr_bridge_clipboard_image;
     host.clipboard_file = mr_bridge_clipboard_file;
     host.audio_capture = mr_bridge_audio_capture;
+    host.macrdpx_message = mr_bridge_macrdpx_message;
     status = factory(&session->config, &host, factory_context, &session->backend);
     if (status != MR_RDP_STATUS_OK || session->backend == NULL ||
         session->backend->vtable == NULL ||
@@ -1659,6 +1714,7 @@ mr_rdp_status mr_rdp_session_create_internal(
         session->backend->vtable->request_clipboard_files == NULL ||
         session->backend->vtable->send_audio_capture == NULL ||
         session->backend->vtable->send_pen == NULL ||
+        session->backend->vtable->send_macrdpx == NULL ||
         session->backend->vtable->destroy == NULL) {
         if (status == MR_RDP_STATUS_OK) {
             status = MR_RDP_ERROR_BACKEND;
@@ -2346,6 +2402,30 @@ mr_rdp_status mr_rdp_session_send_audio_capture(
         return status;
     }
     status = backend->vtable->send_audio_capture(backend, bytes, byte_count);
+    mr_api_call_finished(session);
+    return status;
+}
+
+mr_rdp_status mr_rdp_session_send_macrdpx(
+    mr_rdp_session *session,
+    const mrx_message *message)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_status status;
+    uint8_t scratch[64];
+    size_t written = 0u;
+    if (session == NULL || message == NULL || !mr_macrdpx_to_server(message->type) ||
+        mrx_encode(message, scratch, sizeof(scratch), &written) != MRX_OK) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if ((session->config.channel_flags & MR_RDP_CHANNEL_FLAG_MACRDPX) == 0u) {
+        return MR_RDP_ERROR_UNSUPPORTED;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    status = backend->vtable->send_macrdpx(backend, message);
     mr_api_call_finished(session);
     return status;
 }

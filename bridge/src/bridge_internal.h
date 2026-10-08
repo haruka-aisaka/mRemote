@@ -56,6 +56,8 @@ typedef struct mr_rdp_owned_config {
     size_t remote_program_length;
     char *remote_arguments;
     size_t remote_arguments_length;
+    /* ABI 6. Zero unless channel_flags has MACRDPX. */
+    uint32_t macrdpx_caps;
 } mr_rdp_owned_config;
 
 typedef struct mr_rdp_backend_clipboard_offer {
@@ -138,6 +140,11 @@ typedef struct mr_rdp_backend_host {
         uint32_t samples_per_second,
         uint16_t channels,
         uint16_t bits_per_sample);
+    /* ABI 6. A decoded server message and the features in use. */
+    mr_rdp_status (*macrdpx_message)(
+        void *context,
+        const mrx_message *message,
+        uint32_t negotiated_caps);
 } mr_rdp_backend_host;
 
 typedef struct mr_rdp_backend_vtable {
@@ -191,6 +198,10 @@ typedef struct mr_rdp_backend_vtable {
     mr_rdp_status (*send_pen)(
         mr_rdp_backend *backend,
         const mr_rdp_pen_event *event);
+    /* ABI 6. A validated client-to-server message, by value. */
+    mr_rdp_status (*send_macrdpx)(
+        mr_rdp_backend *backend,
+        const mrx_message *message);
     void (*destroy)(mr_rdp_backend *backend);
 } mr_rdp_backend_vtable;
 

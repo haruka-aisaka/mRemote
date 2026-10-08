@@ -69,6 +69,10 @@ typedef struct mr_rdp_mock_backend {
     mr_rdp_mock_image_offer_observer on_offer_clipboard_image;
     mr_rdp_mock_files_offer_observer on_offer_clipboard_files;
     mr_rdp_mock_capture_observer on_send_audio_capture;
+    /* ABI 6. */
+    const mrx_message *macrdpx_messages;
+    size_t macrdpx_message_count;
+    mr_rdp_mock_macrdpx_observer on_send_macrdpx;
     int audio_focused;
     mr_rdp_owned_config config;
     mr_rdp_desktop_frame desktop_frame;
@@ -542,6 +546,20 @@ static mr_rdp_status mr_mock_run(mr_rdp_backend *base)
             return status;
         }
     }
+    if ((backend->config.channel_flags & MR_RDP_CHANNEL_FLAG_MACRDPX) != 0u) {
+        uint32_t negotiated = 0u;
+        size_t index;
+        for (index = 0u; index < backend->macrdpx_message_count; ++index) {
+            const mrx_message *message = &backend->macrdpx_messages[index];
+            if (message->type == MRX_MSG_HELLO) {
+                negotiated = mrx_negotiate(backend->config.macrdpx_caps, message->u.hello.caps);
+            }
+            status = backend->host.macrdpx_message(backend->host.context, message, negotiated);
+            if (status != MR_RDP_STATUS_OK) {
+                return status;
+            }
+        }
+    }
     if (backend->audio_capture_rate != 0u &&
         (backend->config.channel_flags & MR_RDP_CHANNEL_FLAG_MICROPHONE) != 0u) {
         status = backend->host.audio_capture(
@@ -786,6 +804,28 @@ static mr_rdp_status mr_mock_send_pen(
     return MR_RDP_STATUS_OK;
 }
 
+static mr_rdp_status mr_mock_send_macrdpx(
+    mr_rdp_backend *base,
+    const mrx_message *message)
+{
+    mr_rdp_mock_backend *backend = (mr_rdp_mock_backend *)base;
+    mr_rdp_mock_macrdpx_observer observer;
+    void *observer_context;
+    int stopped;
+    (void)pthread_mutex_lock(&backend->mutex);
+    stopped = backend->stop_requested;
+    observer = backend->on_send_macrdpx;
+    observer_context = backend->observer_context;
+    (void)pthread_mutex_unlock(&backend->mutex);
+    if (stopped) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    if (observer != NULL) {
+        observer(observer_context, message);
+    }
+    return MR_RDP_STATUS_OK;
+}
+
 static void mr_mock_set_audio_focused(mr_rdp_backend *base, int focused)
 {
     mr_rdp_mock_backend *backend = (mr_rdp_mock_backend *)base;
@@ -932,6 +972,7 @@ static const mr_rdp_backend_vtable mr_mock_vtable = {
     .send_audio_capture = mr_mock_send_audio_capture,
     .send_touch = mr_mock_send_touch,
     .send_pen = mr_mock_send_pen,
+    .send_macrdpx = mr_mock_send_macrdpx,
     .destroy = mr_mock_destroy
 };
 
@@ -952,7 +993,7 @@ static mr_rdp_status mr_mock_backend_create(
         host->audio_packet == NULL || host->clipboard_remote_formats == NULL ||
         host->clipboard_offer_event == NULL || host->clipboard_text == NULL ||
         host->clipboard_image == NULL || host->clipboard_file == NULL ||
-        host->audio_capture == NULL ||
+        host->audio_capture == NULL || host->macrdpx_message == NULL ||
         script == NULL || out_backend == NULL ||
         script->struct_size < sizeof(*script) ||
         script->certificate_chain_count > MR_RDP_MAX_CERTIFICATE_CHAIN + 1u ||
@@ -1070,6 +1111,9 @@ static mr_rdp_status mr_mock_backend_create(
     backend->on_security_policy = script->on_security_policy;
     backend->on_send_touch = script->on_send_touch;
     backend->on_send_pen = script->on_send_pen;
+    backend->macrdpx_messages = script->macrdpx_messages;
+    backend->macrdpx_message_count = script->macrdpx_message_count;
+    backend->on_send_macrdpx = script->on_send_macrdpx;
     backend->on_connection_config = script->on_connection_config;
     backend->remote_image_png = script->remote_image_png;
     backend->remote_image_png_byte_count = script->remote_image_png_byte_count;

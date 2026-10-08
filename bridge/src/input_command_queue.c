@@ -56,6 +56,33 @@ static void mr_input_accumulate_wheel(
         source->value.pointer.wheel_y);
 }
 
+/* A Mac key or button transition. Modifier keys are flags-changed events
+ * that the server tracks by state, so they owe nothing - but they are still
+ * ordinary keys to the queue, which keeps them in order. */
+static int mr_input_macrdpx_transition(
+    const mr_input_command *command,
+    mrx_key_action key_action,
+    mrx_pointer_action pointer_action,
+    mr_input_release_reservation *out_reservation)
+{
+    const mrx_message *message = &command->value.macrdpx;
+    if (command->kind != MR_INPUT_COMMAND_MACRDPX) {
+        return 0;
+    }
+    if (message->type == MRX_MSG_KEY && message->u.key.action == key_action &&
+        (message->u.key.flags & MRX_KEY_FLAG_REPEAT) == 0u) {
+        out_reservation->kind = MR_INPUT_RELEASE_MAC_KEY;
+        out_reservation->key_code = message->u.key.keycode;
+        return 1;
+    }
+    if (message->type == MRX_MSG_POINTER && message->u.pointer.action == pointer_action) {
+        out_reservation->kind = MR_INPUT_RELEASE_MAC_BUTTON;
+        out_reservation->button = message->u.pointer.button;
+        return 1;
+    }
+    return 0;
+}
+
 static int mr_input_command_is_down(
     const mr_input_command *command,
     mr_input_release_reservation *out_reservation)
@@ -89,7 +116,7 @@ static int mr_input_command_is_down(
         out_reservation->kind = MR_INPUT_RELEASE_PEN;
         return 1;
     }
-    return 0;
+    return mr_input_macrdpx_transition(command, MRX_KEY_DOWN, MRX_POINTER_DOWN, out_reservation);
 }
 
 static int mr_input_command_is_up(
@@ -126,7 +153,7 @@ static int mr_input_command_is_up(
         out_reservation->kind = MR_INPUT_RELEASE_PEN;
         return 1;
     }
-    return 0;
+    return mr_input_macrdpx_transition(command, MRX_KEY_UP, MRX_POINTER_UP, out_reservation);
 }
 
 static int mr_input_release_equal(
@@ -136,7 +163,7 @@ static int mr_input_release_equal(
     if (left->kind != right->kind) {
         return 0;
     }
-    if (left->kind == MR_INPUT_RELEASE_KEY) {
+    if (left->kind == MR_INPUT_RELEASE_KEY || left->kind == MR_INPUT_RELEASE_MAC_KEY) {
         return left->key_code == right->key_code &&
             left->extended == right->extended &&
             left->extended1 == right->extended1;
@@ -174,6 +201,49 @@ static void mr_input_remove_reservation(
         queue->reservations[index] = queue->reservations[index + 1u];
     }
     --queue->reservation_count;
+}
+
+/* A gesture's continuing scroll events, of one kind, sum into one. */
+static int mr_input_scroll_mergeable(const mrx_scroll *tail, const mrx_scroll *next)
+{
+    const uint8_t continuing = MRX_PHASE_CHANGED;
+    return tail->unit == next->unit && tail->flags == next->flags &&
+        tail->modifier_flags == next->modifier_flags &&
+        tail->phase == next->phase && tail->momentum_phase == next->momentum_phase &&
+        ((tail->phase == continuing && tail->momentum_phase == MRX_PHASE_NONE) ||
+         (tail->phase == MRX_PHASE_NONE &&
+          (tail->momentum_phase == continuing || tail->momentum_phase == MRX_PHASE_NONE)));
+}
+
+static mr_input_enqueue_result mr_input_enqueue_macrdpx(
+    mr_input_command_queue *queue,
+    const mr_input_command *command)
+{
+    const mrx_message *message = &command->value.macrdpx;
+    if (queue->count > 0u) {
+        mr_input_command *tail = &queue->commands[
+            mr_input_queue_index(queue, queue->count - 1u)];
+        const mrx_message *previous = &tail->value.macrdpx;
+        if (tail->kind == MR_INPUT_COMMAND_MACRDPX && previous->type == message->type) {
+            if (message->type == MRX_MSG_POINTER &&
+                message->u.pointer.action == MRX_POINTER_MOVE &&
+                previous->u.pointer.action == MRX_POINTER_MOVE) {
+                *tail = *command;
+                return MR_INPUT_ENQUEUE_COALESCED;
+            }
+            if (message->type == MRX_MSG_SCROLL &&
+                mr_input_scroll_mergeable(&previous->u.scroll, &message->u.scroll)) {
+                tail->value.macrdpx.u.scroll.delta_x += message->u.scroll.delta_x;
+                tail->value.macrdpx.u.scroll.delta_y += message->u.scroll.delta_y;
+                return MR_INPUT_ENQUEUE_COALESCED;
+            }
+        }
+    }
+    if (mr_input_queue_free(queue) == 0u) {
+        return MR_INPUT_ENQUEUE_DROPPED;
+    }
+    mr_input_queue_append(queue, command);
+    return MR_INPUT_ENQUEUE_QUEUED;
 }
 
 int mr_input_command_queue_init(
@@ -282,6 +352,9 @@ mr_input_enqueue_result mr_input_command_queue_enqueue(
             return MR_INPUT_ENQUEUE_QUEUED;
         }
         return MR_INPUT_ENQUEUE_DROPPED;
+    }
+    if (command->kind == MR_INPUT_COMMAND_MACRDPX) {
+        return mr_input_enqueue_macrdpx(queue, command);
     }
     if (command->kind != MR_INPUT_COMMAND_POINTER) {
         return MR_INPUT_ENQUEUE_INVALID;

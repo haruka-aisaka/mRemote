@@ -18,7 +18,10 @@ enum {
      * contact. */
     MR_INPUT_COMMAND_TOUCH = 4,
     /* ABI 4. A DOWN obliges an UP; HOVER and MOVE coalesce. */
-    MR_INPUT_COMMAND_PEN = 5
+    MR_INPUT_COMMAND_PEN = 5,
+    /* ABI 6. A client-to-server MACRDPX message. KEY and POINTER downs
+     * oblige their ups; pointer moves and continuing scrolls coalesce. */
+    MR_INPUT_COMMAND_MACRDPX = 6
 };
 
 typedef struct mr_input_command {
@@ -29,6 +32,7 @@ typedef struct mr_input_command {
         mr_rdp_unicode_event unicode;
         mr_rdp_touch_event touch;
         mr_rdp_pen_event pen;
+        mrx_message macrdpx;
     } value;
 } mr_input_command;
 
@@ -37,7 +41,9 @@ enum {
     MR_INPUT_RELEASE_KEY = 1,
     MR_INPUT_RELEASE_BUTTON = 2,
     MR_INPUT_RELEASE_TOUCH = 3,
-    MR_INPUT_RELEASE_PEN = 4
+    MR_INPUT_RELEASE_PEN = 4,
+    MR_INPUT_RELEASE_MAC_KEY = 5,
+    MR_INPUT_RELEASE_MAC_BUTTON = 6
 };
 
 typedef struct mr_input_release_reservation {

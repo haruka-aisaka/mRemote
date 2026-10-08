@@ -17,6 +17,7 @@
 #include <freerdp/client/disp.h>
 #include <freerdp/client/rail.h>
 #include <freerdp/client/rdpgfx.h>
+#include <freerdp/svc.h>
 #include <freerdp/codec/region.h>
 #include <freerdp/gdi/gfx.h>
 #include <freerdp/gdi/region.h>
@@ -146,6 +147,20 @@ typedef struct mr_freerdp_clipboard_offer {
     size_t file_count;
 } mr_freerdp_clipboard_offer;
 
+/* ABI 6: the MACRDPX static channel's client half. FreeRDP owns its life
+ * (VirtualChannelEntryEx ... CHANNEL_EVENT_TERMINATED); the backend only
+ * points at it while it exists. Everything runs on the session worker. */
+typedef struct mr_freerdp_macrdpx {
+    CHANNEL_ENTRY_POINTS_FREERDP_EX entry_points;
+    CHANNEL_DEF def;
+    void *init_handle;
+    DWORD open_handle;
+    rdpContext *rdpcontext;
+    uint8_t *data_in;
+    size_t data_in_length;
+    size_t data_in_capacity;
+} mr_freerdp_macrdpx;
+
 typedef struct mr_freerdp_context {
     rdpClientContext common;
     mr_freerdp_backend *backend;
@@ -238,6 +253,12 @@ struct mr_freerdp_backend {
      * touches these. */
     pcRdpgfxSurfaceCommand gdi_surface_command;
     mr_freerdp_h264_surface h264[MR_FREERDP_MAX_H264_SURFACES];
+    /* ABI 6 MACRDPX: offered features, the open channel, and what the
+     * server's HELLO agreed to (zero until it arrives). Worker only. */
+    uint32_t macrdpx_caps;
+    mr_freerdp_macrdpx *macrdpx;
+    uint32_t macrdpx_negotiated;
+    int macrdpx_ready;
 };
 
 /* ABI 5 handlers wired up when their channel connects, defined further down. */
@@ -1247,6 +1268,8 @@ static int mr_freerdp_channel_kind_from_name(
         *out_kind = MR_RDP_CHANNEL_AUDIN;
     } else if (strcmp(name, RAIL_SVC_CHANNEL_NAME) == 0) {
         *out_kind = MR_RDP_CHANNEL_RAIL;
+    } else if (strcmp(name, MRX_CHANNEL_NAME) == 0) {
+        *out_kind = MR_RDP_CHANNEL_MACRDPX;
     } else {
         return 0;
     }
@@ -1979,6 +2002,251 @@ static UINT VCAPITYPE mr_freerdp_rdpsnd_entry(PFREERDP_RDPSND_DEVICE_ENTRY_POINT
     return CHANNEL_RC_OK;
 }
 
+/* ---- ABI 6: MACRDPX ---------------------------------------------------- */
+
+static BOOL mr_freerdp_macrdpx_write(mr_freerdp_macrdpx *plugin, const mrx_message *message)
+{
+    uint8_t buffer[MRX_HEADER_BYTES + 2u * MRX_MAX_NAME_BYTES];
+    size_t length = 0u;
+    uint8_t *copy;
+    UINT rc;
+    if (plugin == NULL || plugin->open_handle == 0u ||
+        mrx_encode(message, buffer, sizeof(buffer), &length) != MRX_OK) {
+        return FALSE;
+    }
+    /* FreeRDP holds the buffer until WRITE_COMPLETE/CANCELLED frees it. */
+    copy = (uint8_t *)malloc(length);
+    if (copy == NULL) {
+        return FALSE;
+    }
+    memcpy(copy, buffer, length);
+    rc = plugin->entry_points.pVirtualChannelWriteEx(
+        plugin->init_handle, plugin->open_handle, copy, (ULONG)length, copy);
+    if (rc != CHANNEL_RC_OK) {
+        free(copy);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static void mr_freerdp_macrdpx_dispatch(mr_freerdp_macrdpx *plugin)
+{
+    mr_freerdp_backend *backend = mr_freerdp_backend_from_context(plugin->rdpcontext);
+    size_t offset = 0u;
+    if (backend == NULL) {
+        return;
+    }
+    while (offset < plugin->data_in_length) {
+        mrx_message message;
+        size_t used = 0u;
+        mr_rdp_status status;
+        const mrx_status decoded = mrx_decode(
+            plugin->data_in + offset, plugin->data_in_length - offset, &message, &used);
+        if (decoded == MRX_ERROR_UNKNOWN_TYPE) {
+            offset += used;
+            continue;
+        }
+        if (decoded != MRX_OK) {
+            /* One write is one message batch; anything else is a broken
+             * server. Stop listening rather than guess at framing. */
+            WLog_WARN(MR_FREERDP_LOG_TAG, "MACRDPX: %s from the server; channel ignored",
+                      mrx_status_name(decoded));
+            backend->macrdpx_ready = 0;
+            backend->macrdpx_negotiated = 0u;
+            return;
+        }
+        offset += used;
+        if (message.type == MRX_MSG_HELLO) {
+            if (message.u.hello.role != MRX_ROLE_SERVER) {
+                continue;
+            }
+            backend->macrdpx_negotiated = mrx_negotiate(backend->macrdpx_caps,
+                                                        message.u.hello.caps);
+            backend->macrdpx_ready = 1;
+        } else if (!backend->macrdpx_ready ||
+                   (message.type != MRX_MSG_STREAM_STATUS &&
+                    message.type != MRX_MSG_INPUT_SOURCE)) {
+            continue;
+        }
+        status = backend->host.macrdpx_message(
+            backend->host.context, &message, backend->macrdpx_negotiated);
+        if (status == MR_RDP_ERROR_STOPPED) {
+            mr_freerdp_record_status(backend, status);
+            return;
+        }
+    }
+}
+
+static void mr_freerdp_macrdpx_received(
+    mr_freerdp_macrdpx *plugin,
+    const void *data,
+    UINT32 length,
+    UINT32 total_length,
+    UINT32 flags)
+{
+    if ((flags & (CHANNEL_FLAG_SUSPEND | CHANNEL_FLAG_RESUME)) != 0u) {
+        return;
+    }
+    if ((flags & CHANNEL_FLAG_FIRST) != 0u) {
+        if (total_length > MRX_HEADER_BYTES + MRX_MAX_PAYLOAD_BYTES * 4u) {
+            plugin->data_in_length = 0u;
+            plugin->data_in_capacity = 0u;
+            return;
+        }
+        if (plugin->data_in_capacity < total_length) {
+            uint8_t *grown = (uint8_t *)realloc(plugin->data_in, total_length);
+            if (grown == NULL) {
+                plugin->data_in_capacity = 0u;
+                return;
+            }
+            plugin->data_in = grown;
+        }
+        plugin->data_in_capacity = total_length;
+        plugin->data_in_length = 0u;
+    }
+    if (plugin->data_in == NULL ||
+        plugin->data_in_length + length > plugin->data_in_capacity) {
+        return;
+    }
+    memcpy(plugin->data_in + plugin->data_in_length, data, length);
+    plugin->data_in_length += length;
+    if ((flags & CHANNEL_FLAG_LAST) != 0u &&
+        plugin->data_in_length == plugin->data_in_capacity) {
+        mr_freerdp_macrdpx_dispatch(plugin);
+        plugin->data_in_length = 0u;
+    }
+}
+
+static VOID VCAPITYPE mr_freerdp_macrdpx_open_event(
+    LPVOID user, DWORD open_handle, UINT event, LPVOID data,
+    UINT32 length, UINT32 total_length, UINT32 flags)
+{
+    mr_freerdp_macrdpx *plugin = (mr_freerdp_macrdpx *)user;
+    switch (event) {
+        case CHANNEL_EVENT_DATA_RECEIVED:
+            if (plugin != NULL && plugin->open_handle == open_handle) {
+                mr_freerdp_macrdpx_received(plugin, data, length, total_length, flags);
+            }
+            break;
+        case CHANNEL_EVENT_WRITE_COMPLETE:
+        case CHANNEL_EVENT_WRITE_CANCELLED:
+            free(data);
+            break;
+        default:
+            break;
+    }
+}
+
+static void mr_freerdp_macrdpx_connected(mr_freerdp_macrdpx *plugin)
+{
+    mr_freerdp_backend *backend = mr_freerdp_backend_from_context(plugin->rdpcontext);
+    static const char name[] = "mRemote; Apple";
+    mrx_message hello;
+    if (backend == NULL ||
+        plugin->entry_points.pVirtualChannelOpenEx(
+            plugin->init_handle, &plugin->open_handle, plugin->def.name,
+            mr_freerdp_macrdpx_open_event) != CHANNEL_RC_OK) {
+        return;
+    }
+    backend->macrdpx = plugin;
+    backend->macrdpx_ready = 0;
+    backend->macrdpx_negotiated = 0u;
+    memset(&hello, 0, sizeof(hello));
+    hello.type = MRX_MSG_HELLO;
+    hello.u.hello.version = MRX_PROTOCOL_VERSION;
+    hello.u.hello.role = MRX_ROLE_CLIENT;
+    hello.u.hello.caps = backend->macrdpx_caps;
+    hello.u.hello.name = name;
+    hello.u.hello.name_length = (uint8_t)(sizeof(name) - 1u);
+    if (!mr_freerdp_macrdpx_write(plugin, &hello)) {
+        WLog_WARN(MR_FREERDP_LOG_TAG, "MACRDPX: could not send HELLO");
+    }
+}
+
+static void mr_freerdp_macrdpx_disconnected(mr_freerdp_macrdpx *plugin)
+{
+    mr_freerdp_backend *backend = mr_freerdp_backend_from_context(plugin->rdpcontext);
+    if (backend != NULL && backend->macrdpx == plugin) {
+        backend->macrdpx = NULL;
+        backend->macrdpx_ready = 0;
+        backend->macrdpx_negotiated = 0u;
+    }
+    if (plugin->open_handle != 0u) {
+        (void)plugin->entry_points.pVirtualChannelCloseEx(plugin->init_handle, plugin->open_handle);
+        plugin->open_handle = 0u;
+    }
+    plugin->data_in_length = 0u;
+}
+
+static VOID VCAPITYPE mr_freerdp_macrdpx_init_event(
+    LPVOID user, LPVOID init_handle, UINT event, LPVOID data, UINT length)
+{
+    mr_freerdp_macrdpx *plugin = (mr_freerdp_macrdpx *)user;
+    (void)data;
+    (void)length;
+    if (plugin == NULL || plugin->init_handle != init_handle) {
+        return;
+    }
+    switch (event) {
+        case CHANNEL_EVENT_CONNECTED:
+            mr_freerdp_macrdpx_connected(plugin);
+            break;
+        case CHANNEL_EVENT_DISCONNECTED:
+            mr_freerdp_macrdpx_disconnected(plugin);
+            break;
+        case CHANNEL_EVENT_TERMINATED:
+            mr_freerdp_macrdpx_disconnected(plugin);
+            free(plugin->data_in);
+            free(plugin);
+            break;
+        default:
+            break;
+    }
+}
+
+static BOOL VCAPITYPE mr_freerdp_macrdpx_entry(PCHANNEL_ENTRY_POINTS_EX entry_points, PVOID init_handle)
+{
+    CHANNEL_ENTRY_POINTS_FREERDP_EX *freerdp_points = (CHANNEL_ENTRY_POINTS_FREERDP_EX *)entry_points;
+    mr_freerdp_macrdpx *plugin;
+    if (freerdp_points == NULL ||
+        freerdp_points->cbSize < sizeof(CHANNEL_ENTRY_POINTS_FREERDP_EX) ||
+        freerdp_points->MagicNumber != FREERDP_CHANNEL_MAGIC_NUMBER) {
+        return FALSE;
+    }
+    plugin = (mr_freerdp_macrdpx *)calloc(1u, sizeof(*plugin));
+    if (plugin == NULL) {
+        return FALSE;
+    }
+    plugin->def.options = CHANNEL_OPTION_INITIALIZED | CHANNEL_OPTION_ENCRYPT_RDP;
+    (void)sprintf_s(plugin->def.name, ARRAYSIZE(plugin->def.name), MRX_CHANNEL_NAME);
+    memcpy(&plugin->entry_points, freerdp_points, sizeof(plugin->entry_points));
+    plugin->init_handle = init_handle;
+    plugin->rdpcontext = freerdp_points->context;
+    if (plugin->entry_points.pVirtualChannelInitEx(
+            plugin, NULL, init_handle, &plugin->def, 1, VIRTUAL_CHANNEL_VERSION_WIN2000,
+            mr_freerdp_macrdpx_init_event) != CHANNEL_RC_OK) {
+        free(plugin);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* Worker: one queued client message onto the channel. Until the server has
+ * answered HELLO - or when it never opens the channel - it is dropped, as
+ * the header promises. */
+static BOOL mr_freerdp_send_macrdpx_command(
+    mr_freerdp_backend *backend,
+    const mrx_message *message)
+{
+    if (backend->macrdpx == NULL || !backend->macrdpx_ready) {
+        return TRUE;
+    }
+    if (!mr_freerdp_macrdpx_write(backend->macrdpx, message)) {
+        WLog_WARN(MR_FREERDP_LOG_TAG, "MACRDPX: %s not sent", mrx_message_type_name(message->type));
+    }
+    return TRUE;
+}
+
 /* freerdp_client_context_new replaces the process-wide addin provider with
  * the static channel table every time it runs, so the mRemote provider is
  * re-registered right after it, under one lock, and delegates everything but
@@ -2001,6 +2269,12 @@ static PVIRTUALCHANNELENTRY mr_freerdp_addin_provider(
         strcmp(name, AUDIN_CHANNEL_NAME) == 0 &&
         strcmp(subsystem, MR_FREERDP_RDPSND_SUBSYSTEM) == 0) {
         PFREERDP_AUDIN_DEVICE_ENTRY entry = mr_freerdp_audin_entry;
+        return WINPR_FUNC_PTR_CAST(entry, PVIRTUALCHANNELENTRY);
+    }
+    if (name != NULL && subsystem == NULL && strcmp(name, MRX_CHANNEL_NAME) == 0 &&
+        (flags & FREERDP_ADDIN_CHANNEL_STATIC) != 0u &&
+        (flags & FREERDP_ADDIN_CHANNEL_ENTRYEX) != 0u) {
+        PVIRTUALCHANNELENTRYEX entry = mr_freerdp_macrdpx_entry;
         return WINPR_FUNC_PTR_CAST(entry, PVIRTUALCHANNELENTRY);
     }
     return freerdp_channels_load_static_addin_entry(name, subsystem, type, flags);
@@ -2555,6 +2829,10 @@ static BOOL mr_freerdp_pre_connect(freerdp *instance)
     const BOOL microphone = (backend != NULL &&
         (backend->channel_flags & MR_RDP_CHANNEL_FLAG_MICROPHONE) != 0u) ? TRUE : FALSE;
     const char *audin[] = { "audin", "sys:" MR_FREERDP_RDPSND_SUBSYSTEM };
+    /* ABI 6. The add-in provider answers this name with the MACRDPX entry. */
+    const char *macrdpx[] = { MRX_CHANNEL_NAME };
+    const BOOL mac_extensions = (backend != NULL &&
+        (backend->channel_flags & MR_RDP_CHANNEL_FLAG_MACRDPX) != 0u) ? TRUE : FALSE;
 
     if (backend == NULL || instance->context == NULL ||
         instance->context->settings == NULL || mr_freerdp_is_stopped(backend)) {
@@ -2579,6 +2857,8 @@ static BOOL mr_freerdp_pre_connect(freerdp *instance)
         !freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, microphone) ||
         (microphone &&
          !freerdp_client_add_dynamic_channel(settings, sizeof(audin) / sizeof(audin[0]), audin)) ||
+        (mac_extensions &&
+         !freerdp_client_add_static_channel(settings, 1, macrdpx)) ||
         !freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, clipboard) ||
         !freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE) ||
         !freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate, TRUE) ||
@@ -3376,6 +3656,8 @@ static mr_rdp_status mr_freerdp_drain_commands(mr_freerdp_backend *backend)
             sent = mr_freerdp_send_touch_command(backend, &command.value.touch);
         } else if (command.kind == MR_INPUT_COMMAND_PEN) {
             sent = mr_freerdp_send_pen_command(backend, &command.value.pen);
+        } else if (command.kind == MR_INPUT_COMMAND_MACRDPX) {
+            sent = mr_freerdp_send_macrdpx_command(backend, &command.value.macrdpx);
         } else if (command.kind == MR_INPUT_COMMAND_UNICODE) {
             sent = backend->context != NULL && backend->context->input != NULL &&
                 freerdp_input_send_unicode_keyboard_event(
@@ -3569,6 +3851,18 @@ static mr_rdp_status mr_freerdp_send_pen(
     memset(&command, 0, sizeof(command));
     command.kind = MR_INPUT_COMMAND_PEN;
     command.value.pen = *event;
+    return mr_freerdp_enqueue_command(backend, &command);
+}
+
+static mr_rdp_status mr_freerdp_send_macrdpx(
+    mr_rdp_backend *base,
+    const mrx_message *message)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    mr_input_command command;
+    memset(&command, 0, sizeof(command));
+    command.kind = MR_INPUT_COMMAND_MACRDPX;
+    command.value.macrdpx = *message;
     return mr_freerdp_enqueue_command(backend, &command);
 }
 
@@ -3949,6 +4243,7 @@ static const mr_rdp_backend_vtable mr_freerdp_vtable = {
     .send_audio_capture = mr_freerdp_send_audio_capture,
     .send_touch = mr_freerdp_send_touch,
     .send_pen = mr_freerdp_send_pen,
+    .send_macrdpx = mr_freerdp_send_macrdpx,
     .destroy = mr_freerdp_destroy
 };
 
@@ -4192,6 +4487,7 @@ mr_rdp_status mr_rdp_backend_create_default(
     backend->keyboard_profile = config->keyboard_profile;
     backend->security_policy = config->security_policy;
     backend->channel_flags = config->channel_flags;
+    backend->macrdpx_caps = config->macrdpx_caps;
     if (!mr_input_command_queue_init(
             &backend->command_queue, MR_INPUT_COMMAND_QUEUE_CAPACITY)) {
         free(backend);

@@ -4,11 +4,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* ABI 6. The MACRDPX message types (external/macrdpx), shared with
+ * macos-rdp-server. */
+#include <macrdpx/macrdpx.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define MR_RDP_BRIDGE_ABI_VERSION 5u
+#define MR_RDP_BRIDGE_ABI_VERSION 6u
 #define MR_RDP_DEFAULT_PORT 3389u
 #define MR_RDP_DEFAULT_CERTIFICATE_TIMEOUT_MS 30000u
 #define MR_RDP_MAX_CERTIFICATE_CHAIN 16u
@@ -115,7 +119,11 @@ enum {
      * it and feeds PCM with mr_rdp_session_send_audio_capture. */
     MR_RDP_CHANNEL_FLAG_MICROPHONE = 1u << 4,
     /* ABI 5. H.264 (AVC420) graphics, decoded with VideoToolbox. */
-    MR_RDP_CHANNEL_FLAG_H264 = 1u << 5
+    MR_RDP_CHANNEL_FLAG_H264 = 1u << 5,
+    /* ABI 6. Join the MACRDPX static channel (Mac RDP eXtensions) and offer
+     * config.macrdpx_caps to a server that opens it. Servers that don't know
+     * the channel ignore it. */
+    MR_RDP_CHANNEL_FLAG_MACRDPX = 1u << 6
 };
 
 /* ABI 4. */
@@ -172,6 +180,10 @@ typedef struct mr_rdp_config {
     size_t remote_program_length;
     const char *remote_arguments;
     size_t remote_arguments_length;
+    /* ABI 6. The MACRDPX features (MRX_CAP_*) offered in the client HELLO;
+     * non-zero exactly when channel_flags has MR_RDP_CHANNEL_FLAG_MACRDPX. */
+    uint32_t macrdpx_caps;
+    uint32_t reserved_abi6;
 } mr_rdp_config;
 
 /* ABI 5: remote_program is a span of 1...MR_RDP_MAX_REMOTE_PROGRAM_BYTES with
@@ -311,7 +323,9 @@ enum {
     MR_RDP_CHANNEL_RDPDR = 7,
     /* ABI 5. */
     MR_RDP_CHANNEL_AUDIN = 8,
-    MR_RDP_CHANNEL_RAIL = 9
+    MR_RDP_CHANNEL_RAIL = 9,
+    /* ABI 6. */
+    MR_RDP_CHANNEL_MACRDPX = 10
 };
 
 typedef uint8_t mr_rdp_channel_transition;
@@ -538,6 +552,18 @@ typedef struct mr_rdp_audio_capture_event {
     uint16_t bits_per_sample;
 } mr_rdp_audio_capture_event;
 
+/* ABI 6. One MACRDPX message from the server. The bridge answers nothing
+ * itself beyond sending the client HELLO when the channel connects; the
+ * server's HELLO arrives here with negotiated_caps = mrx_negotiate(offered,
+ * server). Every later message carries the same negotiated_caps. message and
+ * any string in it are valid only during the callback. */
+typedef struct mr_rdp_macrdpx_event {
+    uint32_t struct_size;
+    uint32_t negotiated_caps;
+    uint64_t generation;
+    const mrx_message *message;
+} mr_rdp_macrdpx_event;
+
 typedef void (*mr_rdp_state_callback)(
     void *context,
     const mr_rdp_state_event *event);
@@ -585,6 +611,9 @@ typedef void (*mr_rdp_clipboard_file_callback)(
 typedef void (*mr_rdp_audio_capture_callback)(
     void *context,
     const mr_rdp_audio_capture_event *event);
+typedef void (*mr_rdp_macrdpx_callback)(
+    void *context,
+    const mr_rdp_macrdpx_event *event);
 
 typedef struct mr_rdp_callbacks {
     uint32_t struct_size;
@@ -606,6 +635,8 @@ typedef struct mr_rdp_callbacks {
     mr_rdp_clipboard_image_callback on_clipboard_image;
     mr_rdp_clipboard_file_callback on_clipboard_file;
     mr_rdp_audio_capture_callback on_audio_capture;
+    /* ABI 6. */
+    mr_rdp_macrdpx_callback on_macrdpx;
 } mr_rdp_callbacks;
 
 typedef uint8_t mr_rdp_key_action;
@@ -914,6 +945,18 @@ mr_rdp_status mr_rdp_session_send_audio_capture(
     mr_rdp_session *session,
     const uint8_t *bytes,
     size_t byte_count);
+
+/* ABI 6. Sends one MACRDPX message through the same bounded, ordered queue
+ * as keys and the pointer, so a Mac key and a click can never overtake each
+ * other. Only client-to-server types are accepted: KEYBOARD_INFO, KEY,
+ * MODIFIERS, POINTER, SCROLL and STREAM_CONFIG, valid per mrx_encode. A KEY
+ * or POINTER down obliges its up, as for scan-code keys. UNSUPPORTED when the
+ * session was created without MR_RDP_CHANNEL_FLAG_MACRDPX. Messages sent
+ * before the server's HELLO, or to a server that never opens the channel,
+ * are dropped: wait for on_macrdpx before switching input over. */
+mr_rdp_status mr_rdp_session_send_macrdpx(
+    mr_rdp_session *session,
+    const mrx_message *message);
 
 /* Asks the server for its CF_UNICODETEXT. Exactly one on_clipboard_text
  * answers each accepted request, unless the session stops first. Only one

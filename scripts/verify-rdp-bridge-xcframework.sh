@@ -44,6 +44,10 @@ required_bridge_symbols=(
   mr_rdp_session_send_pointer
   mr_rdp_session_start_clipboard_probe
   mr_rdp_session_request_display_resize
+  mr_rdp_session_send_macrdpx
+  mrx_encode
+  mrx_decode
+  mrx_keycode_for_hid_usage
   mr_rdp_session_destroy
   mr_rdp_status_name
   mr_rdpsnd_format_init
