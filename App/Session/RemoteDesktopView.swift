@@ -378,6 +378,10 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         super.layoutSubviews()
         updateTransform()
         reportRenderSize()
+        // Drawn again at the new size now: when the desktop keeps its size -
+        // a fixed resolution, a server without the display channel - no new
+        // frame comes to do it, and the old picture is stretched to fit.
+        setNeedsDisplay()
     }
 
     func setRenderSizeOverride(_ size: CGSize?) {
@@ -983,7 +987,15 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             let point = transform.localPoint(fromRemote: relativePointerPixel)
             location = CGPoint(x: point.x, y: point.y)
         } else if let hoverLocation {
-            location = hoverLocation
+            // At the pixel the host was sent rather than the point it was
+            // sent from: a resize, a zoom or the keyboard's lift moves the
+            // desktop under a pointer that has not moved on it.
+            if let pixel = pointerRouter.knownPixel {
+                let point = transform.localPoint(fromRemote: pixel)
+                location = CGPoint(x: point.x, y: point.y)
+            } else {
+                location = hoverLocation
+            }
         } else {
             cursorLayer.isHidden = true
             return
