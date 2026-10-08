@@ -28,6 +28,7 @@ enum UITestConfiguration {
         FloatingButtonsIdleStyle.storageKey,
         KeyShortcutList.storageKey,
         DeckShortcutStrip.storageKey,
+        ExternalDisplayMode.storageKey,
         FoldResolutionPolicy.storageKey,
         DesktopSafeAreaPolicy.storageKey,
         DeckLayout.portraitFractionKey,

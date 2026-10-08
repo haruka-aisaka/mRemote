@@ -38,6 +38,8 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     var followsPointerAboveKeyboard = true
     /// Points to ask the server for instead of the surface's own size.
     let renderSizeOverride: CGSize?
+    /// Fed with every frame and pointer move, for a monitor to draw.
+    var mirror: DesktopMirror?
     /// False while the scene is inactive or the session is not connected. The
     /// view releases whatever it thinks is held when this goes false, which is
     /// what keeps a button from staying down on the server.
@@ -69,6 +71,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
         view.setTouchMode(touchMode)
         view.setFollowsPointerAboveKeyboard(followsPointerAboveKeyboard)
         view.setRenderSizeOverride(renderSizeOverride)
+        view.mirror = mirror
         view.onRenderSizeChange = onRenderSizeChange
         view.onDesktopSizeChange = onDesktopSizeChange
         view.onInputDiagnostics = onInputDiagnostics

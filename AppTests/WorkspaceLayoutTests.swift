@@ -21,6 +21,7 @@ final class WorkspaceLayoutTests: XCTestCase {
         XCTAssertEqual(layout(.docked(fraction: 0.1)).deckHeight, (874 * 0.25).rounded())
         XCTAssertEqual(layout(.atHinge).desktopFrameHeight, 437)
         XCTAssertEqual(layout(.floating).deckHeight, 0, "a floating deck leaves the desktop the screen")
+        XCTAssertEqual(layout(.fullScreen).desktopFrameHeight, 0, "with the desktop on a monitor the deck is the screen")
     }
 
     func testTheDeckTakesTheBottomEdgeSoOnlyTheTopIsGivenUp() {

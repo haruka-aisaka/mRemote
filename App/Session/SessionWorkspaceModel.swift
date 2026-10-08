@@ -67,6 +67,11 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     private var eventTask: Task<Void, Never>?
     private var resizeTask: Task<Void, Never>?
     private var renderSize: (width: Int, height: Int)?
+    /// A monitor's size in pixels while the desktop is on it, followed
+    /// instead of this screen's.
+    private var externalRenderSize: (width: Int, height: Int)?
+    /// What a monitor draws this session's desktop from.
+    @ObservationIgnored let desktopMirror = DesktopMirror()
     private var lastRequestedDesktopSize: (width: Int, height: Int)?
 
     /// A rotation or a Stage Manager resize arrives as a burst of layout
@@ -442,8 +447,14 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         requestDesktopLayout()
     }
 
+    func setExternalDesktopSize(_ size: (width: Int, height: Int)?) {
+        guard size?.width != externalRenderSize?.width || size?.height != externalRenderSize?.height else { return }
+        externalRenderSize = size
+        requestDesktopLayout()
+    }
+
     private func requestDesktopLayout() {
-        guard let (width, height) = runtime.resolution.desktopSize(fitting: renderSize) else { return }
+        guard let (width, height) = runtime.resolution.desktopSize(fitting: externalRenderSize ?? renderSize) else { return }
         guard lastRequestedDesktopSize?.width != width
                 || lastRequestedDesktopSize?.height != height else { return }
         lastRequestedDesktopSize = (width, height)

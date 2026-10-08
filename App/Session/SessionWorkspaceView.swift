@@ -39,6 +39,14 @@ struct SessionWorkspaceView: View {
     @AppStorage(KeyboardButtonTarget.storageKey) private var keyboardButtonTarget = KeyboardButtonTarget.softwareKeyboard
     @AppStorage(KeyShortcutList.storageKey) private var shortcuts = KeyShortcutList.standard
     @AppStorage(DeckShortcutStrip.storageKey) private var showsDeckShortcuts = true
+    @AppStorage(ExternalDisplayMode.storageKey) private var externalMode = ExternalDisplayMode.desktop
+    private let externalDisplay = ExternalDisplayCoordinator.shared
+
+    /// A monitor shows the desktop, and this screen is all keyboard and
+    /// trackpad.
+    private var externalTakesDesktop: Bool {
+        externalDisplay.screen != nil && externalMode != .mirror
+    }
 
     var body: some View {
         ZStack {
@@ -71,7 +79,10 @@ struct SessionWorkspaceView: View {
                 withAnimation { if toastText?.hasPrefix("⚠︎") == true { toastText = nil } }
             }
         }
-        .onChange(of: scalePreference.resolved(screenScale: screenScale), initial: true) { _, scale in
+        // A monitor's desktop is drawn for the monitor's density.
+        .onChange(of: scalePreference.resolved(
+            screenScale: externalTakesDesktop ? externalDisplay.screen?.scale ?? 1 : screenScale
+        ), initial: true) { _, scale in
             model.setDisplayScale(scale)
         }
         .onChange(of: hingePosture, initial: true) { _, posture in
@@ -97,6 +108,7 @@ struct SessionWorkspaceView: View {
                 + "phase=\(scenePhase) accepts=\(model.acceptsInput) "
                 + "safeArea=\(Int(windowSafeArea.top)),\(Int(windowSafeArea.leading)),"
                 + "\(Int(windowSafeArea.bottom)),\(Int(windowSafeArea.trailing)) hinge=\(hingePosture)"
+                + " external=\(externalTakesDesktop)"
         )
         #endif
         .statusBarHidden()
@@ -158,7 +170,8 @@ struct SessionWorkspaceView: View {
         let fraction = isPortrait ? deckFractionPortrait
             : splitsDeck ? deckFractionSplit : deckFractionLandscape
         let docked: DeckLayout = hingeAcross ? .atHinge : .docked(fraction: fraction)
-        let deck: DeckLayout = !showsDeck ? .hidden
+        let deck: DeckLayout = externalTakesDesktop ? .fullScreen
+            : !showsDeck ? .hidden
             : hingeAcross ? .atHinge
             : deckPlacement == .floating && canFloatDeck ? .floating
             : docked
@@ -187,13 +200,19 @@ struct SessionWorkspaceView: View {
                         status
                     }
                     endBanner
-                    floatingMenu(showsDeck: showsDeck)
+                    if !externalTakesDesktop {
+                        floatingMenu(showsDeck: showsDeck)
+                    }
                     toast
                 }
                 .frame(height: layout.desktopFrameHeight)
                 .clipped()
                 if layout.deckHeight > 0 {
                     VStack(spacing: 0) {
+                        if deck == .fullScreen {
+                            externalDisplayBar
+                                .padding(.top, safeArea.top)
+                        }
                         if case .docked = deck {
                             DeckResizeHandle(
                                 fraction: isPortrait ? $deckFractionPortrait
@@ -222,11 +241,68 @@ struct SessionWorkspaceView: View {
                 .padding(layout.safeArea)
                 .transition(.opacity)
             }
+            if externalTakesDesktop {
+                floatingMenu(showsDeck: true, keyboardButton: false)
+                    .padding(.top, safeArea.top)
+            }
+            #if DEBUG
+            if externalDisplay.isFaked {
+                // The Simulator's stand-in monitor, in a corner.
+                ExternalDisplayRoot()
+                    .frame(width: 256, height: 144)
+                    .border(.white.opacity(0.4))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.top, safeArea.top + 40)
+                    .padding(.trailing, 12)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("fake-external-display")
+            }
+            #endif
         }
+        .onChange(of: externalTakesDesktop, initial: true) { _, takes in
+            handOverToExternalDisplay(takes)
+        }
+        .onChange(of: externalDisplay.pixelSize?.width) { _, _ in
+            handOverToExternalDisplay(externalTakesDesktop)
+        }
+        .onDisappear { handOverToExternalDisplay(false) }
         .animation(.easeInOut(duration: 0.25), value: showsDeck)
         .onChange(of: showsDeck, initial: true) { _, shows in
             // The deck is the keyboard now; the system one would only cover it.
             if shows { model.softwareKeyboard.hide() }
+        }
+    }
+
+    /// Says where the desktop went, above the keyboard and trackpad.
+    private var externalDisplayBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "display")
+            Text(model.showsDesktop
+                 ? String(localized: "\(model.displayName) を外部ディスプレイに表示中")
+                 : model.statusText)
+                .lineLimit(1)
+            Spacer()
+        }
+        .font(.footnote)
+        .foregroundStyle(.white.opacity(0.8))
+        .padding(.horizontal, 16)
+        .frame(height: 36)
+        .background(Color.black)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("external-display-bar")
+    }
+
+    /// The monitor gets this session's desktop at its own size, or gives it
+    /// back.
+    private func handOverToExternalDisplay(_ takes: Bool) {
+        if takes {
+            externalDisplay.mirror = model.desktopMirror
+            model.setExternalDesktopSize(externalDisplay.pixelSize)
+        } else {
+            if externalDisplay.mirror === model.desktopMirror {
+                externalDisplay.mirror = nil
+            }
+            model.setExternalDesktopSize(nil)
         }
     }
 
@@ -251,7 +327,9 @@ struct SessionWorkspaceView: View {
     private func laptopKeys(split: Bool) -> some View {
         LaptopDeck(
             layout: model.configuration.keyboardLayout,
-            arrangement: deckArrangement,
+            // With the desktop on a monitor, the pad is the only pointer.
+            arrangement: externalTakesDesktop && !deckArrangement.hasTrackpad
+                ? .keyboardAboveTrackpad : deckArrangement,
             channel: laptopChannel,
             isInputEnabled: model.acceptsInput && scenePhase == .active,
             capsLockRole: capsLockRole,
@@ -274,6 +352,7 @@ struct SessionWorkspaceView: View {
                 touchMode: touchMode,
                 followsPointerAboveKeyboard: followsPointerAboveKeyboard,
                 renderSizeOverride: renderSizeOverride,
+                mirror: model.desktopMirror,
                 // Input is gated on both halves of docs/architecture.md
                 // section 10: the session must be able to deliver it, and the
                 // scene must be the one the user is looking at.
@@ -356,10 +435,10 @@ struct SessionWorkspaceView: View {
         }
     }
 
-    private func floatingMenu(showsDeck: Bool) -> some View {
+    private func floatingMenu(showsDeck: Bool, keyboardButton: Bool = true) -> some View {
         let softwareKeyboardShown = model.softwareKeyboard.isVisible
         return FloatingMenuButton(
-            keyboard: .init(
+            keyboard: !keyboardButton ? nil : .init(
                 isShowingKeyboard: softwareKeyboardShown || showsDeck,
                 isEnabled: softwareKeyboardShown || showsDeck || keyboardButtonTarget == .laptopDeck
                     || model.state.acceptsInput,

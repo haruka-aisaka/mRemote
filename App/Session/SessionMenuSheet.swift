@@ -44,6 +44,7 @@ struct SessionMenuSheet: View {
     @AppStorage(KeyboardButtonTarget.storageKey) private var keyboardButtonTarget = KeyboardButtonTarget.softwareKeyboard
     @AppStorage(FloatingButtonsIdleStyle.storageKey) private var buttonsIdleStyle = FloatingButtonsIdleStyle.dim
     @AppStorage(KeyShortcutList.storageKey) private var shortcuts = KeyShortcutList.standard
+    @AppStorage(ExternalDisplayMode.storageKey) private var externalMode = ExternalDisplayMode.desktop
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -240,6 +241,18 @@ struct SessionMenuSheet: View {
                     Text(safeAreaPolicy == .fullScreen
                          ? String(localized: "Dynamic Island や画面の角の下にもデスクトップを表示します。")
                          : String(localized: "Dynamic Island、画面の角、ホームインジケータを避けて表示します。"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Picker("外部ディスプレイ", selection: $externalMode) {
+                        Text("この画面と同じ（ミラーリング）").tag(ExternalDisplayMode.mirror)
+                        Text("デスクトップを表示").tag(ExternalDisplayMode.desktop)
+                    }
+                    .accessibilityIdentifier("session-external-display-mode")
+                    Text(ExternalDisplayCoordinator.shared.screen == nil
+                         ? String(localized: "モニターをつなぐと、そちらにデスクトップを表示し、この画面はキーボードとトラックパッドになります。")
+                         : externalMode == .mirror
+                            ? String(localized: "モニターにはこの画面がそのまま映ります。")
+                            : String(localized: "モニターにデスクトップを表示しています。この画面はキーボードとトラックパッドです。"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     // The keyboard and menu buttons, after a few seconds alone.

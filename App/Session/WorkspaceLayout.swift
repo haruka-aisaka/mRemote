@@ -31,6 +31,8 @@ enum DeckLayout: Equatable {
     case docked(fraction: Double)
     /// Over the desktop, which keeps the whole screen.
     case floating
+    /// The whole screen: the desktop is on a monitor.
+    case fullScreen
 
     /// How much of the height a docked deck may take.
     static let fractionRange = 0.25...0.75
@@ -67,6 +69,8 @@ enum DeckLayout: Equatable {
             return height - (height / 2).rounded()
         case .docked(let fraction):
             return (height * Self.clampFraction(fraction)).rounded()
+        case .fullScreen:
+            return height
         }
     }
 }

@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct mRemoteApp: App {
+    /// Only for a monitor's scene, which SwiftUI does not create.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var environment = AppEnvironment.live()
     @Environment(\.scenePhase) private var scenePhase
 

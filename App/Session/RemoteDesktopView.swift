@@ -107,6 +107,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     private var pointerInteraction: UIPointerInteraction?
     private var hoverLocation: CGPoint?
     private var remoteCursor: RemoteCursor = .systemDefault
+    private var remoteCursorImage: CGImage?
     private let commandQueue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private var desktopTexture: MTLTexture?
@@ -147,6 +148,15 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// the whole screen while the laptop deck takes part of it and the user
     /// would rather keep the resolution and draw it smaller.
     private var renderSizeOverride: CGSize?
+    /// A second screen showing this desktop: it reads the texture this view
+    /// uploads into and is told where the pointer is.
+    var mirror: DesktopMirror? {
+        didSet {
+            guard mirror !== oldValue else { return }
+            mirror?.publish(texture: desktopTexture)
+            positionCursorLayer()
+        }
+    }
     /// How far up the software keyboard reaches into this view.
     private var keyboardOverlap: CGFloat = 0
     /// Whether the desktop is lifted above the software keyboard to keep the
@@ -374,9 +384,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         }
         hasPresentedAFrame = true
         setNeedsDisplay()
+        mirror?.publish(texture: desktopTexture)
     }
 
     private func waitForSubmittedTextureRead() {
+        mirror?.waitForReads()
         guard let commandBuffer = lastSubmittedCommandBuffer else { return }
         switch commandBuffer.status {
         case .completed, .error:
@@ -776,7 +788,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             from: start,
             dx: dx,
             dy: dy,
-            pixelsPerPoint: 1 / max(viewportTransform.scale, 0.01),
+            // Not on screen here - the desktop is on another display - the
+            // pointer goes at that display's scale.
+            pixelsPerPoint: bounds.width < 1
+                ? mirror?.pixelsPerPoint ?? 1
+                : 1 / max(viewportTransform.scale, 0.01),
             speed: speed,
             desktopWidth: desktopSize.width,
             desktopHeight: desktopSize.height
@@ -828,6 +844,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     private func keepInView(_ pixel: PixelPoint) {
+        guard bounds.width >= 1 else { return }
         let covered = viewportTransform.occludedBottom > 0
         guard zoom > 1 || scaleMode == .oneToOne || covered else { return }
         let point = viewportTransform.localPoint(fromRemote: pixel)
@@ -1037,10 +1054,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         guard cursor != remoteCursor else { return }
         remoteCursor = cursor
         if case .shape(let image) = cursor {
-            cursorLayer.contents = Self.cgImage(image)
+            remoteCursorImage = Self.cgImage(image)
         } else {
-            cursorLayer.contents = nil
+            remoteCursorImage = nil
         }
+        cursorLayer.contents = remoteCursorImage
         pointerInteraction?.invalidate()
         positionCursorLayer()
     }
@@ -1049,6 +1067,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// arrow shrinks with the desktop when fitted and grows when zoomed - the
     /// same size relative to the remote content as on a real monitor.
     private func positionCursorLayer() {
+        publishCursorToMirror()
         let transform = viewportTransform
         let location: CGPoint
         if let relativePointerPixel {
@@ -1093,6 +1112,31 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         cursorLayer.frame = frame
         cursorLayer.isHidden = false
         CATransaction.commit()
+    }
+
+    /// Where the pointer is on the desktop, for a mirror: it draws the
+    /// cursor at its own scale.
+    private func publishCursorToMirror() {
+        guard let mirror else { return }
+        let pixel = relativePointerPixel ?? pointerRouter.knownPixel
+        switch remoteCursor {
+        case .shape(let image):
+            mirror.publishCursor(
+                pixel: pixel.map { CGPoint(x: $0.x, y: $0.y) },
+                image: remoteCursorImage,
+                hotspot: CGPoint(x: Int(image.hotspotX), y: Int(image.hotspotY)),
+                pixelSize: CGSize(width: Int(image.width), height: Int(image.height))
+            )
+        case .systemDefault:
+            mirror.publishCursor(
+                pixel: pixel.map { CGPoint(x: $0.x, y: $0.y) },
+                image: Self.fallbackArrow,
+                hotspot: .zero,
+                pixelSize: .zero
+            )
+        case .hidden:
+            mirror.publishCursor(pixel: nil, image: nil, hotspot: .zero, pixelSize: .zero)
+        }
     }
 
     private static let fallbackArrowSize = CGSize(width: 13, height: 20)

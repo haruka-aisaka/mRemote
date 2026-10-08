@@ -90,6 +90,16 @@
         }
       }
     },
+    "%@ を外部ディスプレイに表示中": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is on the external display"
+          }
+        }
+      }
+    },
     "%@ 承認しても安全にはならないため、接続は中止されます。": {
       "localizations": {
         "en": {
@@ -519,6 +529,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "You accepted a different certificate for this computer before. This happens when the server's certificate is renewed, but it also happens when the connection is being intercepted. If you don't know why it changed, don't accept it; check the certificate on the server."
+          }
+        }
+      }
+    },
+    "この画面と同じ（ミラーリング）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same as This Screen (Mirroring)"
           }
         }
       }
@@ -1133,6 +1153,16 @@
         }
       }
     },
+    "デスクトップを表示": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show the Desktop"
+          }
+        }
+      }
+    },
     "トラックパッド": {
       "localizations": {
         "en": {
@@ -1349,6 +1379,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Not enough memory or other resources to start the connection. Close other sessions and try again."
+          }
+        }
+      }
+    },
+    "モニターにはこの画面がそのまま映ります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The monitor shows this screen as it is."
+          }
+        }
+      }
+    },
+    "モニターにデスクトップを表示しています。この画面はキーボードとトラックパッドです。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The desktop is on the monitor. This screen is the keyboard and trackpad."
+          }
+        }
+      }
+    },
+    "モニターをつなぐと、そちらにデスクトップを表示し、この画面はキーボードとトラックパッドになります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect a monitor to show the desktop there and use this screen as the keyboard and trackpad."
           }
         }
       }
@@ -2049,6 +2109,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connect Once Despite the Change"
+          }
+        }
+      }
+    },
+    "外部ディスプレイ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External Display"
           }
         }
       }
