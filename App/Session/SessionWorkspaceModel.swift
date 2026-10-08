@@ -581,9 +581,11 @@ enum LaptopDeckPreference: String, CaseIterable {
     /// user's hands, not of the host.
     static let storageKey = "laptop-deck-preference"
 
-    func showsDeck(posture: HingePosture, isPortrait: Bool) -> Bool {
+    /// - Parameter landscapeWhenFolded: the foldable may be folded while
+    ///   held sideways, and the deck comes up then too.
+    func showsDeck(posture: HingePosture, isPortrait: Bool, landscapeWhenFolded: Bool = false) -> Bool {
         switch self {
-        case .automatic: return posture == .partiallyOpen && isPortrait
+        case .automatic: return posture == .partiallyOpen && (isPortrait || landscapeWhenFolded)
         case .always: return true
         case .never: return false
         }

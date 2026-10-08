@@ -35,6 +35,7 @@ struct SessionWorkspaceView: View {
     @AppStorage(FloatingDeckFrame.storageKey) private var floatingDeckFrame = FloatingDeckFrame.standard
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
+    @AppStorage(FoldedOrientation.storageKey) private var foldedOrientation = FoldedOrientation.laptop
 
     var body: some View {
         ZStack {
@@ -73,6 +74,12 @@ struct SessionWorkspaceView: View {
         .onChange(of: hingePosture, initial: true) { _, posture in
             model.deviceHasHinge = posture != .unavailable
         }
+        // Folded, a foldable is a laptop: the screen turns to stand above the
+        // hinge however the device is held, unless the user lets it turn.
+        .onChange(of: hingePosture == .partiallyOpen && foldedOrientation == .laptop, initial: true) { _, locks in
+            OrientationLock.set(locks ? .portrait : nil)
+        }
+        .onDisappear { OrientationLock.set(nil) }
         .onChange(of: model.clipboardMessage) { _, message in
             guard let message else { return }
             withAnimation { toastText = message }
@@ -144,7 +151,11 @@ struct SessionWorkspaceView: View {
     @ViewBuilder
     private func split(in size: CGSize, safeArea: EdgeInsets) -> some View {
         let isPortrait = size.height > size.width
-        let showsDeck = deckPreference.showsDeck(posture: hingePosture, isPortrait: isPortrait)
+        let showsDeck = deckPreference.showsDeck(
+            posture: hingePosture,
+            isPortrait: isPortrait,
+            landscapeWhenFolded: foldedOrientation == .free
+        )
         let hingeAcross = hingePosture == .partiallyOpen && isPortrait
         let splitsDeck = splitsDeckInLandscape && !isPortrait && canFloatDeck
         let fraction = isPortrait ? deckFractionPortrait

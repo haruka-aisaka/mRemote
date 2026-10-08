@@ -2060,6 +2060,36 @@
         }
       }
     },
+    "折り曲げても持った向きに合わせて回転します。横向きで少し折ったときも、手元キーボードは画面の下に出ます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folded, the screen still turns with the device. Folded a little while held sideways, the PC keyboard comes up along the bottom."
+          }
+        }
+      }
+    },
+    "折り曲げても横向きで使う": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow landscape when folded"
+          }
+        }
+      }
+    },
+    "折り曲げると、画面はヒンジの上に立つ向き（ラップトップ）に固定されます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folded, the screen stays upright above the hinge, like a laptop."
+          }
+        }
+      }
+    },
     "押下キャンセル": {
       "localizations": {
         "en": {

@@ -40,6 +40,7 @@ struct SessionMenuSheet: View {
     @AppStorage(LaptopDeckPlacement.storageKey) private var deckPlacement = LaptopDeckPlacement.docked
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
+    @AppStorage(FoldedOrientation.storageKey) private var foldedOrientation = FoldedOrientation.laptop
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -267,6 +268,18 @@ struct SessionMenuSheet: View {
                         Toggle("横向きでは左右に分ける", isOn: $splitsDeckInLandscape)
                             .disabled(deckPreference == .never)
                             .accessibilityIdentifier("session-laptop-split-toggle")
+                    }
+                    if model.deviceHasHinge {
+                        Toggle("折り曲げても横向きで使う", isOn: Binding(
+                            get: { foldedOrientation == .free },
+                            set: { foldedOrientation = $0 ? .free : .laptop }
+                        ))
+                        .accessibilityIdentifier("session-folded-landscape-toggle")
+                        Text(foldedOrientation == .free
+                             ? String(localized: "折り曲げても持った向きに合わせて回転します。横向きで少し折ったときも、手元キーボードは画面の下に出ます。")
+                             : String(localized: "折り曲げると、画面はヒンジの上に立つ向き（ラップトップ）に固定されます。"))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                     // Kept across sessions and launches: how the deck is laid
                     // out is a matter of the user's hands, not of the host.
