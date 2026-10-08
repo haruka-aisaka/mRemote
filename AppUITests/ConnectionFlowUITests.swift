@@ -96,6 +96,56 @@ final class ConnectionFlowUITests: XCTestCase {
         _ = assertAppears("profile-row-新しい接続先", "the saved profile appears in the list")
     }
 
+    /// A gateway and a shared folder are saved with the connection and
+    /// come back in the editor.
+    func testAGatewayAndASharedFolderAreKept() {
+        element("add-profile-button").tap()
+        let host = assertAppears("profile-host-field", "the editor sheet opens")
+        element("profile-name-field").tap()
+        app.typeText("社内PC")
+        host.tap()
+        app.typeText("pc.internal")
+
+        let gateway = element("profile-gateway-toggle")
+        for _ in 0..<6 where !gateway.isHittable {
+            app.swipeUp()
+        }
+        gateway.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let gatewayHost = assertAppears("profile-gateway-host-field", "the gateway's fields appear")
+        gatewayHost.tap()
+        app.typeText("gw.example.com")
+
+        let folder = element("profile-shared-folder-picker")
+        for _ in 0..<6 where !folder.isHittable {
+            app.swipeUp()
+        }
+        folder.tap()
+        let appFolder = app.buttons["このアプリのフォルダ"].firstMatch
+        XCTAssertTrue(appFolder.waitForExistence(timeout: 5), "the folder choices are listed")
+        appFolder.tap()
+        element("profile-save-button").tap()
+
+        let row = assertAppears("profile-row-社内PC", "the connection is saved")
+        row.swipeLeft()
+        let edit = app.buttons["編集"].firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        edit.tap()
+        let reopened = element("profile-gateway-host-field")
+        for _ in 0..<6 where !reopened.exists {
+            app.swipeUp()
+        }
+        XCTAssertEqual(reopened.value as? String, "gw.example.com", "the gateway comes back")
+        let reopenedFolder = element("profile-shared-folder-picker")
+        for _ in 0..<6 where !reopenedFolder.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(
+            (reopenedFolder.value as? String)?.contains("このアプリのフォルダ") == true
+                || app.staticTexts["このアプリのフォルダ"].exists,
+            "the shared folder comes back\n\(app.debugDescription)"
+        )
+    }
+
     func testTheSoftwareKeyboardOpensFromTheMenuAndCloses() {
         element("profile-row-テスト接続先").tap()
         _ = assertAppears("session-workspace", "connecting presents the workspace")
