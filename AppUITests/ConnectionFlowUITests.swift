@@ -146,6 +146,70 @@ final class ConnectionFlowUITests: XCTestCase {
         )
     }
 
+    /// Groups head their connections, favourites come first, and the
+    /// search narrows the list.
+    func testGroupsFavouritesAndSearch() {
+        element("add-profile-button").tap()
+        let host = assertAppears("profile-host-field", "the editor sheet opens")
+        element("profile-name-field").tap()
+        app.typeText("NAS")
+        host.tap()
+        app.typeText("nas.local")
+        element("profile-group-field").tap()
+        app.typeText("Home")
+        element("profile-save-button").tap()
+        _ = assertAppears("profile-row-NAS", "the connection is saved")
+        XCTAssertTrue(app.staticTexts["HOME"].exists || app.staticTexts["Home"].exists, "its group heads it")
+
+        // Favourite from the leading swipe.
+        element("profile-row-テスト接続先").swipeRight()
+        let favourite = app.buttons["お気に入り"].firstMatch
+        XCTAssertTrue(favourite.waitForExistence(timeout: 5))
+        favourite.tap()
+        XCTAssertTrue(app.staticTexts["お気に入り"].waitForExistence(timeout: 5), "favourites get their own section")
+
+        let search = app.searchFields.firstMatch
+        if !search.exists { app.swipeDown() }
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        app.typeText("nas")
+        XCTAssertTrue(element("profile-row-NAS").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("profile-row-テスト接続先").waitForNonExistence(timeout: 5), "the search narrows the list")
+    }
+
+    /// Wake-on-LAN refuses an address that is not six bytes.
+    func testWakeOnLANNeedsAWholeMACAddress() {
+        element("add-profile-button").tap()
+        let host = assertAppears("profile-host-field", "the editor sheet opens")
+        host.tap()
+        app.typeText("pc.local")
+        let wake = element("profile-wake-toggle")
+        for _ in 0..<6 where !wake.isHittable { app.swipeUp() }
+        wake.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let mac = assertAppears("profile-mac-field", "the address field appears")
+        mac.tap()
+        app.typeText("AA:BB:CC")
+        XCTAssertFalse(element("profile-save-button").isEnabled, "half an address cannot be saved")
+        app.typeText(":01:02:03")
+        XCTAssertTrue(element("profile-save-button").isEnabled)
+    }
+
+    /// iPad: a connection opens in a window of its own and is listed as
+    /// running; it is never shown over the list as well.
+    func testAConnectionOpensInItsOwnWindow() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("iPad only") }
+        let row = assertAppears("profile-row-テスト接続先", "the list is up")
+        row.press(forDuration: 1.2)
+        let newWindow = element("connect-new-window")
+        XCTAssertTrue(newWindow.waitForExistence(timeout: 5), "the context menu offers a window")
+        newWindow.tap()
+        _ = assertAppears("session-workspace", timeout: 20, "the session window shows the desktop")
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "session-window"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     func testTheSoftwareKeyboardOpensFromTheMenuAndCloses() {
         element("profile-row-テスト接続先").tap()
         _ = assertAppears("session-workspace", "connecting presents the workspace")

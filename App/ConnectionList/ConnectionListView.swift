@@ -9,6 +9,8 @@ struct ConnectionListView: View {
     /// route is modelled once and presented once.
     @State private var route: Route?
     @State private var isImportingFile = false
+    @State private var searchText = ""
+    @Environment(\.openWindow) private var openWindow
 
     private enum Route: Identifiable {
         case editor(ProfileEditorModel)
@@ -81,6 +83,15 @@ struct ConnectionListView: View {
             route = .editor(model)
         }
         .alert(
+            environment.listMessage ?? "",
+            isPresented: Binding(
+                get: { environment.listMessage != nil },
+                set: { if !$0 { environment.listMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        }
+        .alert(
             "読み込めませんでした",
             isPresented: Binding(
                 get: { environment.importFailure != nil },
@@ -116,15 +127,43 @@ struct ConnectionListView: View {
         .accessibilityIdentifier("empty-state")
     }
 
+    /// Favourites first, then each group in name order, then the rest;
+    /// filtered by the search text on name, host and group.
+    private var profileSections: [(title: String?, profiles: [ConnectionProfile])] {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        let matching = environment.profiles.filter { profile in
+            query.isEmpty
+                || profile.displayName.localizedCaseInsensitiveContains(query)
+                || profile.endpoint.host.localizedCaseInsensitiveContains(query)
+                || (profile.groupName?.localizedCaseInsensitiveContains(query) ?? false)
+        }
+        var sections: [(title: String?, profiles: [ConnectionProfile])] = []
+        let favourites = matching.filter(\.isFavorite)
+        if !favourites.isEmpty {
+            sections.append((String(localized: "お気に入り"), favourites))
+        }
+        let others = matching.filter { !$0.isFavorite }
+        let groups = Set(others.compactMap(\.groupName)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        for group in groups {
+            sections.append((group, others.filter { $0.groupName == group }))
+        }
+        let ungrouped = others.filter { $0.groupName == nil }
+        if !ungrouped.isEmpty {
+            sections.append((sections.isEmpty ? nil : String(localized: "その他"), ungrouped))
+        }
+        return sections
+    }
+
     private var list: some View {
         List {
-            if !environment.runningSessions.isEmpty {
+            if !environment.runningSessions.isEmpty, searchText.isEmpty {
                 Section("実行中") {
                     ForEach(environment.runningSessions) { session in
                         Button {
                             environment.present(session)
                         } label: {
-                            HStack {
+                            HStack(spacing: 12) {
+                                SessionThumbnailView(image: session.thumbnail)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(session.displayName).font(.headline)
                                         .foregroundStyle(.primary)
@@ -152,70 +191,150 @@ struct ConnectionListView: View {
                 }
             }
 
-            Section {
-            ForEach(environment.profiles) { profile in
-                Button {
-                    // docs/ui-flow.md section 7: an ordinary tap returns to the
-                    // profile's running session; only the explicit action
-                    // below opens a second one.
-                    if let running = environment.runningSession(for: profile) {
-                        environment.present(running)
-                    } else {
-                        Task { await environment.connect(to: profile) }
+            ForEach(Array(profileSections.enumerated()), id: \.offset) { _, section in
+                Section {
+                    ForEach(section.profiles) { profile in
+                        profileRow(profile)
                     }
-                } label: {
-                    ConnectionRow(profile: profile)
+                } header: {
+                    if let title = section.title { Text(title) }
                 }
-                .accessibilityIdentifier("profile-row-\(profile.displayName)")
-                .swipeActions(edge: .trailing) {
-                    Button(role: .destructive) {
-                        Task { await environment.delete(profile) }
-                    } label: {
-                        Label("削除", systemImage: "trash")
-                    }
-                    Button {
-                        route = .editor(ProfileEditorModel(
-                            mode: .edit(profile),
-                            password: environment.storedPassword(for: profile)
-                        ))
-                    } label: {
-                        Label("編集", systemImage: "pencil")
-                    }
-                    .tint(.blue)
-                }
-                .contextMenu {
-                    Button("新しいセッションで接続") {
-                        Task { await environment.connect(to: profile) }
-                    }
-                    .accessibilityIdentifier("connect-new-session")
-                    Button("編集") {
-                        route = .editor(ProfileEditorModel(
-                            mode: .edit(profile),
-                            password: environment.storedPassword(for: profile)
-                        ))
-                    }
-                    Button("複製") {
-                        Task { await environment.duplicate(profile) }
-                    }
-                    Button("削除", role: .destructive) {
-                        Task { await environment.delete(profile) }
-                    }
-                }
-            }
             }
         }
+        .searchable(text: $searchText, prompt: Text("名前・ホスト・グループで検索"))
         .accessibilityIdentifier("profile-list")
+    }
+
+    @ViewBuilder
+    private func profileRow(_ profile: ConnectionProfile) -> some View {
+        Button {
+            // docs/ui-flow.md section 7: an ordinary tap returns to the
+            // profile's running session; only the explicit action below
+            // opens a second one.
+            if let running = environment.runningSession(for: profile) {
+                environment.present(running)
+            } else {
+                Task { await environment.connect(to: profile) }
+            }
+        } label: {
+            ConnectionRow(profile: profile, isWaking: environment.wakingProfileID == profile.id)
+        }
+        .disabled(environment.wakingProfileID == profile.id)
+        .accessibilityIdentifier("profile-row-\(profile.displayName)")
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                Task { await environment.delete(profile) }
+            } label: {
+                Label("削除", systemImage: "trash")
+            }
+            Button {
+                route = .editor(ProfileEditorModel(
+                    mode: .edit(profile),
+                    password: environment.storedPassword(for: profile)
+                ))
+            } label: {
+                Label("編集", systemImage: "pencil")
+            }
+            .tint(.blue)
+        }
+        .swipeActions(edge: .leading) {
+            Button {
+                Task { await environment.setFavorite(!profile.isFavorite, for: profile) }
+            } label: {
+                Label(profile.isFavorite ? String(localized: "お気に入りから外す") : String(localized: "お気に入り"),
+                      systemImage: profile.isFavorite ? "star.slash" : "star")
+            }
+            .tint(.yellow)
+            if profile.wakeOnLAN != nil {
+                Button {
+                    Task { await environment.wake(profile) }
+                } label: {
+                    Label("起動", systemImage: "power")
+                }
+                .tint(.green)
+            }
+        }
+        .contextMenu {
+            Button("新しいセッションで接続") {
+                Task { await environment.connect(to: profile) }
+            }
+            .accessibilityIdentifier("connect-new-session")
+            if UIApplication.shared.supportsMultipleScenes {
+                Button("新しいウィンドウで接続") {
+                    openWindow(value: profile.id.rawValue)
+                }
+                .accessibilityIdentifier("connect-new-window")
+            }
+            if profile.wakeOnLAN != nil {
+                Button("起動（Wake-on-LAN）") {
+                    Task { await environment.wake(profile) }
+                }
+            }
+            Button(profile.isFavorite ? String(localized: "お気に入りから外す") : String(localized: "お気に入りに追加")) {
+                Task { await environment.setFavorite(!profile.isFavorite, for: profile) }
+            }
+            Button("編集") {
+                route = .editor(ProfileEditorModel(
+                    mode: .edit(profile),
+                    password: environment.storedPassword(for: profile)
+                ))
+            }
+            Button("複製") {
+                Task { await environment.duplicate(profile) }
+            }
+            Button("削除", role: .destructive) {
+                Task { await environment.delete(profile) }
+            }
+        }
+    }
+}
+
+/// The desktop as last seen, small; a placeholder until there is one.
+struct SessionThumbnailView: View {
+    let image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "display")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.secondarySystemFill))
+            }
+        }
+        .frame(width: 80, height: 50)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(.quaternary))
+        .accessibilityHidden(true)
     }
 }
 
 private struct ConnectionRow: View {
     let profile: ConnectionProfile
+    var isWaking = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(profile.displayName)
-                .font(.headline)
-                .foregroundStyle(.primary)
+            HStack(spacing: 6) {
+                if profile.isFavorite {
+                    Image(systemName: "star.fill")
+                        .font(.caption)
+                        .foregroundStyle(.yellow)
+                        .accessibilityLabel("お気に入り")
+                }
+                Text(profile.displayName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+            }
+            if isWaking {
+                Label("起動を待っています…", systemImage: "power")
+                    .font(.subheadline)
+                    .foregroundStyle(.green)
+            }
             Text(Formatting.subtitle(for: profile))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

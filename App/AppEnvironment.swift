@@ -29,6 +29,10 @@ final class AppEnvironment {
     var pendingImport: ProfileEditorModel?
     /// A file that could not be read as a connection, said once.
     var importFailure: String?
+    /// The connection being woken up, while the list waits for it.
+    private(set) var wakingProfileID: ProfileID?
+    /// Said once on the list, then cleared: a wake that could not be sent.
+    var listMessage: String?
     /// Sessions that are still connected while the user is back on the list.
     /// SES-02 keeps a foreground connection alive until an explicit
     /// disconnect, so without this they would be running with no way back to
@@ -155,6 +159,18 @@ final class AppEnvironment {
         }
     }
 
+    func setFavorite(_ favorite: Bool, for profile: ConnectionProfile) async {
+        guard let repository else { return }
+        var updated = profile
+        updated.isFavorite = favorite
+        do {
+            try await repository.upsert(updated)
+            await refresh()
+        } catch {
+            logger.error("saving a favourite failed")
+        }
+    }
+
     func duplicate(_ profile: ConnectionProfile) async {
         let copy = profile.duplicated(displayName: String(localized: "\(profile.displayName) のコピー"))
         await save(copy, password: nil)
@@ -202,10 +218,53 @@ final class AppEnvironment {
         return try? credentials.password(for: reference)
     }
 
+    /// The magic packet, then a wait until the computer answers on its
+    /// RDP port. Returns false when it never did.
+    @discardableResult
+    func wake(_ profile: ConnectionProfile, waitsForAnswer: Bool = true) async -> Bool {
+        guard let wake = profile.wakeOnLAN else { return false }
+        wakingProfileID = profile.id
+        defer { wakingProfileID = nil }
+        do {
+            try await WakeOnLANSender.send(wake)
+        } catch {
+            listMessage = String(localized: "起動の合図を送れませんでした。MAC アドレスと送信先を確かめてください。")
+            return false
+        }
+        guard waitsForAnswer else { return true }
+        let answered = await WakeOnLANSender.waitUntilReachable(
+            host: profile.endpoint.host,
+            port: profile.endpoint.port,
+            timeout: .seconds(120)
+        )
+        if !answered {
+            listMessage = String(localized: "\(profile.displayName) が起動しませんでした（2 分待ちました）。")
+        }
+        return answered
+    }
+
     func connect(to profile: ConnectionProfile) async {
+        await connect(to: profile, presents: true)
+    }
+
+    /// `presents` false for a session that opens in a window of its own.
+    @discardableResult
+    func connect(to profile: ConnectionProfile, presents: Bool) async -> SessionWorkspaceModel? {
+        // A computer that may be asleep is woken first, unless it already
+        // answers.
+        if let wakeConfiguration = profile.wakeOnLAN, wakeConfiguration.wakesBeforeConnecting {
+            wakingProfileID = profile.id
+            let awake = await WakeOnLANSender.waitUntilReachable(
+                host: profile.endpoint.host, port: profile.endpoint.port, timeout: .seconds(3)
+            )
+            if !awake {
+                await self.wake(profile)
+            }
+            wakingProfileID = nil
+        }
         guard let repository,
               let configuration = await repository.effectiveConfiguration(for: profile.id)
-        else { return }
+        else { return nil }
 
         do {
             let session = try await factories.makeSession(
@@ -224,14 +283,20 @@ final class AppEnvironment {
                 configuration: configuration
             )
             runningSessions.append(model)
-            presentedSession = model
+            if presents {
+                presentedSession = model
+            } else {
+                model.isWindowed = true
+            }
             refreshAudioFocus()
             await model.start()
+            return model
         } catch let error as SessionBudgetExceededError {
             loadFailure = String(localized: "同時接続はあと \(error.limit) セッションまでです。")
         } catch {
             loadFailure = String(describing: error)
         }
+        return nil
     }
 
     /// Called when the workspace closes. Removing the session frees its budget
@@ -241,11 +306,16 @@ final class AppEnvironment {
         focusedSessionID = await sessions.focusedSessionID
         await sessions.applyVisibilityPolicy()
         runningSessions.removeAll { $0.id == id }
-        presentedSession = nil
+        if presentedSession?.id == id { presentedSession = nil }
         refreshAudioFocus()
     }
 
     func present(_ model: SessionWorkspaceModel) {
+        // A session in a window of its own is shown there, never twice.
+        if model.isWindowed {
+            model.requestWindowFront?()
+            return
+        }
         presentedSession = model
         Task { await focus(model.id) }
     }
@@ -257,12 +327,14 @@ final class AppEnvironment {
         guard presentedSession?.id != model.id else { return }
         presentedSession?.isMenuPresented = false
         presentedSession?.softwareKeyboard.hide()
+        presentedSession?.captureThumbnail()
         present(model)
     }
 
     /// Back to the list with every connection kept (SES-02). Input focus goes
     /// with the workspace: nothing on the list may type into a session.
     func returnToList() {
+        presentedSession?.captureThumbnail()
         presentedSession = nil
         Task { await focus(nil) }
     }

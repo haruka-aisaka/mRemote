@@ -30,6 +30,16 @@
         }
       }
     },
+    "%@ が起動しませんでした（2 分待ちました）。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ did not wake up (waited 2 minutes)."
+          }
+        }
+      }
+    },
     "%@ にサインイン": {
       "localizations": {
         "en": {
@@ -239,6 +249,26 @@
         }
       }
     },
+    "MAC アドレスは 16 進 12 桁で入力してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the MAC address as 12 hexadecimal digits."
+          }
+        }
+      }
+    },
+    "MAC アドレス（例 AA:BB:CC:DD:EE:FF）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MAC Address (e.g. AA:BB:CC:DD:EE:FF)"
+          }
+        }
+      }
+    },
     "NLA 必須": {
       "localizations": {
         "en": {
@@ -314,6 +344,16 @@
     },
     "US": {
       "shouldTranslate": false
+    },
+    "Wake-on-LAN": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake-on-LAN"
+          }
+        }
+      }
     },
     "Windows の「設定 > 時刻と言語 > 言語と地域」で日本語の「言語のオプション」を開き、Microsoft IME の「キーボード オプション > キーとタッチのカスタマイズ」で「キーの割り当て」をオンにし、無変換キーを「IME-オフ」、変換キーを「IME-オン」にします。サインインし直すと効きます。": {
       "localizations": {
@@ -469,6 +509,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "⚠︎ %@ is connected with legacy RDP security"
+          }
+        }
+      }
+    },
+    "お気に入り": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorites"
+          }
+        }
+      }
+    },
+    "お気に入りから外す": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from Favorites"
+          }
+        }
+      }
+    },
+    "お気に入りに追加": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add to Favorites"
           }
         }
       }
@@ -669,6 +739,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "On"
+          }
+        }
+      }
+    },
+    "その他": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Others"
           }
         }
       }
@@ -973,6 +1053,16 @@
         }
       }
     },
+    "グループ（任意）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group (Optional)"
+          }
+        }
+      }
+    },
     "ゲートウェイのパスワード": {
       "localizations": {
         "en": {
@@ -1139,6 +1229,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Space"
+          }
+        }
+      }
+    },
+    "スリープ中の PC を起こしてから接続します（最大 2 分待ちます）。送信先は通常 255.255.255.255 のままで、外から起こすときはルーターなどの転送先を指定します。一覧で接続先を右にスワイプしても起動できます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wakes a sleeping PC before connecting (waiting up to 2 minutes). Leave the target at 255.255.255.255; to wake from outside, set a router or relay that forwards the packet. You can also wake it by swiping right on the connection in the list."
           }
         }
       }
@@ -2233,6 +2333,16 @@
         }
       }
     },
+    "名前・ホスト・グループで検索": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search Name, Host or Group"
+          }
+        }
+      }
+    },
     "名前（省略するとキーの組み合わせ）": {
       "localizations": {
         "en": {
@@ -2613,6 +2723,16 @@
         }
       }
     },
+    "接続するときに起動する": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake When Connecting"
+          }
+        }
+      }
+    },
     "接続は維持されています": {
       "localizations": {
         "en": {
@@ -2679,6 +2799,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "No Computers"
+          }
+        }
+      }
+    },
+    "接続先が見つかりません": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection Not Found"
           }
         }
       }
@@ -2799,6 +2929,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Buttons When Idle"
+          }
+        }
+      }
+    },
+    "新しいウィンドウで接続": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect in New Window"
           }
         }
       }
@@ -3473,6 +3613,46 @@
         }
       }
     },
+    "起動": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake"
+          }
+        }
+      }
+    },
+    "起動の合図を送れませんでした。MAC アドレスと送信先を確かめてください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not send the wake-up packet. Check the MAC address and target."
+          }
+        }
+      }
+    },
+    "起動を待っています…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for it to wake…"
+          }
+        }
+      }
+    },
+    "起動（Wake-on-LAN）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wake (Wake-on-LAN)"
+          }
+        }
+      }
+    },
     "追加": {
       "localizations": {
         "en": {
@@ -3529,6 +3709,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Send Only"
+          }
+        }
+      }
+    },
+    "送信先": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target"
           }
         }
       }

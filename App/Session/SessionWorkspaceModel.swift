@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 import InputCore
 import SessionCore
 
@@ -115,6 +116,20 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     /// From the menu: close it, then bring the keyboard up once the sheet is
     /// gone and the gate is open again.
+    /// Shown in a window of its own rather than over the list.
+    var isWindowed = false
+    /// Set by that window: bring it to the front, or close it.
+    @ObservationIgnored var requestWindowFront: (() -> Void)?
+    @ObservationIgnored var closeWindow: (() -> Void)?
+
+    /// The desktop as last seen, for the list and the switcher.
+    private(set) var thumbnail: UIImage?
+
+    func captureThumbnail() {
+        guard let frame = frameStore?.latestSurface else { return }
+        thumbnail = SessionThumbnail.make(from: frame)
+    }
+
     func showSoftwareKeyboard() {
         isMenuPresented = false
         softwareKeyboard.show()
@@ -604,7 +619,13 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     func returnToList() {
         isMenuPresented = false
         softwareKeyboard.hide()
-        environment.returnToList()
+        if isWindowed {
+            // Its window closes; the session stays connected and listed.
+            captureThumbnail()
+            closeWindow?()
+        } else {
+            environment.returnToList()
+        }
     }
 
     func disconnect() async {

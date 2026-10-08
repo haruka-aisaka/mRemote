@@ -49,6 +49,14 @@ final class ProfileEditorModel: Identifiable {
         case picked(bookmark: Data, name: String)
     }
     var sharedFolder: SharedFolderChoice = .none
+
+    var group = ""
+    var isFavorite = false
+    var wakesOnLAN = false
+    var macAddress = ""
+    var wakeTarget = WakeOnLANConfiguration.defaultTarget
+    var wakePortText = String(WakeOnLANConfiguration.defaultPort)
+    var wakesBeforeConnecting = true
     var driveName = "mRemote"
 
     private let existing: ConnectionProfile?
@@ -93,6 +101,15 @@ final class ProfileEditorModel: Identifiable {
             username = profile.account.username ?? ""
             domain = profile.account.domain ?? ""
             let rdp = profile.configuration.rdp ?? RDPConfiguration()
+            group = profile.group ?? ""
+            isFavorite = profile.isFavorite
+            if let wake = profile.wakeOnLAN {
+                wakesOnLAN = true
+                macAddress = wake.macAddress
+                wakeTarget = wake.targetAddress
+                wakePortText = String(wake.port)
+                wakesBeforeConnecting = wake.wakesBeforeConnecting
+            }
             keyboardLayout = rdp.keyboardLayout
             securityPolicy = rdp.securityPolicy
             audioPlayback = rdp.audioPlayback
@@ -144,9 +161,15 @@ final class ProfileEditorModel: Identifiable {
 
     var trimmedGatewayHost: String { gatewayHost.trimmingCharacters(in: .whitespaces) }
 
+    var isWakeValid: Bool {
+        !wakesOnLAN || (MagicPacket.macBytes(macAddress) != nil && UInt16(wakePortText) != nil
+            && !wakeTarget.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
     var isValid: Bool {
         !trimmedHost.isEmpty && port != nil
             && (!usesGateway || (!trimmedGatewayHost.isEmpty && gatewayPort != nil))
+            && isWakeValid
     }
 
     /// The Eisu/Kana promise only holds for the Japanese layout, so the form
@@ -232,6 +255,16 @@ final class ProfileEditorModel: Identifiable {
         profile.account.username = username.isEmpty ? nil : username
         profile.account.domain = domain.isEmpty ? nil : domain
         profile.configuration = .rdp(configuration)
+        profile.group = group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : group
+        profile.isFavorite = isFavorite
+        profile.wakeOnLAN = wakesOnLAN
+            ? WakeOnLANConfiguration(
+                macAddress: macAddress.trimmingCharacters(in: .whitespaces),
+                targetAddress: wakeTarget.trimmingCharacters(in: .whitespaces),
+                port: UInt16(wakePortText) ?? WakeOnLANConfiguration.defaultPort,
+                wakesBeforeConnecting: wakesBeforeConnecting
+            )
+            : nil
         profile.updatedAt = now
         return profile
     }

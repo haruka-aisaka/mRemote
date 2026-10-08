@@ -626,6 +626,14 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     @objc private func handleHover(_ recognizer: UIHoverGestureRecognizer) {
+        // Apple Pencil above the screen (iPad Pro): a pen in range, not a
+        // pointer move. Only a pencil reports a height.
+        if sendsPencilAsPen, recognizer.zOffset > 0 {
+            if recognizer.state == .began || recognizer.state == .changed {
+                penHover(at: recognizer.location(in: self), recognizer: recognizer)
+            }
+            return
+        }
         switch recognizer.state {
         case .began, .changed:
             hoverLocation = recognizer.location(in: self)
@@ -867,6 +875,21 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             guard isInputEnabled, penContact == nil else { return }
             send(.hover)
         }
+    }
+
+    /// The pencil hovering: where it would touch, and how it leans.
+    private func penHover(at point: CGPoint, recognizer: UIHoverGestureRecognizer) {
+        guard isInputEnabled, penContact == nil else { return }
+        let pixel = viewportTransform.remotePixel(fromLocal: viewportPoint(point))
+        var tiltX = 0
+        var tiltY = 0
+        if #available(iOS 16.4, *) {
+            let lean = Double.pi / 2 - Double(recognizer.altitudeAngle)
+            let azimuth = Double(recognizer.azimuthAngle(in: self))
+            tiltX = Int((lean * cos(azimuth) * 180 / .pi).rounded())
+            tiltY = Int((lean * sin(azimuth) * 180 / .pi).rounded())
+        }
+        inputSink?.send(pen: PenInput(phase: .hover, point: pixel, tiltX: tiltX, tiltY: tiltY))
     }
 
     /// Every finger and the pen lifted, for a closing gate or a mode change.

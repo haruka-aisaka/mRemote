@@ -19,6 +19,11 @@ struct mRemoteApp: App {
                 // mremote://connect.
                 .onOpenURL { url in Task { await environment.open(url) } }
         }
+        // iPad: a session in a window of its own.
+        WindowGroup("セッション", id: "session", for: UUID.self) { $profileID in
+            SessionWindowRoot(profileID: profileID)
+                .environment(environment)
+        }
         // docs/architecture.md section 10: no audio from the background.
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -36,6 +41,7 @@ struct mRemoteApp: App {
 /// competes with the remote desktop for space.
 struct RootView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ConnectionListView()
@@ -52,6 +58,12 @@ struct RootView: View {
                         .id(session.id)
                         .environment(environment)
                 }
+            }
+            // With several windows, the one in front decides what types:
+            // this one's session, or nothing while the list is up.
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active, UIApplication.shared.supportsMultipleScenes else { return }
+                Task { await environment.focus(environment.presentedSession?.id) }
             }
     }
 }

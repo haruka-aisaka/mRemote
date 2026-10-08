@@ -37,6 +37,13 @@ struct ProfileEditorView: View {
                         .accessibilityIdentifier("profile-port-field")
                 }
 
+                Section {
+                    TextField("グループ（任意）", text: $model.group)
+                        .accessibilityIdentifier("profile-group-field")
+                    Toggle("お気に入り", isOn: $model.isFavorite)
+                        .accessibilityIdentifier("profile-favorite-toggle")
+                }
+
                 Section("資格情報") {
                     TextField("ユーザー名", text: $model.username)
                         .textInputAutocapitalization(.never)
@@ -108,6 +115,7 @@ struct ProfileEditorView: View {
                     }
                 }
 
+                wakeSection
                 gatewaySection
                 sharedFolderSection
 
@@ -153,6 +161,37 @@ struct ProfileEditorView: View {
                     .disabled(!model.isValid)
                     .accessibilityIdentifier("profile-save-button")
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var wakeSection: some View {
+        Section {
+            Toggle("Wake-on-LAN", isOn: $model.wakesOnLAN)
+                .accessibilityIdentifier("profile-wake-toggle")
+            if model.wakesOnLAN {
+                TextField("MAC アドレス（例 AA:BB:CC:DD:EE:FF）", text: $model.macAddress)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("profile-mac-field")
+                TextField("送信先", text: $model.wakeTarget)
+                    .keyboardType(.numbersAndPunctuation)
+                    .autocorrectionDisabled()
+                TextField("ポート", text: $model.wakePortText)
+                    .keyboardType(.numberPad)
+                Toggle("接続するときに起動する", isOn: $model.wakesBeforeConnecting)
+                if !model.macAddress.isEmpty, MagicPacket.macBytes(model.macAddress) == nil {
+                    Label("MAC アドレスは 16 進 12 桁で入力してください。", systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+            }
+        } header: {
+            Text("起動")
+        } footer: {
+            if model.wakesOnLAN {
+                Text("スリープ中の PC を起こしてから接続します（最大 2 分待ちます）。送信先は通常 255.255.255.255 のままで、外から起こすときはルーターなどの転送先を指定します。一覧で接続先を右にスワイプしても起動できます。")
             }
         }
     }

@@ -122,6 +122,7 @@ struct SessionMenuSheet: View {
                                 environment.switchTo(session)
                             } label: {
                                 HStack {
+                                    SessionThumbnailView(image: session.thumbnail)
                                     Image(systemName: session.id == model.id
                                           ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(session.id == model.id ? Color.accentColor : .secondary)
