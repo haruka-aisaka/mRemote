@@ -79,6 +79,10 @@ final class RDPNativeCallGate: @unchecked Sendable {
         call { mr_rdp_session_send_pen($0, &event) }
     }
 
+    func sendMacrdpx(_ message: inout mrx_message) -> mr_rdp_status? {
+        call { mr_rdp_session_send_macrdpx($0, &message) }
+    }
+
     func setAudioFocused(_ focused: Bool) -> mr_rdp_status? {
         call { mr_rdp_session_set_audio_focused($0, focused ? 1 : 0) }
     }

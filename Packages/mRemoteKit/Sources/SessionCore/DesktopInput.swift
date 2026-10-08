@@ -145,3 +145,16 @@ public extension DesktopInputSink {
     func send(touch: TouchInput) {}
     func send(pen: PenInput) {}
 }
+
+/// A sink that can carry the Mac's own input, for a Mac server that agreed
+/// the Mac extensions. Callers check `acceptsMacInput` per event: it turns on
+/// once the server's answer arrives and off when the connection drops, and
+/// until then the plain `KeyboardInput` / `PointerInput` paths are the way in.
+public protocol MacInputSink: DesktopInputSink {
+    var acceptsMacInput: Bool { get }
+    var acceptsMacScroll: Bool { get }
+    func send(macKey: MacKeyInput)
+    func send(macScroll: MacScrollInput)
+    /// The whole modifier state, when the window regains the keyboard.
+    func syncMacModifiers(_ flags: UInt64)
+}

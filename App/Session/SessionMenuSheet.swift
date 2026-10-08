@@ -91,6 +91,8 @@ struct SessionMenuSheet: View {
                     }
                 }
 
+                macExtensionsSection
+
                 Section {
                     Button {
                         model.returnToList()
@@ -447,6 +449,42 @@ struct SessionMenuSheet: View {
 }
 
 extension SessionMenuSheet {
+    /// A Mac server's extensions: what is in use, and the stream quality,
+    /// which can change mid-session (say, moving from Wi-Fi to cellular).
+    @ViewBuilder
+    var macExtensionsSection: some View {
+        if let mac = model.macExtensions {
+            Section {
+                LabeledContent("サーバー", value: mac.serverName)
+                if let fps = mac.framesPerSecond, let kbps = mac.bitrateKbps {
+                    LabeledContent("映像", value: "\(fps) fps・\(Formatting.bitrate(kbps))"
+                        + ((mac.scalePercent ?? 100) >= 200 ? "・Retina" : ""))
+                        .accessibilityIdentifier("session-mac-stream")
+                }
+                if let ascii = mac.isASCIICapable {
+                    LabeledContent("入力ソース", value: ascii
+                        ? String(localized: "英字")
+                        : String(localized: "日本語などの入力モード"))
+                }
+                if mac.features.contains(.streamConfig) {
+                    Picker("画質", selection: Binding(
+                        get: { mac.quality },
+                        set: { quality in Task { await model.setStreamQuality(quality) } }
+                    )) {
+                        ForEach(StreamQuality.allCases, id: \.self) { quality in
+                            Text(StreamQualityLabel.text(quality)).tag(quality)
+                        }
+                    }
+                    .accessibilityIdentifier("session-stream-quality")
+                }
+            } header: {
+                Text("Mac 拡張")
+            } footer: {
+                Text("キー（⌘・Fn・左右の修飾キー）、ポインタ、スクロールを Mac のまま送っています。")
+            }
+        }
+    }
+
     /// docs/ui-flow.md section 6.2. Both directions start from a tap here;
     /// nothing reads or writes the pasteboard on its own.
     @ViewBuilder

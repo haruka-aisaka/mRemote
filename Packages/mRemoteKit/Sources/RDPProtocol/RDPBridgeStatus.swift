@@ -89,6 +89,8 @@ public enum RDPBridgeChannel: UInt8, Hashable, Sendable, CaseIterable {
     case rdpei = 6
     /// Device redirection: the shared folder rides on it.
     case rdpdr = 7
+    /// The Mac RDP eXtensions of a Mac server.
+    case macrdpx = 10
 
     public var name: String {
         switch self {
@@ -99,6 +101,7 @@ public enum RDPBridgeChannel: UInt8, Hashable, Sendable, CaseIterable {
         case .rdpgfx: return "rdpgfx"
         case .rdpei: return "rdpei"
         case .rdpdr: return "rdpdr"
+        case .macrdpx: return "macrdpx"
         }
     }
 }

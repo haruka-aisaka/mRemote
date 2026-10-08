@@ -27,7 +27,20 @@ typedef BOOL (^MRMacMouseButtonHandler)(uint16_t button, BOOL pressed);
 
 id _Nullable mr_mac_mouse_monitor_install(MRMacMouseButtonHandler handler);
 
-/// Removes a monitor from either install function.
+/// Called on the main thread for every scroll-wheel event in this app's
+/// windows, with NSEvent's scrollingDeltaX/Y, hasPreciseScrollingDeltas,
+/// phase, momentumPhase, isDirectionInvertedFromDevice and modifierFlags.
+/// Return YES to consume the event.
+typedef BOOL (^MRMacScrollHandler)(double deltaX, double deltaY, BOOL precise,
+                                   uint8_t phase, uint8_t momentumPhase,
+                                   BOOL invertedFromDevice, uint64_t modifierFlags);
+
+id _Nullable mr_mac_scroll_monitor_install(MRMacScrollHandler handler);
+
+/// NSEvent.modifierFlags: the modifiers held right now. Zero off the Mac.
+uint64_t mr_mac_current_modifier_flags(void);
+
+/// Removes a monitor from any install function.
 void mr_mac_key_monitor_remove(id monitor);
 
 NS_ASSUME_NONNULL_END

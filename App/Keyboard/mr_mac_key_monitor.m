@@ -6,6 +6,7 @@
 @protocol MRNSEventClass
 + (id)addLocalMonitorForEventsMatchingMask:(uint64_t)mask handler:(id _Nullable (^)(id event))block;
 + (void)removeMonitor:(id)monitor;
++ (NSUInteger)modifierFlags;
 @end
 
 @protocol MRNSEvent
@@ -14,6 +15,12 @@
 - (NSUInteger)modifierFlags;
 - (BOOL)isARepeat;
 - (NSInteger)buttonNumber;
+- (double)scrollingDeltaX;
+- (double)scrollingDeltaY;
+- (BOOL)hasPreciseScrollingDeltas;
+- (NSUInteger)phase;
+- (NSUInteger)momentumPhase;
+- (BOOL)isDirectionInvertedFromDevice;
 @end
 
 id mr_mac_key_monitor_install(MRMacKeyHandler handler) {
@@ -61,6 +68,40 @@ id mr_mac_mouse_monitor_install(MRMacMouseButtonHandler handler) {
 #else
     (void)handler;
     return nil;
+#endif
+}
+
+id mr_mac_scroll_monitor_install(MRMacScrollHandler handler) {
+#if TARGET_OS_MACCATALYST
+    Class eventClass = NSClassFromString(@"NSEvent");
+    if (eventClass == Nil) {
+        return nil;
+    }
+    /* NSEventTypeScrollWheel = 22. */
+    return [(Class<MRNSEventClass>)eventClass
+        addLocalMonitorForEventsMatchingMask:(1ULL << 22)
+                                     handler:^id _Nullable(id event) {
+                                         id<MRNSEvent> scroll = event;
+                                         BOOL consumed = handler(
+                                             [scroll scrollingDeltaX], [scroll scrollingDeltaY],
+                                             [scroll hasPreciseScrollingDeltas],
+                                             (uint8_t)[scroll phase], (uint8_t)[scroll momentumPhase],
+                                             [scroll isDirectionInvertedFromDevice],
+                                             (uint64_t)[scroll modifierFlags]);
+                                         return consumed ? nil : event;
+                                     }];
+#else
+    (void)handler;
+    return nil;
+#endif
+}
+
+uint64_t mr_mac_current_modifier_flags(void) {
+#if TARGET_OS_MACCATALYST
+    Class eventClass = NSClassFromString(@"NSEvent");
+    return eventClass ? (uint64_t)[(Class<MRNSEventClass>)eventClass modifierFlags] : 0;
+#else
+    return 0;
 #endif
 }
 

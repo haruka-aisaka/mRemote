@@ -67,4 +67,14 @@ final class MacKeyboardTests: XCTestCase {
         XCTAssertFalse(MacVirtualKey.isReservedForMac(keyCode: 8, command: true, control: false))  // ⌘C
         XCTAssertFalse(MacVirtualKey.isReservedForMac(keyCode: 12, command: false, control: true)) // ⌃Q
     }
+
+    func testSoftwareFlagsGainALeftDeviceBit() {
+        // ⌘ with no device bit (NSEvent.modifierFlags) reads as left ⌘.
+        XCTAssertEqual(MacVirtualKey.withDeviceFlags(1 << 20), (1 << 20) | 0x08)
+        // A right ⌘ already says which key it is.
+        XCTAssertEqual(MacVirtualKey.withDeviceFlags((1 << 20) | 0x10), (1 << 20) | 0x10)
+        // ⇧⌃ together.
+        XCTAssertEqual(MacVirtualKey.withDeviceFlags((1 << 17) | (1 << 18)), (1 << 17) | (1 << 18) | 0x02 | 0x01)
+        XCTAssertEqual(MacVirtualKey.withDeviceFlags(0), 0)
+    }
 }

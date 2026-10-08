@@ -54,6 +54,27 @@ public enum MacVirtualKey {
 
     private static let allDeviceFlags: UInt64 = 0x0000_207F
 
+    /// Fn (Globe): a flags-changed key with its own flag.
+    public static let function: UInt16 = 63
+    public static let functionFlag: UInt64 = 1 << 23
+
+    /// Flags with a left device bit added for any modifier that has none -
+    /// events posted by software, and NSEvent's class-level flags, carry only
+    /// the device-independent bits - so the host sees which key is held.
+    public static func withDeviceFlags(_ flags: UInt64) -> UInt64 {
+        var result = flags
+        let pairs: [(independent: UInt64, devices: UInt64, left: UInt64)] = [
+            (1 << 18, 0x0000_2001, 0x0000_0001), // control
+            (1 << 17, 0x0000_0006, 0x0000_0002), // shift
+            (1 << 19, 0x0000_0060, 0x0000_0020), // option
+            (1 << 20, 0x0000_0018, 0x0000_0008), // command
+        ]
+        for pair in pairs where result & pair.independent != 0 && result & pair.devices == 0 {
+            result |= pair.left
+        }
+        return result
+    }
+
     /// Caps Lock reports a state, not a press: one `flagsChanged` each time
     /// it locks or unlocks. Each is sent to the host as a full press so the
     /// host's own lock follows.

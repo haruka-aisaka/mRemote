@@ -16,6 +16,9 @@ public enum SessionControlEvent: Sendable {
     /// What protects the connection, as the server selected it. Sent once,
     /// when the session connects.
     case transportSecurity(TransportSecurity)
+    /// A Mac server took up the Mac extensions, or what it reports about
+    /// them changed (stream rate, input source).
+    case macExtensions(MacExtensionStatus)
 }
 
 public enum TransportSecurity: Hashable, Sendable {

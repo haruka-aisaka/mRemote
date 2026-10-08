@@ -1164,6 +1164,16 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         return true
     }
 
+    /// A trackpad or wheel scroll over the surface, for a Mac server that
+    /// takes it natively. Anything else stays with UIKit's pan.
+    private func receiveMacScroll(_ input: MacScrollInput) -> Bool {
+        guard isInputEnabled, window?.isKeyWindow == true, hoverLocation != nil,
+              let sink = inputSink as? any MacInputSink, sink.acceptsMacScroll
+        else { return false }
+        sink.send(macScroll: input)
+        return true
+    }
+
     private func gameControllerKeyboardDisconnected() {
         stopKeyRepeat()
         send(keyboard.sourceDisconnected(.gameController))
@@ -1203,6 +1213,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     func releaseHeldKeys(reason: InputReleaseReason = .focusLost) {
         stopKeyRepeat()
+        MacKeyboardCapture.shared.releaseMacKeys(for: self)
         send(keyboard.releaseAll(reason: reason))
         publishDiagnostics()
     }
@@ -1220,6 +1231,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         super.didMoveToWindow()
         guard window != nil else {
             HardwareKeyboardMonitor.shared.release(self)
+            MacKeyboardCapture.shared.releaseMacKeys(for: self)
             MacKeyboardCapture.shared.release(self)
             releaseHeldButtons()
             releaseHeldKeys(reason: .surfaceRemoved)
@@ -1243,6 +1255,12 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             },
             pressButton: { [weak self] button, pressed in
                 self?.receiveMacButton(button, pressed: pressed) ?? false
+            },
+            macSink: { [weak self] in
+                self?.inputSink as? any MacInputSink
+            },
+            scroll: { [weak self] input in
+                self?.receiveMacScroll(input) ?? false
             }
         ))
         captureKeyboardIfPossible()

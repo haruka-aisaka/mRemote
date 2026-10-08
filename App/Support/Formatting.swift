@@ -47,6 +47,13 @@ enum Formatting {
         }
     }
 
+    /// A stream bit rate: "1.5 Mbps", "800 kbps".
+    static func bitrate(_ kbps: Int) -> String {
+        kbps >= 1_000
+            ? String(format: "%.1f Mbps", Double(kbps) / 1_000)
+            : "\(kbps) kbps"
+    }
+
     static func transportLabel(_ security: TransportSecurity) -> String {
         switch security {
         case .nla: return "NLA（TLS）"

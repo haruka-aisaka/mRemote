@@ -16,10 +16,20 @@ import SessionCore
 /// The session actor owns this object and is the only thing that changes which
 /// native session it points at, so a send that races a reconnect either
 /// reaches the current worker or is dropped - never the previous one.
-final class RDPInputSink: DesktopInputSink, @unchecked Sendable {
+final class RDPInputSink: MacInputSink, @unchecked Sendable {
     private let lock = NSLock()
     private var native: RDPNativeSession?
     private var isAccepting = false
+    /// MACRDPX features the server agreed to (MRX_CAP_*); zero for plain RDP.
+    /// With MAC_KEYS and POINTER, keys, buttons and moves all go on the
+    /// channel, which keeps a modifier and a click in order.
+    private var macFeatures: UInt32 = 0
+    /// For keys that arrive as HID usages (iPad): the modifiers they hold.
+    private var modifierTracker = mrx_modifier_tracker()
+    /// The modifier flags last sent, stamped on pointer events.
+    private var macFlags: UInt64 = 0
+    private var macButtons: UInt32 = 0
+    private var lastClick: (button: UInt8, time: TimeInterval, at: PixelPoint, count: UInt16)?
     /// The bridge wants a coordinate on every event, including wheel events
     /// that have no position of their own, so the last known one is kept here
     /// rather than made up at the call site.
@@ -37,7 +47,165 @@ final class RDPInputSink: DesktopInputSink, @unchecked Sendable {
         self.native = native
         if native == nil { isAccepting = false }
         lastPixel = PixelPoint(x: 0, y: 0)
+        resetMacStateLocked(features: 0)
         lock.unlock()
+    }
+
+    /// The server's answer: from here on, input it agreed to goes natively.
+    func setMacFeatures(_ features: UInt32) {
+        lock.lock()
+        resetMacStateLocked(features: features)
+        lock.unlock()
+    }
+
+    private func resetMacStateLocked(features: UInt32) {
+        macFeatures = features
+        mrx_modifier_tracker_reset(&modifierTracker)
+        macFlags = 0
+        macButtons = 0
+        lastClick = nil
+    }
+
+    private static let macInputFeatures = UInt32(MRX_CAP_MAC_KEYS) | UInt32(MRX_CAP_POINTER)
+
+    var acceptsMacInput: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isAccepting && native != nil && macFeatures & Self.macInputFeatures == Self.macInputFeatures
+    }
+
+    var acceptsMacScroll: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isAccepting && native != nil && macFeatures & UInt32(MRX_CAP_PRECISE_SCROLL) != 0
+    }
+
+    /// The native session to send a MACRDPX message to, if `feature` was agreed.
+    private func macTargetLocked(_ feature: UInt32) -> RDPNativeSession? {
+        guard isAccepting, let native, macFeatures & feature == feature else { return nil }
+        return native
+    }
+
+    func send(macKey input: MacKeyInput) {
+        lock.lock()
+        guard let target = macTargetLocked(Self.macInputFeatures) else {
+            lock.unlock()
+            return
+        }
+        macFlags = input.modifierFlags
+        lock.unlock()
+        var message = mrx_message()
+        message.type = mrx_message_type(MRX_MSG_KEY)
+        message.u.key.keycode = input.keyCode
+        message.u.key.action = mrx_key_action(input.transition == .down ? MRX_KEY_DOWN : MRX_KEY_UP)
+        message.u.key.flags = input.isRepeat ? UInt8(MRX_KEY_FLAG_REPEAT) : 0
+        message.u.key.modifier_flags = input.modifierFlags
+        target.sendMacrdpx(&message)
+    }
+
+    func syncMacModifiers(_ flags: UInt64) {
+        lock.lock()
+        guard let target = macTargetLocked(Self.macInputFeatures) else {
+            lock.unlock()
+            return
+        }
+        macFlags = flags
+        lock.unlock()
+        var message = mrx_message()
+        message.type = mrx_message_type(MRX_MSG_MODIFIERS)
+        message.u.modifiers.modifier_flags = flags
+        target.sendMacrdpx(&message)
+    }
+
+    func send(macScroll input: MacScrollInput) {
+        lock.lock()
+        guard let target = macTargetLocked(UInt32(MRX_CAP_PRECISE_SCROLL)) else {
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        var message = mrx_message()
+        message.type = mrx_message_type(MRX_MSG_SCROLL)
+        message.u.scroll.delta_x = Float(input.deltaX)
+        message.u.scroll.delta_y = Float(input.deltaY)
+        message.u.scroll.unit = mrx_scroll_unit(input.isPrecise ? MRX_SCROLL_PIXEL : MRX_SCROLL_LINE)
+        message.u.scroll.phase = input.phase
+        message.u.scroll.momentum_phase = input.momentumPhase
+        message.u.scroll.flags = input.isDirectionInvertedFromDevice ? UInt8(MRX_SCROLL_FLAG_INVERTED_FROM_DEVICE) : 0
+        message.u.scroll.modifier_flags = input.modifierFlags
+        target.sendMacrdpx(&message)
+    }
+
+    /// Mac mode: the pointer as a MACRDPX POINTER, or a wheel as line scroll.
+    /// Returns false to let the plain RDP path handle it. Called locked.
+    private func sendMacPointerLocked(_ input: PointerInput) -> Bool {
+        var message = mrx_message()
+        switch input {
+        case .move(let pixel):
+            guard let target = macTargetLocked(Self.macInputFeatures) else { return false }
+            lastPixel = pixel
+            message.type = mrx_message_type(MRX_MSG_POINTER)
+            message.u.pointer.action = mrx_pointer_action(MRX_POINTER_MOVE)
+            message.u.pointer.x = Float(pixel.x)
+            message.u.pointer.y = Float(pixel.y)
+            message.u.pointer.buttons_down = macButtons
+            message.u.pointer.modifier_flags = macFlags
+            lock.unlock()
+            target.sendMacrdpx(&message)
+            lock.lock()
+            return true
+
+        case let .button(button, transition, pixel):
+            guard let target = macTargetLocked(Self.macInputFeatures) else { return false }
+            lastPixel = pixel
+            let number: UInt8 = switch button {
+            case .left: UInt8(MRX_BUTTON_LEFT)
+            case .right: UInt8(MRX_BUTTON_RIGHT)
+            case .middle: UInt8(MRX_BUTTON_MIDDLE)
+            }
+            var count: UInt16 = 1
+            if transition == .down {
+                // The click count a Mac would give: the same button again,
+                // soon and close by.
+                let now = ProcessInfo.processInfo.systemUptime
+                if let last = lastClick, last.button == number, now - last.time <= 0.5,
+                   abs(last.at.x - pixel.x) <= 6, abs(last.at.y - pixel.y) <= 6 {
+                    count = last.count &+ 1
+                }
+                lastClick = (number, now, pixel, count)
+                macButtons |= 1 << UInt32(number)
+            } else {
+                count = lastClick?.button == number ? lastClick?.count ?? 1 : 1
+                macButtons &= ~(1 << UInt32(number))
+            }
+            message.type = mrx_message_type(MRX_MSG_POINTER)
+            message.u.pointer.action = mrx_pointer_action(transition == .down ? MRX_POINTER_DOWN : MRX_POINTER_UP)
+            message.u.pointer.button = number
+            message.u.pointer.click_count = count
+            message.u.pointer.x = Float(pixel.x)
+            message.u.pointer.y = Float(pixel.y)
+            message.u.pointer.buttons_down = macButtons
+            message.u.pointer.modifier_flags = macFlags
+            lock.unlock()
+            target.sendMacrdpx(&message)
+            lock.lock()
+            return true
+
+        case let .scroll(horizontal, vertical):
+            guard let target = macTargetLocked(UInt32(MRX_CAP_PRECISE_SCROLL)) else { return false }
+            guard horizontal != 0 || vertical != 0 else { return true }
+            // RDP rotation units, 120 a notch, as lines. RDP's horizontal
+            // positive scrolls right; AppKit's deltaX positive scrolls left.
+            message.type = mrx_message_type(MRX_MSG_SCROLL)
+            message.u.scroll.unit = mrx_scroll_unit(MRX_SCROLL_LINE)
+            message.u.scroll.delta_x = -Float(horizontal) / 120
+            message.u.scroll.delta_y = Float(vertical) / 120
+            message.u.scroll.modifier_flags = macFlags
+            lock.unlock()
+            target.sendMacrdpx(&message)
+            lock.lock()
+            return true
+        }
     }
 
     /// Input is only delivered while the session is connected. A press sent
@@ -52,6 +220,10 @@ final class RDPInputSink: DesktopInputSink, @unchecked Sendable {
     func send(_ input: PointerInput) {
         lock.lock()
         guard isAccepting, let native else {
+            lock.unlock()
+            return
+        }
+        if macFeatures != 0, sendMacPointerLocked(input) {
             lock.unlock()
             return
         }
@@ -93,6 +265,38 @@ final class RDPInputSink: DesktopInputSink, @unchecked Sendable {
     /// than guesses, because a wrong scan code types the wrong character on
     /// someone's machine while an unmapped key merely does nothing.
     func send(_ input: KeyboardInput) {
+        lock.lock()
+        if let target = macTargetLocked(Self.macInputFeatures) {
+            // A Mac server: the same key, as the Mac key in that position,
+            // with the modifiers the keys so far hold.
+            #if targetEnvironment(macCatalyst)
+            // On the Mac, MacKeyboardCapture sends AppKit's keys as they are;
+            // a usage reaching here as well would be the same key twice.
+            lock.unlock()
+            return
+            #else
+            let keyCode = mrx_keycode_for_hid_usage(input.usage)
+            guard keyCode != UInt16(MRX_KEYCODE_NONE) else {
+                lock.unlock()
+                return
+            }
+            let action = mrx_key_action(input.transition == .down ? MRX_KEY_DOWN : MRX_KEY_UP)
+            let flags = input.isRepeat
+                ? mrx_modifier_tracker_flags(&modifierTracker)
+                : mrx_modifier_tracker_update(&modifierTracker, keyCode, action)
+            macFlags = flags
+            lock.unlock()
+            var message = mrx_message()
+            message.type = mrx_message_type(MRX_MSG_KEY)
+            message.u.key.keycode = keyCode
+            message.u.key.action = action
+            message.u.key.flags = input.isRepeat ? UInt8(MRX_KEY_FLAG_REPEAT) : 0
+            message.u.key.modifier_flags = flags
+            target.sendMacrdpx(&message)
+            return
+            #endif
+        }
+        lock.unlock()
         guard let scanCode = try? RDPScanCodeMapper.set1ScanCode(forHIDUsage: input.usage) else {
             return
         }

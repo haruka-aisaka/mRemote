@@ -47,6 +47,8 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     private(set) var remoteHasFiles = false
     /// The microphone, while the server has it open.
     private(set) var microphoneFormat: MicrophoneFormat?
+    /// A Mac server's Mac extensions, once it has agreed to them.
+    private(set) var macExtensions: MacExtensionStatus?
     /// Shown as a toast; never contains clipboard text (docs/ui-flow.md 6.2).
     var clipboardMessage: String?
     private(set) var isTransferringClipboard = false
@@ -276,7 +278,10 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             if state == .connected || state == .connecting {
                 endReason = nil
             }
-            if state == .connecting { transportSecurity = nil }
+            if state == .connecting {
+                transportSecurity = nil
+                macExtensions = nil
+            }
             if state == .connected {
                 lastError = nil
                 hadConnected = true
@@ -306,6 +311,8 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             lastReceivedText = nil
             await refreshRemoteClipboardKinds()
             if Platform.isMac { await mirrorRemoteClipboard() }
+        case .macExtensions(let status):
+            macExtensions = status
         case .microphone(let format):
             microphoneFormat = format
             if let format, let capable = session as? any MicrophoneCapableSession {
@@ -314,6 +321,14 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
                 MicrophoneCapture.shared.stop(for: self)
             }
         }
+    }
+
+    // MARK: - Mac extensions
+
+    /// Asks a Mac server for another stream quality, for this session.
+    func setStreamQuality(_ quality: StreamQuality) async {
+        guard let capable = session as? any MacExtensionCapableSession else { return }
+        await capable.setStreamQuality(quality)
     }
 
     // MARK: - Clipboard

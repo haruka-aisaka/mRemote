@@ -69,6 +69,9 @@ struct RDPNativeConnection: Sendable {
     var drive: (path: String, name: String)?
     /// RemoteApp's program and its arguments.
     var remoteApp: (program: String, arguments: String)?
+    /// The Mac extensions (MRX_CAP_*) to offer; zero for none. channelFlags
+    /// carries MR_RDP_CHANNEL_FLAG_MACRDPX with it.
+    var macrdpxCaps: UInt32 = 0
 
     struct Gateway: Sendable {
         let host: String
@@ -100,9 +103,18 @@ enum RDPNativeEvent: Sendable {
     /// One remote file, or the end of the request when `file` is nil.
     case clipboardFile(requestID: UInt64, file: ClipboardFile?, isLast: Bool, status: RDPBridgeStatus)
     case microphone(MicrophoneFormat?)
+    /// A Mac server's MACRDPX message, already copied out of the callback.
+    case macExtensions(RDPMacExtensionsUpdate, features: UInt32)
     /// `mr_rdp_session_run` returned and the handle has been destroyed. This,
     /// not a backend phase, is when the session may call itself disconnected.
     case finished(run: RDPBridgeStatus, destroy: RDPBridgeStatus?)
+}
+
+enum RDPMacExtensionsUpdate: Sendable {
+    /// The server's HELLO: the extensions are live from now on.
+    case agreed(serverName: String)
+    case streamStatus(framesPerSecond: Int, scalePercent: Int, bitrateKbps: Int, width: Int, height: Int)
+    case inputSource(id: String, isASCIICapable: Bool)
 }
 
 enum RDPClipboardOfferStage: Sendable {
@@ -268,6 +280,11 @@ final class RDPNativeSession: @unchecked Sendable {
         context.sendPen(&event)
     }
 
+    /// One MACRDPX message, through the same ordered queue as keys.
+    func sendMacrdpx(_ message: inout mrx_message) {
+        context.sendMacrdpx(&message)
+    }
+
     /// A second monitor to the right of the first, or none.
     func requestDisplayLayout(
         requestID: UInt64,
@@ -335,6 +352,7 @@ final class RDPNativeSession: @unchecked Sendable {
         callbacks.on_clipboard_image = rdpClipboardImageCallback
         callbacks.on_clipboard_file = rdpClipboardFileCallback
         callbacks.on_audio_capture = rdpAudioCaptureCallback
+        callbacks.on_macrdpx = rdpMacrdpxCallback
 
         var config = mr_rdp_config()
         mr_rdp_config_init(&config)
@@ -347,6 +365,7 @@ final class RDPNativeSession: @unchecked Sendable {
         config.desktop_scale_factor = UInt32(connection.displayScale.desktopPercent)
         config.device_scale_factor = UInt32(connection.displayScale.devicePercent)
         config.security_policy = connection.securityPolicy
+        config.macrdpx_caps = connection.macrdpxCaps
         // Plain strings are copied into C memory for the one create call;
         // the bridge deep-copies them. Passwords stay in SecureBytes.
         var owned: [UnsafeMutablePointer<CChar>] = []
@@ -612,6 +631,14 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
 
     func sendPen(_ event: inout mr_rdp_pen_event) {
         _ = calls.sendPen(&event)
+    }
+
+    func sendMacrdpx(_ message: inout mrx_message) {
+        _ = calls.sendMacrdpx(&message)
+    }
+
+    func receiveMacExtensions(_ update: RDPMacExtensionsUpdate, features: UInt32) {
+        continuation.yield(.macExtensions(update, features: features))
     }
 
     func requestDisplayResize(
@@ -1166,4 +1193,41 @@ private func rdpClipboardTextCallback(
         text: ClipboardTextCodec.decode(data),
         status: .ok
     )
+}
+
+private func rdpMacrdpxCallback(
+    _ opaque: UnsafeMutableRawPointer?,
+    _ eventPointer: UnsafePointer<mr_rdp_macrdpx_event>?
+) {
+    guard let context = callbackContext(opaque), let eventPointer,
+          eventPointer.pointee.struct_size >= UInt32(MemoryLayout<mr_rdp_macrdpx_event>.size),
+          let message = eventPointer.pointee.message?.pointee
+    else { return }
+    let features = eventPointer.pointee.negotiated_caps
+    // Strings borrow from the callback's buffer: copy them now.
+    func text(_ bytes: UnsafePointer<CChar>?, _ count: UInt8) -> String {
+        guard let bytes, count > 0 else { return "" }
+        return bytes.withMemoryRebound(to: UInt8.self, capacity: Int(count)) {
+            String(decoding: UnsafeBufferPointer(start: $0, count: Int(count)), as: UTF8.self)
+        }
+    }
+    switch Int(message.type) {
+    case Int(MRX_MSG_HELLO):
+        context.receiveMacExtensions(
+            .agreed(serverName: text(message.u.hello.name, message.u.hello.name_length)),
+            features: features)
+    case Int(MRX_MSG_STREAM_STATUS):
+        let status = message.u.stream_status
+        context.receiveMacExtensions(.streamStatus(
+            framesPerSecond: Int(status.max_fps), scalePercent: Int(status.scale_percent),
+            bitrateKbps: Int(status.bitrate_kbps), width: Int(status.width), height: Int(status.height)),
+            features: features)
+    case Int(MRX_MSG_INPUT_SOURCE):
+        let source = message.u.input_source
+        context.receiveMacExtensions(
+            .inputSource(id: text(source.id, source.id_length), isASCIICapable: source.ascii_capable != 0),
+            features: features)
+    default:
+        break
+    }
 }

@@ -16,7 +16,8 @@ import SessionCore
 /// the session is authoritative for its own state and pending challenge -
 /// docs/architecture.md requires the event stream to be a "read me again"
 /// signal rather than a log a consumer rebuilds state from.
-actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSession, MicrophoneCapableSession {
+actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSession, MicrophoneCapableSession,
+    MacExtensionCapableSession {
     nonisolated let id: SessionID
     nonisolated let profileID: ProfileID?
     nonisolated let frameStore = LatestDesktopFrameStore()
@@ -89,6 +90,11 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     private var nextClipboardID: UInt64 = 0
     private var pendingOffers: [UInt64: CheckedContinuation<Void, Error>] = [:]
     private var pendingFetch: (id: UInt64, continuation: CheckedContinuation<String, Error>)?
+    /// A Mac server's agreement to the Mac extensions, nil until it answers.
+    private var macStatus: MacExtensionStatus?
+    /// This session's stream quality; starts as the connection's.
+    private var streamQuality: StreamQuality
+    private var networkObservation: Task<Void, Never>?
     /// Mirrors MR_RDP_CLIPBOARD_REQUEST_TIMEOUT_MS.
     private static let clipboardTimeout = Duration.seconds(10)
 
@@ -116,6 +122,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         self.initialDesktopSize = desktopSize
         self.currentDesktopSize = desktopSize
         self.logger = RDPSessionLogger(sessionID: id, endpoint: configuration.endpoint)
+        self.streamQuality = configuration.streamQuality
     }
 
     deinit {
@@ -125,6 +132,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         // with nothing left to wake it.
         native?.requestStop()
         pumpTask?.cancel()
+        networkObservation?.cancel()
     }
 
     // MARK: - RemoteSession
@@ -518,6 +526,9 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         if configuration.prefersH264 {
             flags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_H264)
         }
+        if configuration.remotePlatform == .macOS {
+            flags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_MACRDPX)
+        }
         return flags
     }
 
@@ -587,6 +598,10 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             displayScale: displayScale,
             securityPolicy: Self.securityPolicy(for: configuration.securityPolicy)
         )
+        if configuration.remotePlatform == .macOS {
+            connection.macrdpxCaps = MacExtensionFeatures.all.rawValue
+        }
+        macStatus = nil
         connection.gateway = gatewayConnection()
         if let remoteApp = configuration.remoteApp, !remoteApp.program.isEmpty {
             connection.remoteApp = (remoteApp.program, remoteApp.arguments)
@@ -824,11 +839,80 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
                     : ClipboardTransferError.failed)
             }
 
+        case let .macExtensions(update, features):
+            applyMacExtensions(update, features: MacExtensionFeatures(rawValue: features))
+
         case let .finished(run, destroy):
             logger.session("worker finished run=\(run.name) destroy=\(destroy?.name ?? "n/a")")
             let cause = terminationCause ?? RDPErrorMapper.classify(status: run)
             finishAttempt(cause: cause)
         }
+    }
+
+    // MARK: - Mac extensions
+
+    var macExtensionStatus: MacExtensionStatus? { macStatus }
+
+    func setStreamQuality(_ quality: StreamQuality) async {
+        streamQuality = quality
+        macStatus?.quality = quality
+        sendStreamConfig()
+        if let macStatus { emit(.macExtensions(macStatus)) }
+    }
+
+    private func applyMacExtensions(_ update: RDPMacExtensionsUpdate, features: MacExtensionFeatures) {
+        switch update {
+        case let .agreed(serverName):
+            logger.session("mac extensions agreed with \(serverName): 0x\(String(features.rawValue, radix: 16))")
+            pointerSink.setMacFeatures(features.rawValue)
+            macStatus = MacExtensionStatus(serverName: serverName, features: features, quality: streamQuality)
+            if features.contains(.macKeys) {
+                var message = mrx_message()
+                message.type = mrx_message_type(MRX_MSG_KEYBOARD_INFO)
+                message.u.keyboard_info.keyboard_type = MacKeyboardType.current(fallback: configuration.keyboardLayout)
+                native?.sendMacrdpx(&message)
+            }
+            sendStreamConfig()
+            observeNetwork()
+        case let .streamStatus(fps, scale, kbps, width, height):
+            logger.session("mac stream \(width)x\(height)@\(scale)% \(fps) fps \(kbps) kbps")
+            macStatus?.framesPerSecond = fps
+            macStatus?.bitrateKbps = kbps
+            macStatus?.scalePercent = scale
+        case let .inputSource(id, ascii):
+            macStatus?.inputSourceID = id
+            macStatus?.isASCIICapable = ascii
+        }
+        if let macStatus { emit(.macExtensions(macStatus)) }
+    }
+
+    /// Asks the server for this session's quality, judged against the network
+    /// the device is on right now.
+    private func sendStreamConfig() {
+        guard let macStatus, macStatus.features.contains(.streamConfig) else { return }
+        let request = streamQuality.streamRequest(onConstrainedNetwork: NetworkConstraint.shared.isConstrained)
+        var message = mrx_message()
+        message.type = mrx_message_type(MRX_MSG_STREAM_CONFIG)
+        message.u.stream_config.max_fps = UInt16(request.framesPerSecond)
+        message.u.stream_config.bitrate_kbps = UInt32(request.bitrateKbps)
+        native?.sendMacrdpx(&message)
+    }
+
+    /// Automatic quality follows the network: cellular or Low Data Mode
+    /// lowers it, Wi-Fi raises it again.
+    private func observeNetwork() {
+        guard networkObservation == nil else { return }
+        let changes = NetworkConstraint.shared.changes()
+        networkObservation = Task { [weak self] in
+            for await _ in changes {
+                await self?.networkChanged()
+            }
+        }
+    }
+
+    private func networkChanged() {
+        guard streamQuality == .automatic else { return }
+        sendStreamConfig()
     }
 
     /// The worker has joined and the handle is gone, so this is the only place
@@ -839,6 +923,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         remoteHasText = false
         native = nil
         pointerSink.attach(nil)
+        macStatus = nil
         pumpTask = nil
         pendingChallenge = nil
         pendingCertificate = nil

@@ -54,6 +54,8 @@ final class ProfileEditorModel: Identifiable {
     var isFavorite = false
     var redirectsMicrophone = false
     var usesH264 = true
+    var remotePlatform = RemotePlatform.standard
+    var streamQuality = StreamQuality.automatic
     var remoteProgram = ""
     var remoteArguments = ""
     var wakesOnLAN = false
@@ -109,6 +111,8 @@ final class ProfileEditorModel: Identifiable {
             isFavorite = profile.isFavorite
             redirectsMicrophone = rdp.redirectsMicrophone
             usesH264 = rdp.prefersH264
+            remotePlatform = rdp.remotePlatform
+            streamQuality = rdp.preferredStreamQuality
             remoteProgram = rdp.remoteApp?.program ?? ""
             remoteArguments = rdp.remoteApp?.arguments ?? ""
             if let wake = profile.wakeOnLAN {
@@ -243,6 +247,9 @@ final class ProfileEditorModel: Identifiable {
         }
         configuration.microphone = redirectsMicrophone ? true : nil
         configuration.usesH264 = usesH264 ? nil : false
+        configuration.platform = remotePlatform == .standard ? nil : remotePlatform
+        configuration.streamQuality = remotePlatform == .macOS && streamQuality != .automatic
+            ? streamQuality : nil
         let program = remoteProgram.trimmingCharacters(in: .whitespaces)
         configuration.remoteApp = program.isEmpty
             ? nil
