@@ -5,6 +5,8 @@ import SwiftUI
 struct DeckResizeHandle: View {
     /// The deck's share of the height, written as the drag goes.
     @Binding var fraction: Double
+    /// Where a double tap puts it back.
+    var standardFraction = DeckLayout.standardFraction
     let screenHeight: CGFloat
     @State private var startFraction: Double?
 
@@ -17,6 +19,7 @@ struct DeckResizeHandle: View {
         }
         .frame(height: DeckLayout.resizeHandleHeight)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) { fraction = standardFraction }
         .gesture(
             // Global, because the handle moves with the drag.
             DragGesture(minimumDistance: 2, coordinateSpace: .global)
@@ -36,6 +39,7 @@ struct DeckResizeHandle: View {
             let step = direction == .increment ? 0.05 : -0.05
             fraction = DeckLayout.clampFraction(fraction + step)
         }
+        .accessibilityAction(named: "元の高さに戻す") { fraction = standardFraction }
         .accessibilityIdentifier("laptop-deck-resize-handle")
     }
 }

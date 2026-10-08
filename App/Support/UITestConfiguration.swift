@@ -26,9 +26,9 @@ enum UITestConfiguration {
         KeyboardButtonTarget.storageKey,
         FoldResolutionPolicy.storageKey,
         DesktopSafeAreaPolicy.storageKey,
-        "laptop-deck-height-portrait",
-        "laptop-deck-height-landscape",
-        "laptop-deck-height-split",
+        DeckLayout.portraitFractionKey,
+        DeckLayout.landscapeFractionKey,
+        DeckLayout.splitFractionKey,
         FloatingDeckFrame.storageKey,
     ]
 

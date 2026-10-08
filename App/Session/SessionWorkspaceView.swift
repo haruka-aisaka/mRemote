@@ -28,10 +28,10 @@ struct SessionWorkspaceView: View {
     @AppStorage(LaptopKeyboardPlatform.storageKey) private var deckPlatform = LaptopKeyboardPlatform.windows
     @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
     @AppStorage(LaptopDeckPlacement.storageKey) private var deckPlacement = LaptopDeckPlacement.docked
-    @AppStorage("laptop-deck-height-portrait") private var deckFractionPortrait = 0.5
-    @AppStorage("laptop-deck-height-landscape") private var deckFractionLandscape = 0.5
+    @AppStorage(DeckLayout.portraitFractionKey) private var deckFractionPortrait = DeckLayout.standardFraction
+    @AppStorage(DeckLayout.landscapeFractionKey) private var deckFractionLandscape = DeckLayout.standardFraction
     /// Split, the keys sit at the sides and need less height.
-    @AppStorage("laptop-deck-height-split") private var deckFractionSplit = 0.3
+    @AppStorage(DeckLayout.splitFractionKey) private var deckFractionSplit = DeckLayout.standardSplitFraction
     @AppStorage(FloatingDeckFrame.storageKey) private var floatingDeckFrame = FloatingDeckFrame.standard
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
@@ -196,6 +196,8 @@ struct SessionWorkspaceView: View {
                             DeckResizeHandle(
                                 fraction: isPortrait ? $deckFractionPortrait
                                     : splitsDeck ? $deckFractionSplit : $deckFractionLandscape,
+                                standardFraction: splitsDeck ? DeckLayout.standardSplitFraction
+                                    : DeckLayout.standardFraction,
                                 screenHeight: size.height
                             )
                         }

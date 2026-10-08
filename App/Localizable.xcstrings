@@ -1370,12 +1370,12 @@
         }
       }
     },
-    "上端のつまみを上下にドラッグすると高さを変えられます。折りたたみ端末を折り曲げているときはヒンジの位置に固定します。": {
+    "上端のつまみを上下にドラッグすると高さを変えられます。ダブルタップで元の高さに戻ります。折りたたみ端末を折り曲げているときはヒンジの位置に固定します。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Drag the grip on its top edge up or down to change its height. On a half-folded foldable it stays at the hinge."
+            "value": "Drag the grip on its top edge up or down to change its height; double-tap it to go back to the standard height. On a half-folded foldable it stays at the hinge."
           }
         }
       }
@@ -1446,6 +1446,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "The saved password was rejected. Enter it again."
+          }
+        }
+      }
+    },
+    "元の高さに戻す": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset height"
           }
         }
       }
@@ -2016,6 +2026,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "PC keyboard size"
+          }
+        }
+      }
+    },
+    "手元キーボードの大きさを元に戻す": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset the PC keyboard's size"
           }
         }
       }

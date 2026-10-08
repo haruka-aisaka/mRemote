@@ -34,6 +34,20 @@ enum DeckLayout: Equatable {
 
     /// How much of the height a docked deck may take.
     static let fractionRange = 0.25...0.75
+    static let standardFraction = 0.5
+    static let standardSplitFraction = 0.3
+    /// Where the dragged heights are kept: one per orientation, and one for
+    /// the split deck, which needs less.
+    static let portraitFractionKey = "laptop-deck-height-portrait"
+    static let landscapeFractionKey = "laptop-deck-height-landscape"
+    static let splitFractionKey = "laptop-deck-height-split"
+
+    /// Every height and the floating frame back to where they started.
+    static func resetSizes(in defaults: UserDefaults = .standard) {
+        for key in [portraitFractionKey, landscapeFractionKey, splitFractionKey, FloatingDeckFrame.storageKey] {
+            defaults.removeObject(forKey: key)
+        }
+    }
     /// The strip above a docked deck that is dragged to resize it.
     static let resizeHandleHeight: CGFloat = 20
 

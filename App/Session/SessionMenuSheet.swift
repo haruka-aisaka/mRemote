@@ -267,9 +267,13 @@ struct SessionMenuSheet: View {
                     }
                     Text(canFloatDeck && deckPlacement == .floating
                          ? String(localized: "上のバーで移動、バー右端のつまみで大きさを変えられます。折りたたみ端末を折り曲げているときはヒンジの下に固定します。")
-                         : String(localized: "上端のつまみを上下にドラッグすると高さを変えられます。折りたたみ端末を折り曲げているときはヒンジの位置に固定します。"))
+                         : String(localized: "上端のつまみを上下にドラッグすると高さを変えられます。ダブルタップで元の高さに戻ります。折りたたみ端末を折り曲げているときはヒンジの位置に固定します。"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    Button("手元キーボードの大きさを元に戻す") {
+                        DeckLayout.resetSizes()
+                    }
+                    .accessibilityIdentifier("session-laptop-deck-reset")
                     if canFloatDeck {
                         // Thumbs on a wide screen: the halves at the sides,
                         // the trackpad between them.
