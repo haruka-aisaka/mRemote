@@ -42,6 +42,7 @@ struct SessionMenuSheet: View {
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
     @AppStorage(LaptopDeckPreference.foldedLandscapeStorageKey) private var showsDeckFoldedInLandscape = false
     @AppStorage(KeyboardButtonTarget.storageKey) private var keyboardButtonTarget = KeyboardButtonTarget.softwareKeyboard
+    @AppStorage(FloatingButtonsIdleStyle.storageKey) private var buttonsIdleStyle = FloatingButtonsIdleStyle.dim
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -216,6 +217,18 @@ struct SessionMenuSheet: View {
                          : String(localized: "Dynamic Island、画面の角、ホームインジケータを避けて表示します。"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    // The keyboard and menu buttons, after a few seconds alone.
+                    Picker("操作しないときのボタン", selection: $buttonsIdleStyle) {
+                        Text("薄くする").tag(FloatingButtonsIdleStyle.dim)
+                        Text("ほとんど見えなくする").tag(FloatingButtonsIdleStyle.faint)
+                        Text("画面の端に寄せる").tag(FloatingButtonsIdleStyle.tuck)
+                    }
+                    .accessibilityIdentifier("session-buttons-idle-style")
+                    if buttonsIdleStyle == .tuck {
+                        Text("端に少しだけ残ったボタンをタップすると元に戻ります。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                     if let size = model.desktopSizeText {
                         LabeledContent(
                             String(localized: "リモート解像度"),

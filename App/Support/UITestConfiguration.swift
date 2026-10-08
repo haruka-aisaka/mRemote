@@ -24,6 +24,7 @@ enum UITestConfiguration {
         LaptopDeckPlacement.storageKey,
         LaptopDeckArrangement.splitInLandscapeStorageKey,
         KeyboardButtonTarget.storageKey,
+        FloatingButtonsIdleStyle.storageKey,
         FoldResolutionPolicy.storageKey,
         DesktopSafeAreaPolicy.storageKey,
         DeckLayout.portraitFractionKey,

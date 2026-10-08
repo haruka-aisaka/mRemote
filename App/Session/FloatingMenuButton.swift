@@ -1,5 +1,16 @@
 import SwiftUI
 
+/// How the floating buttons get out of the way when left alone.
+enum FloatingButtonsIdleStyle: String, CaseIterable {
+    case dim
+    /// Barely there, for a desktop that needs every corner.
+    case faint
+    /// Pushed past the screen edge but for a sliver; a tap brings them back.
+    case tuck
+
+    static let storageKey = "floating-buttons-idle-style"
+}
+
 /// docs/ui-flow.md section 6.1: one button over the desktop, movable along
 /// the edges, fading when left alone so it hides as little of the remote
 /// screen as possible. A keyboard button rides above it, as in the Windows
@@ -20,6 +31,7 @@ struct FloatingMenuButton: View {
     @AppStorage("floating-menu-trailing") private var isTrailing = true
     @AppStorage("floating-menu-vertical") private var verticalFraction = 0.85
     @State private var dragOffset: CGSize = .zero
+    @AppStorage(FloatingButtonsIdleStyle.storageKey) private var idleStyle = FloatingButtonsIdleStyle.dim
     @State private var isIdle = false
     @State private var idleTask: Task<Void, Never>?
     /// The top of a keyboard docked along the bottom of the screen, in
@@ -27,6 +39,8 @@ struct FloatingMenuButton: View {
     @State private var keyboardTop: CGFloat?
 
     private let size: CGFloat = 52
+    /// How much of a tucked button stays on screen.
+    private let sliver: CGFloat = 14
     private let inset: CGFloat = 16
     private let spacing: CGFloat = 8
 
@@ -42,7 +56,7 @@ struct FloatingMenuButton: View {
             VStack(spacing: spacing) {
                 if let keyboard {
                     Button(action: {
-                        wake()
+                        guard !wakeIfTucked() else { return }
                         keyboard.toggle()
                     }) {
                         Image(systemName: keyboard.isShowingKeyboard ? "keyboard.chevron.compact.down.fill" : "keyboard.fill")
@@ -58,7 +72,7 @@ struct FloatingMenuButton: View {
                     .accessibilityLabel(keyboard.isShowingKeyboard ? "キーボードを隠す" : "キーボードを表示")
                 }
                 Button(action: {
-                    wake()
+                    guard !wakeIfTucked() else { return }
                     action()
                 }) {
                     Image(systemName: "ellipsis.circle.fill")
@@ -72,8 +86,8 @@ struct FloatingMenuButton: View {
                 .accessibilityLabel("セッションメニュー")
                 .accessibilityHint("切り替え、キーボード、クリップボード、切断など")
             }
-            .opacity(isIdle ? 0.35 : 1)
-            .position(position(in: bounds).applying(.init(translationX: 0, y: -raise / 2)))
+            .opacity(idleOpacity)
+            .position(position(in: bounds).applying(.init(translationX: tuckOffset, y: -raise / 2)))
             .offset(dragOffset)
             .gesture(
                 DragGesture(minimumDistance: 8)
@@ -109,6 +123,31 @@ struct FloatingMenuButton: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             withAnimation(.easeOut(duration: 0.25)) { keyboardTop = nil }
         }
+    }
+
+    private var isTucked: Bool { isIdle && idleStyle == .tuck }
+
+    private var idleOpacity: Double {
+        guard isIdle else { return 1 }
+        switch idleStyle {
+        case .dim: return 0.35
+        case .faint: return 0.12
+        case .tuck: return 0.6
+        }
+    }
+
+    /// Past the edge the buttons snap to, leaving a sliver to tap.
+    private var tuckOffset: CGFloat {
+        guard isTucked else { return 0 }
+        let distance = inset + size - sliver
+        return isTrailing ? distance : -distance
+    }
+
+    /// A tap on a tucked button only brings it back; it does not act.
+    private func wakeIfTucked() -> Bool {
+        let wasTucked = isTucked
+        wake()
+        return wasTucked
     }
 
     private func position(in bounds: CGRect) -> CGPoint {

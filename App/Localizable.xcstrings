@@ -520,6 +520,16 @@
         }
       }
     },
+    "ほとんど見えなくする": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nearly Hide"
+          }
+        }
+      }
+    },
     "ろ": {
       "localizations": {
         "en": {
@@ -2320,6 +2330,16 @@
         }
       }
     },
+    "操作しないときのボタン": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buttons When Idle"
+          }
+        }
+      }
+    },
     "新しいセッションで接続": {
       "localizations": {
         "en": {
@@ -2540,6 +2560,16 @@
         }
       }
     },
+    "画面の端に寄せる": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tuck Into the Edge"
+          }
+        }
+      }
+    },
     "画面の端まで使う": {
       "localizations": {
         "en": {
@@ -2596,6 +2626,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Waiting for You"
+          }
+        }
+      }
+    },
+    "端に少しだけ残ったボタンをタップすると元に戻ります。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap the sliver left at the edge to bring the buttons back."
           }
         }
       }
@@ -2756,6 +2796,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eisu is sent as Muhenkan, and Kana as Henkan."
+          }
+        }
+      }
+    },
+    "薄くする": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dim"
           }
         }
       }
