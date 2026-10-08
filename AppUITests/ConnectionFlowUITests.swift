@@ -198,6 +198,33 @@ final class ConnectionFlowUITests: XCTestCase {
         XCTAssertTrue(element("laptop-deck").waitForNonExistence(timeout: 5), "the button hides the deck")
     }
 
+    /// Tucked, the buttons leave a sliver at the edge; the first tap only
+    /// brings them back.
+    func testTuckedButtonsComeBackOnTheFirstTap() {
+        element("profile-row-テスト接続先").tap()
+        _ = assertAppears("session-workspace", "connecting presents the workspace")
+        element("session-menu-button").tap()
+        let style = element("session-buttons-idle-style")
+        scrollMenu(to: style)
+        style.tap()
+        let tuck = app.buttons["画面の端に寄せる"].firstMatch
+        XCTAssertTrue(tuck.waitForExistence(timeout: 5), "the styles are listed")
+        tuck.tap()
+        element("session-menu-close").tap()
+
+        let button = element("session-menu-button")
+        let screen = app.windows.firstMatch.frame
+        let tucked = expectation(for: NSPredicate { _, _ in button.frame.maxX > screen.maxX + 20 }, evaluatedWith: nil)
+        wait(for: [tucked], timeout: 8)
+        // The sliver left on screen.
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: screen.maxX - 6, dy: button.frame.midY))
+            .tap()
+        let back = expectation(for: NSPredicate { _, _ in button.frame.maxX <= screen.maxX }, evaluatedWith: nil)
+        wait(for: [back], timeout: 3)
+        XCTAssertFalse(element("session-menu").exists, "the tap that brings them back opens nothing")
+    }
+
     /// The user's shortcuts ride on the key bar and the deck, and the list
     /// is edited from the session menu.
     func testShortcutsAppearOnTheBarsAndCanBeAdded() {
