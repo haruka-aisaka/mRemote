@@ -244,12 +244,12 @@ effectiveDelta = deviceDelta × sensitivity × (isReversed ? -1 : 1)
 
 | 方式 | 1 本指 | 2 本指 | ローカル表示 |
 |---|---|---|---|
-| 直接タッチ（`DirectTouchGestureTracker`）。RDPEI が開いている接続先（Windows）では 1 本指を Windows のタッチとして送る（下記） | tap: その位置で左 click。0.5 秒以内・24pt 以内の 2 回目の tap は 1 回目と同じ位置を押し、double click として届く。長押し 0.5 秒: 右 click。なぞる: 押した位置から左ドラッグ | 移動: スクロール。tap: 右 click | pinch で zoom。zoom 中は pinch したまま動かすと viewport 移動 |
+| 直接タッチ（`DirectTouchGestureTracker`）。RDPEI が開いている接続先（Windows、GNOME）では 1 本指をタッチとして送る（下記） | tap: その位置で左 click。0.5 秒以内・24pt 以内の 2 回目の tap は 1 回目と同じ位置を押し、double click として届く。長押し 0.5 秒: 右 click。なぞる: 押した位置から左ドラッグ | 移動: スクロール。tap: 右 click | pinch で zoom。zoom 中は pinch したまま動かすと viewport 移動 |
 | トラックパッド（`TrackpadGestureTracker`） | なぞる: 相対移動。tap: 左 click（2 回目のタッチを 0.25 秒待ってから送る）。tap の直後にもう一度触れて動かす、または押さえてから動かす: ドラッグ。2 回 tap: double click | 移動: スクロール。tap: 右 click | 同上。ポインターが端に寄ると表示が追従 |
 | 表示の移動だけ | viewport 移動。double tap: Fit/100% 切替 | — | pinch で zoom |
 | Windows のタッチとして送る（RDPEI） | 指ごとに contact（0〜9、空いている最小番号）として down/move/up を送る | 同じく。pinch・スワイプは Windows 側のジェスチャー | zoom しない（pinch を Windows に渡す） |
 
-直接タッチで接続先が RDPEI を開いているとき（`DesktopInputSink.acceptsTouch`、Windows）は、1 本指を Windows App のタッチモードと同じく Windows のタッチ（contact）として送り、tap・長押しの右 click・パンや選択は Windows が決める。方式は最初の指が触れたときに決め、ジェスチャーの途中では変えない。2 本目の指が触れたら送ったタッチを cancel し、2 本指はこの画面の pinch zoom に使う（2 本指スクロールは無い。1 本指のパンが Windows のスクロールになる）。Mac（macos-rdp-server は RDPEI を持たない）や RDPEI が開く前のログイン画面では、上表のマウス操作になる。
+直接タッチで接続先が RDPEI を開いているとき（`DesktopInputSink.acceptsTouch`。Windows、GNOME Remote Desktop）は、1 本指を Windows App のタッチモードと同じくタッチ（contact）として送り、tap・長押しの右 click・パンや選択は接続先が決める。方式は最初の指が触れたときに決める。2 本目の指が触れたら送ったタッチを cancel し、そのジェスチャーは上表のマウス操作に引き継ぐので、2 本指（スクロール、tap で右 click、pinch zoom）はどの接続先でも同じになる。Mac（macos-rdp-server は RDPEI を持たない）や RDPEI が開く前のログイン画面では、上表のマウス操作になる。
 
 トラックパッドの tap の click を 0.25 秒待つのは、tap の直後のドラッグをボタンの押下だけにするため。click をすぐ送ると、続く押下が Windows では double click になり、ファイルをドラッグしようとして開いてしまう。
 

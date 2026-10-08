@@ -1353,12 +1353,12 @@
         }
       }
     },
-    "Windows にはタッチとして送ります（タップ、長押しで右クリック、なぞるとスクロールや選択）。ほかの接続先ではタップでクリック、長押しで右クリック、なぞるとドラッグ、2 本指でスクロール。どちらもピンチで拡大し、拡大中はピンチしたまま動かすと表示が動きます。": {
+    "タッチに対応した接続先（Windows など）には、1 本指をタッチとして送ります（タップ、長押しで右クリック、なぞるとスクロールや選択）。それ以外ではタップでクリック、長押しで右クリック、なぞるとドラッグ。どの接続先でも、2 本指でスクロール、2 本指タップで右クリック、ピンチで拡大（拡大中はピンチしたまま動かすと表示が動きます）。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Windows gets them as touches (tap, press and hold for a right click, slide to scroll or select). Elsewhere a tap clicks, press and hold right-clicks, a slide drags and two fingers scroll. Either way, pinch to zoom, and while zoomed, move the pinch to move the view."
+            "value": "A host that takes touches (Windows, for one) gets one finger as a touch (tap, press and hold for a right click, slide to scroll or select). Elsewhere a tap clicks, press and hold right-clicks and a slide drags. On any host, two fingers scroll, a two-finger tap right-clicks, and a pinch zooms (while zoomed, move the pinch to move the view)."
           }
         }
       }

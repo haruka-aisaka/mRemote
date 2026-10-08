@@ -691,7 +691,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             for touch in touches where touch.type == .direct {
                 switch touchMode {
                 case .trackpad: directTrackpad.began(touch, in: self)
-                case .direct: directBegan(touch)
+                case .direct: directBegan(touch, event: event)
                 case .touch: remoteTouch(touch, phase: .down)
                 case .viewport: break
                 }
@@ -803,12 +803,13 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     /// Direct mode: where the finger is, as on a touch screen. A host that
-    /// takes touches (Windows) gets one finger as a touch - its own tap,
-    /// press-and-hold and panning, as in the Windows App - while two
-    /// fingers stay here for zooming the view: the second finger takes back
-    /// the touch already sent. Any other host (a Mac, a logon screen
-    /// before the touch channel opens) gets the mouse.
-    private func directBegan(_ touch: UITouch) {
+    /// takes touches (Windows, GNOME) gets one finger as a touch - its own
+    /// tap, press-and-hold and panning, as in the Windows App. Two fingers
+    /// are the same on every host: the second takes back the touch already
+    /// sent and the gesture goes on as the mouse one - scroll, right click,
+    /// and zooming the view here. Any other host (a Mac, a logon screen
+    /// before the touch channel opens) gets the mouse throughout.
+    private func directBegan(_ touch: UITouch, event: UIEvent?) {
         if directFingers.isEmpty { directGoesAsTouch = inputSink?.acceptsTouch == true }
         directFingers.insert(ObjectIdentifier(touch))
         guard directGoesAsTouch else {
@@ -817,9 +818,16 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         }
         if directFingers.count == 1 {
             remoteTouch(touch, phase: .down)
-        } else {
-            cancelRemoteTouches()
+            return
         }
+        cancelRemoteTouches()
+        directGoesAsTouch = false
+        let earlier = (event?.allTouches ?? []).filter {
+            $0 !== touch && $0.type == .direct && directFingers.contains(ObjectIdentifier($0))
+                && $0.phase != .ended && $0.phase != .cancelled
+        }
+        for finger in earlier { directTouch.began(finger, in: self) }
+        directTouch.began(touch, in: self)
     }
 
     private func touchesFinished(_ touches: Set<UITouch>, cancelled: Bool) {
