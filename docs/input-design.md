@@ -253,7 +253,7 @@ pinch が成立すると UIKit が touch を cancel するため、途中のド�
 
 タッチと Apple Pencil は bridge ABI 4 の `mr_rdp_session_send_touch` / `send_pen` で送る。キーと同じ有界キューを通り、down は対応する up/cancel の空きを予約する。入力の門が閉じるとき（メニュー、フォーカス喪失、方式の切替）は、置いている指をすべて cancel、ペンを up にしてから閉じる。RDPEI がまだ無いとき（ログイン画面など）は FreeRDP がタッチを左ボタンに置き換える。
 
-Apple Pencil は方式に関係なくペンとして送る（iPad、「Apple Pencil をペンとして送る」、既定オン）。筆圧は force / maximumPossibleForce、傾きは altitude と azimuth から X/Y の度数、回転は iPadOS 17.5 以降の roll。ペンのボタン（barrel/eraser）は Apple Pencil に無いので送らない。
+Apple Pencil は方式に関係なくペンとして送る（iPad、「Apple Pencil をペンとして送る」、既定オン）。筆圧は force / maximumPossibleForce、傾きは altitude と azimuth から X/Y の度数、回転は iPadOS 17.5 以降の roll。ペンのボタン（barrel/eraser）は Apple Pencil に無いので送らない。ペン先が画面から浮いているあいだ（`UIHoverGestureRecognizer` の `zOffset` が 0 より大きい）は、位置と傾きを接触なしのホバーとして送る。
 
 ## 10. ソフトウェアキーボード（終盤実装）
 
