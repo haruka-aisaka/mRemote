@@ -35,8 +35,10 @@ final class ChannelTests: XCTestCase {
 
     func testPCMIsDeinterleavedScaledAndPaddedWithSilence() {
         let stream = PCMAudioStream()
-        // Two stereo frames: (16384, -32768), (0, 32767).
-        let samples: [Int16] = [16_384, -32_768, 0, 32_767]
+        // Two stereo frames: (16384, -32768), (0, 32767), then silence up to
+        // the priming amount, so playback starts at once.
+        var samples: [Int16] = [16_384, -32_768, 0, 32_767]
+        samples += [Int16](repeating: 0, count: (PCMAudioStream.primingFrames - 2) * 2)
         samples.withUnsafeBytes {
             XCTAssertTrue(stream.push($0, sampleRate: 48_000, channels: 2))
         }
@@ -45,7 +47,27 @@ final class ChannelTests: XCTestCase {
         XCTAssertEqual(output[0], [0.5, 0, 0])
         XCTAssertEqual(output[1][0], -1)
         XCTAssertEqual(output[1][1], 32_767.0 / 32_768.0, accuracy: 1e-6)
-        XCTAssertEqual(output[1][2], 0, "an underrun plays silence, not stale samples")
+        let rest = PCMAudioStream.primingFrames - 3
+        XCTAssertEqual(render(stream, frames: rest + 1, channels: 2)[0][rest], 0,
+                       "an underrun plays silence, not stale samples")
+    }
+
+    func testPlaybackWaitsForThePrimingAmountAfterRunningDry() {
+        let stream = PCMAudioStream()
+        let sample: [Int16] = [16_384]
+        sample.withUnsafeBytes { _ = stream.push($0, sampleRate: 48_000, channels: 1) }
+        // Less than the priming amount is held back, not played at once...
+        XCTAssertEqual(render(stream, frames: 1_000, channels: 1)[0][0], 0)
+        // ...until it has waited the priming time: a short sound still plays.
+        let waits = PCMAudioStream.primingFrames / 1_000
+        for _ in 1..<waits { _ = render(stream, frames: 1_000, channels: 1) }
+        XCTAssertEqual(render(stream, frames: 1_000, channels: 1)[0][0], 0.5)
+        // Having run dry, it waits again rather than playing each late packet.
+        sample.withUnsafeBytes { _ = stream.push($0, sampleRate: 48_000, channels: 1) }
+        XCTAssertEqual(render(stream, frames: 1_000, channels: 1)[0][0], 0)
+        let full = [Int16](repeating: 8_192, count: PCMAudioStream.primingFrames)
+        full.withUnsafeBytes { _ = stream.push($0, sampleRate: 48_000, channels: 1) }
+        XCTAssertEqual(render(stream, frames: 2, channels: 1)[0], [0.5, 0.25])
     }
 
     func testAFullRingDropsWholePacketsAndADiscardEmptiesIt() {

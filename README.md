@@ -70,8 +70,9 @@ the `external/macrdpx` submodule): once the server agrees, keys go as Mac keys
 with their exact modifiers (⌘ stays ⌘, Fn, left/right), the pointer and the
 trackpad's pixel scrolling with momentum go natively, and the stream quality
 (frame rate and bit rate) is chosen per connection - automatically lower on
-cellular - and changeable from the session menu. A Retina client gets a HiDPI
-desktop sized to its window. Any other server stays plain RDP; see
+cellular - and changeable from the session menu. The server shows the Mac's
+own screen, at Retina pixels for a Retina client. Any other server stays
+plain RDP; see
 [`docs/input-design.md`](docs/input-design.md) section 13.
 
 ## Build and test

@@ -29,6 +29,12 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
     /// The most frames one render call is expected to ask for; the scratch
     /// buffer is sized once so rendering never allocates.
     static let maximumRenderFrames = 4_096
+    /// How far ahead of the speaker playback runs: it starts, or resumes
+    /// after the ring ran dry, once this much is queued or the first of it
+    /// has waited this long - 100 ms at 48 kHz. Windows sends a sound's
+    /// pre-buffer ahead of real time, but macos-rdp-server streams the Mac's
+    /// audio as it plays, so on Wi-Fi every late packet was a gap.
+    static let primingFrames = 4_800
 
     private let ring: OpaquePointer
     private let scratch: UnsafeMutablePointer<Int16>
@@ -41,6 +47,9 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
     /// is silent by nature, so the transitions are logged. Producer thread
     /// only, never the render thread.
     private var isDropping = false
+    /// Render thread only: waiting for the ring to fill, and for how long.
+    private var isPriming = true
+    private var primingWaitFrames = 0
     private let logger = AppLog.logger(.app)
 
     init() {
@@ -106,18 +115,32 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
     }
 
     /// Render callback body. Interleaved Int16 in, one deinterleaved Float32
-    /// buffer per channel out, silence for whatever the ring cannot supply.
+    /// buffer per channel out, silence while priming and for whatever the
+    /// ring cannot supply.
     func render(
         frameCount: Int,
         channels: Int,
         into buffers: UnsafeMutableAudioBufferListPointer
     ) {
         let frames = min(frameCount, Self.maximumRenderFrames)
-        let wanted = frames * channels * 2
-        let read = scratch.withMemoryRebound(to: UInt8.self, capacity: wanted) {
-            mr_pcm_ring_read(ring, $0, wanted)
+        let frameBytes = channels * 2
+        if isPriming {
+            let queued = mr_pcm_ring_readable(ring) / frameBytes
+            if queued > 0 { primingWaitFrames += frameCount }
+            if queued >= Self.primingFrames || primingWaitFrames >= Self.primingFrames {
+                isPriming = false
+                primingWaitFrames = 0
+            }
         }
-        let readFrames = read / (channels * 2)
+        var readFrames = 0
+        if !isPriming {
+            let wanted = frames * frameBytes
+            let read = scratch.withMemoryRebound(to: UInt8.self, capacity: wanted) {
+                mr_pcm_ring_read(ring, $0, wanted)
+            }
+            readFrames = read / frameBytes
+            if readFrames < frames { isPriming = true }
+        }
         for (channel, buffer) in buffers.enumerated() where channel < channels {
             guard let samples = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
             for frame in 0..<frameCount {
