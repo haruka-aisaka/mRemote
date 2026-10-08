@@ -146,6 +146,23 @@ public struct RDPFile: Hashable, Sendable {
         if let clipboard = integer("redirectclipboard") {
             configuration.clipboardPolicy = .explicit(clipboard == 0 ? .disabled : .bidirectional)
         }
+        if let host = gatewayHost {
+            // host or host:port. "promptcredentialonce" means the gateway takes
+            // the computer's credentials, which is also what most want.
+            var gatewayHost = host
+            var port = RDPGatewayConfiguration.defaultPort
+            if host.filter({ $0 == ":" }).count == 1, let colon = host.lastIndex(of: ":"),
+               let value = UInt16(host[host.index(after: colon)...]) {
+                gatewayHost = String(host[..<colon])
+                port = value
+            }
+            configuration.gateway = RDPGatewayConfiguration(
+                host: gatewayHost,
+                port: port,
+                usesComputerCredentials: integer("promptcredentialonce") != 0,
+                bypassesLocalAddresses: integer("gatewayusagemethod") == 2
+            )
+        }
         if integer("dynamic resolution") == 0,
            let width = integer("desktopwidth"), let height = integer("desktopheight"),
            width > 0, height > 0 {
@@ -171,9 +188,6 @@ public struct RDPFile: Hashable, Sendable {
         var names: [String] = []
         if string("remoteapplicationprogram") != nil, integer("remoteapplicationmode") == 1 {
             names.append("RemoteApp")
-        }
-        if gatewayHost != nil {
-            names.append("RD Gateway")
         }
         if integer("use multimon") == 1 {
             names.append("use multimon")

@@ -78,6 +78,40 @@ final class EffectiveProfileResolverTests: XCTestCase {
         XCTAssertEqual(copy.configuration, original.configuration)
     }
 
+    func testAGatewayAndAFolderReachTheConnectionAndDuplicatesDropTheGatewayPassword() {
+        var gateway = RDPGatewayConfiguration(host: "gw.example", usesComputerCredentials: false)
+        gateway.account = RemoteAccount(username: "gw", credentialReference: CredentialReference())
+        let folder = SharedFolder(location: .appDocuments, driveName: "iPad")
+        let original = profile(RDPConfiguration(gateway: gateway, sharedFolder: folder))
+        let resolved = EffectiveProfileResolver().resolve(profile: original, globalSettings: .default)
+        XCTAssertEqual(resolved.gateway?.host, "gw.example")
+        XCTAssertEqual(resolved.sharedFolder, folder)
+        let copy = original.duplicated(displayName: "copy")
+        XCTAssertNil(copy.configuration.rdp?.gateway?.account.credentialReference)
+        XCTAssertEqual(copy.configuration.rdp?.gateway?.host, "gw.example")
+    }
+
+    /// Documents written before the gateway and the folder existed read as
+    /// having neither.
+    func testOlderConfigurationsDecodeWithoutTheNewFields() throws {
+        let encoded = try JSONEncoder().encode(RDPConfiguration())
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "gateway")
+        object.removeValue(forKey: "sharedFolder")
+        let decoded = try JSONDecoder().decode(
+            RDPConfiguration.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+        XCTAssertNil(decoded.gateway)
+        XCTAssertNil(decoded.sharedFolder)
+    }
+
+    func testDriveNamesKeepToWhatServersAccept() {
+        XCTAssertEqual(SharedFolder.sanitizedDriveName("My Files: 2026/10"), "My Files 202610")
+        XCTAssertEqual(SharedFolder.sanitizedDriveName("書類"), "mRemote")
+        XCTAssertEqual(SharedFolder.sanitizedDriveName(String(repeating: "a", count: 40)).count, 32)
+    }
+
     func testIPLiteralDetection() {
         XCTAssertTrue(RemoteEndpoint(host: "192.168.1.10", port: 3389).isIPLiteral)
         XCTAssertTrue(RemoteEndpoint(host: "fe80::1", port: 3389).isIPLiteral)

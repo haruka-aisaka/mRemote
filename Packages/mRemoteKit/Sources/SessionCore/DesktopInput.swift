@@ -46,6 +46,64 @@ public struct KeyboardInput: Hashable, Sendable {
     }
 }
 
+/// One finger on the remote touch screen, for a session that sends touches
+/// rather than a pointer.
+public struct TouchInput: Hashable, Sendable {
+    public enum Phase: Hashable, Sendable {
+        case down, move, up, cancel
+    }
+
+    /// Stable while the finger is down; reused afterwards.
+    public let contactID: UInt32
+    public let phase: Phase
+    public let point: PixelPoint
+
+    public init(contactID: UInt32, phase: Phase, point: PixelPoint) {
+        self.contactID = contactID
+        self.phase = phase
+        self.point = point
+    }
+}
+
+/// The pen, as a pen: pressure, tilt and its buttons.
+public struct PenInput: Hashable, Sendable {
+    public enum Phase: Hashable, Sendable {
+        case hover, down, move, up
+    }
+
+    public let phase: Phase
+    public let point: PixelPoint
+    /// 0...1.
+    public let pressure: Double
+    /// Degrees, -90...90.
+    public let tiltX: Int
+    public let tiltY: Int
+    /// Degrees, 0...359.
+    public let rotation: Int
+    public let isBarrelPressed: Bool
+    public let isEraser: Bool
+
+    public init(
+        phase: Phase,
+        point: PixelPoint,
+        pressure: Double = 0,
+        tiltX: Int = 0,
+        tiltY: Int = 0,
+        rotation: Int = 0,
+        isBarrelPressed: Bool = false,
+        isEraser: Bool = false
+    ) {
+        self.phase = phase
+        self.point = point
+        self.pressure = pressure
+        self.tiltX = tiltX
+        self.tiltY = tiltY
+        self.rotation = rotation
+        self.isBarrelPressed = isBarrelPressed
+        self.isEraser = isEraser
+    }
+}
+
 /// Where input goes on its way to the remote host.
 ///
 /// Deliberately not part of the session actor. docs/architecture.md keeps the
@@ -77,4 +135,13 @@ public protocol DesktopInputSink: AnyObject, Sendable {
     /// The software keyboard's local IME mode is the only producer: physical
     /// keys always travel as `KeyboardInput`.
     func send(unicode codeUnit: UInt16)
+
+    /// Touch and pen, for a session that can carry them. Dropped otherwise.
+    func send(touch: TouchInput)
+    func send(pen: PenInput)
+}
+
+public extension DesktopInputSink {
+    func send(touch: TouchInput) {}
+    func send(pen: PenInput) {}
 }

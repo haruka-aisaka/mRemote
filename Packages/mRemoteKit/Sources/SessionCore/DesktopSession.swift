@@ -33,9 +33,25 @@ public protocol DesktopSession: RemoteSession {
     /// How large the server should draw. Applied with the next layout the
     /// session can send - which it sends at once if only the scale changed.
     func setDisplayScale(_ scale: RemoteDisplayScale) async
+
+    /// Two monitors side by side: this one, and a second to its right drawn
+    /// at 100%. One desktop spans both, `primary.width + secondary.width`
+    /// wide. Nil for the second is the same as `requestDesktopSize`.
+    func requestDesktopLayout(
+        primary: (width: Int, height: Int),
+        secondary: (width: Int, height: Int)?
+    ) async
 }
 
 extension DesktopSession {
     /// A session that cannot tell its server how large to draw ignores it.
     public func setDisplayScale(_ scale: RemoteDisplayScale) async {}
+
+    /// A session with one monitor only asks for the first.
+    public func requestDesktopLayout(
+        primary: (width: Int, height: Int),
+        secondary: (width: Int, height: Int)?
+    ) async {
+        await requestDesktopSize(width: primary.width, height: primary.height)
+    }
 }

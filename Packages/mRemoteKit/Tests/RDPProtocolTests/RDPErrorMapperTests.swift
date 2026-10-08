@@ -260,6 +260,8 @@ final class RDPBridgeStatusABITests: XCTestCase {
             "MR_RDP_CHANNEL_DRDYNVC": .drdynvc,
             "MR_RDP_CHANNEL_DISP": .disp,
             "MR_RDP_CHANNEL_RDPGFX": .rdpgfx,
+            "MR_RDP_CHANNEL_RDPEI": .rdpei,
+            "MR_RDP_CHANNEL_RDPDR": .rdpdr,
         ]
         let parsed = constants(in: text, names: Array(expected.keys))
         XCTAssertEqual(parsed.count, expected.count, "the header no longer declares every channel")

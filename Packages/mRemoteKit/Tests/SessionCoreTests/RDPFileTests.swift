@@ -84,6 +84,26 @@ final class RDPFileTests: XCTestCase {
         gatewayhostname:s:gw.example
         gatewayusagemethod:i:1
         """)
-        XCTAssertEqual(file.unsupportedSettings, ["RemoteApp", "RD Gateway"])
+        XCTAssertEqual(file.unsupportedSettings, ["RemoteApp"])
+        let gateway = file.configuration().gateway
+        XCTAssertEqual(gateway?.host, "gw.example")
+        XCTAssertEqual(gateway?.port, 443)
+        XCTAssertEqual(gateway?.usesComputerCredentials, true)
+    }
+
+    func testAGatewayWithAPortAndItsOwnSignIn() {
+        let file = RDPFile(text: """
+        full address:s:pc.internal
+        gatewayhostname:s:gw.example:8443
+        gatewayusagemethod:i:2
+        promptcredentialonce:i:0
+        """)
+        let gateway = file.configuration().gateway
+        XCTAssertEqual(gateway?.host, "gw.example")
+        XCTAssertEqual(gateway?.port, 8443)
+        XCTAssertEqual(gateway?.usesComputerCredentials, false)
+        XCTAssertEqual(gateway?.bypassesLocalAddresses, true)
+        XCTAssertNil(RDPFile(text: "full address:s:pc\ngatewayhostname:s:gw\ngatewayusagemethod:i:0")
+            .configuration().gateway, "a gateway the file says not to use is not used")
     }
 }

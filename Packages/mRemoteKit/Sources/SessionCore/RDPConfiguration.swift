@@ -91,6 +91,64 @@ public enum SecurityPolicy: String, Hashable, Sendable, Codable, CaseIterable {
     case legacyExplicit
 }
 
+/// An RD Gateway the connection goes through.
+public struct RDPGatewayConfiguration: Hashable, Sendable, Codable {
+    public var host: String
+    public var port: UInt16
+    /// True to sign in to the gateway as the computer's user; otherwise with
+    /// `account`, whose password is in the Keychain.
+    public var usesComputerCredentials: Bool
+    public var account: RemoteAccount
+    /// Computers on the local network are reached without the gateway.
+    public var bypassesLocalAddresses: Bool
+
+    public static let defaultPort: UInt16 = 443
+
+    public init(
+        host: String,
+        port: UInt16 = RDPGatewayConfiguration.defaultPort,
+        usesComputerCredentials: Bool = true,
+        account: RemoteAccount = RemoteAccount(),
+        bypassesLocalAddresses: Bool = false
+    ) {
+        self.host = host
+        self.port = port
+        self.usesComputerCredentials = usesComputerCredentials
+        self.account = account
+        self.bypassesLocalAddresses = bypassesLocalAddresses
+    }
+}
+
+/// A folder on this device that the computer sees as a drive.
+public struct SharedFolder: Hashable, Sendable, Codable {
+    public enum Location: Hashable, Sendable, Codable {
+        /// The app's own Documents, which the Files app shows as "mRemote".
+        case appDocuments
+        /// A folder the user picked, kept as a security-scoped bookmark.
+        case bookmark(Data, displayName: String)
+    }
+
+    public var location: Location
+    /// What the drive is called on the computer.
+    public var driveName: String
+
+    public init(location: Location, driveName: String) {
+        self.location = location
+        self.driveName = driveName
+    }
+
+    /// Letters, digits, space, '-' and '_' only, at most 32 characters: the
+    /// name a server shows, kept to what every server accepts.
+    public static func sanitizedDriveName(_ name: String) -> String {
+        let allowed = name.unicodeScalars.filter {
+            $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == " " || $0 == "-" || $0 == "_")
+        }
+        let trimmed = String(String.UnicodeScalarView(allowed))
+            .trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? "mRemote" : String(trimmed.prefix(32))
+    }
+}
+
 /// Version 1 of the RDP-specific profile payload.
 public struct RDPConfiguration: Hashable, Sendable, Codable {
     public var resolutionPolicy: Inheritable<ResolutionPolicy>
@@ -102,6 +160,9 @@ public struct RDPConfiguration: Hashable, Sendable, Codable {
     public var scrollDirection: Inheritable<ScrollDirection>
     public var reconnectPolicy: Inheritable<ReconnectPolicy>
     public var securityPolicy: SecurityPolicy
+    /// Added after version 1; absent in older documents, which decode as nil.
+    public var gateway: RDPGatewayConfiguration?
+    public var sharedFolder: SharedFolder?
 
     public init(
         resolutionPolicy: Inheritable<ResolutionPolicy> = .inherit,
@@ -112,7 +173,9 @@ public struct RDPConfiguration: Hashable, Sendable, Codable {
         clipboardPolicy: Inheritable<ClipboardPolicy> = .inherit,
         scrollDirection: Inheritable<ScrollDirection> = .inherit,
         reconnectPolicy: Inheritable<ReconnectPolicy> = .inherit,
-        securityPolicy: SecurityPolicy = .secureAutomatic
+        securityPolicy: SecurityPolicy = .secureAutomatic,
+        gateway: RDPGatewayConfiguration? = nil,
+        sharedFolder: SharedFolder? = nil
     ) {
         self.resolutionPolicy = resolutionPolicy
         self.initialScale = initialScale
@@ -123,5 +186,7 @@ public struct RDPConfiguration: Hashable, Sendable, Codable {
         self.scrollDirection = scrollDirection
         self.reconnectPolicy = reconnectPolicy
         self.securityPolicy = securityPolicy
+        self.gateway = gateway
+        self.sharedFolder = sharedFolder
     }
 }

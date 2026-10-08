@@ -122,6 +122,10 @@ public struct ConnectionProfile: Identifiable, Hashable, Sendable, Codable {
         copy.id = id
         copy.displayName = displayName
         copy.account.credentialReference = nil
+        if case .rdp(var rdp) = copy.configuration, rdp.gateway != nil {
+            rdp.gateway?.account.credentialReference = nil
+            copy.configuration = .rdp(rdp)
+        }
         copy.createdAt = now
         copy.updatedAt = now
         copy.lastConnectedAt = nil

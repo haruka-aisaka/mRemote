@@ -18,6 +18,8 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
     public let scrollDirection: ScrollDirection
     public let reconnectPolicy: ReconnectPolicy
     public let securityPolicy: SecurityPolicy
+    public let gateway: RDPGatewayConfiguration?
+    public let sharedFolder: SharedFolder?
 
     public init(
         profileID: ProfileID?,
@@ -32,7 +34,9 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
         clipboardPolicy: ClipboardPolicy,
         scrollDirection: ScrollDirection,
         reconnectPolicy: ReconnectPolicy,
-        securityPolicy: SecurityPolicy
+        securityPolicy: SecurityPolicy,
+        gateway: RDPGatewayConfiguration? = nil,
+        sharedFolder: SharedFolder? = nil
     ) {
         self.profileID = profileID
         self.displayName = displayName
@@ -47,6 +51,8 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
         self.scrollDirection = scrollDirection
         self.reconnectPolicy = reconnectPolicy
         self.securityPolicy = securityPolicy
+        self.gateway = gateway
+        self.sharedFolder = sharedFolder
     }
 
     /// Eisu/Kana to Muhenkan/Henkan is only promised for the Japanese layout,
@@ -77,7 +83,9 @@ public struct EffectiveProfileResolver: Sendable {
             clipboardPolicy: rdp.clipboardPolicy.resolved(default: globalSettings.clipboardPolicy),
             scrollDirection: rdp.scrollDirection.resolved(default: globalSettings.scrollDirection),
             reconnectPolicy: rdp.reconnectPolicy.resolved(default: globalSettings.reconnectPolicy),
-            securityPolicy: rdp.securityPolicy
+            securityPolicy: rdp.securityPolicy,
+            gateway: rdp.gateway,
+            sharedFolder: rdp.sharedFolder
         )
     }
 }
