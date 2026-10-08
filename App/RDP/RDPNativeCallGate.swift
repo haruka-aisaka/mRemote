@@ -91,6 +91,27 @@ final class RDPNativeCallGate: @unchecked Sendable {
         call { mr_rdp_session_request_clipboard_text($0, requestID) }
     }
 
+    func offerClipboardImage(_ offer: inout mr_rdp_clipboard_image_offer) -> mr_rdp_status? {
+        call { mr_rdp_session_offer_clipboard_image($0, &offer) }
+    }
+
+    func offerClipboardFiles(_ offer: inout mr_rdp_clipboard_files_offer) -> mr_rdp_status? {
+        call { mr_rdp_session_offer_clipboard_files($0, &offer) }
+    }
+
+    func requestClipboardImage(requestID: UInt64) -> mr_rdp_status? {
+        call { mr_rdp_session_request_clipboard_image($0, requestID) }
+    }
+
+    func requestClipboardFiles(requestID: UInt64) -> mr_rdp_status? {
+        call { mr_rdp_session_request_clipboard_files($0, requestID) }
+    }
+
+    func sendAudioCapture(_ bytes: UnsafeRawBufferPointer) -> mr_rdp_status? {
+        guard let base = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self), !bytes.isEmpty else { return nil }
+        return call { mr_rdp_session_send_audio_capture($0, base, bytes.count) }
+    }
+
     /// Closes the gate to new calls, waits for the ones already through it,
     /// then frees. Must not be called from the run or callback thread; the
     /// worker calls it only after `mr_rdp_session_run` has returned.

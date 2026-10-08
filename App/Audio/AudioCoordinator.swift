@@ -118,7 +118,13 @@ final class AudioCoordinator {
             let session = AVAudioSession.sharedInstance()
             // Mixes with other apps: a remote desktop's sounds are rarely a
             // reason to stop the user's music.
-            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            // Recording too while a session has the microphone.
+            if MicrophoneCapture.shared.isActive {
+                try session.setCategory(.playAndRecord, mode: .voiceChat,
+                                        options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers])
+            } else {
+                try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            }
             try session.setActive(true)
             try engine.start()
         } catch {

@@ -38,4 +38,66 @@ public protocol ClipboardCapableSession: RemoteSession {
     func offerClipboardText(_ text: String) async throws
 
     func fetchRemoteClipboardText() async throws -> String
+
+    /// Images and files, where the session can carry them.
+    var remoteHasImage: Bool { get }
+    var remoteHasFiles: Bool { get }
+    func offerClipboardImage(png: Data?, dib: Data?) async throws
+    func offerClipboardFiles(_ files: [ClipboardFile]) async throws
+    func fetchRemoteClipboardImage() async throws -> RemoteClipboardImage
+    func fetchRemoteClipboardFiles() async throws -> [ClipboardFile]
+}
+
+/// A file going over the clipboard: its name, without folders, and bytes.
+public struct ClipboardFile: Hashable, Sendable {
+    public let name: String
+    public let data: Data
+
+    public init(name: String, data: Data) {
+        self.name = name
+        self.data = data
+    }
+}
+
+/// An image the remote copied, as it came.
+public enum RemoteClipboardImage: Hashable, Sendable {
+    case png(Data)
+    /// CF_DIB: a BITMAPINFO header and the pixels, no file header.
+    case dib(Data)
+}
+
+public extension ClipboardCapableSession {
+    var remoteHasImage: Bool { false }
+    var remoteHasFiles: Bool { false }
+    func offerClipboardImage(png: Data?, dib: Data?) async throws { throw ClipboardTransferError.unavailable }
+    func offerClipboardFiles(_ files: [ClipboardFile]) async throws { throw ClipboardTransferError.unavailable }
+    func fetchRemoteClipboardImage() async throws -> RemoteClipboardImage {
+        throw ClipboardTransferError.unavailable
+    }
+    func fetchRemoteClipboardFiles() async throws -> [ClipboardFile] {
+        throw ClipboardTransferError.unavailable
+    }
+}
+
+/// The format the server opened the microphone with: interleaved signed
+/// 16-bit little-endian PCM.
+public struct MicrophoneFormat: Hashable, Sendable {
+    public let sampleRate: Int
+    public let channels: Int
+
+    public init(sampleRate: Int, channels: Int) {
+        self.sampleRate = sampleRate
+        self.channels = channels
+    }
+}
+
+/// Where captured PCM goes, on the data plane like input: synchronous and
+/// safe from the audio thread.
+public protocol MicrophoneSink: AnyObject, Sendable {
+    func send(pcm: Data)
+}
+
+/// docs/architecture.md section 4: a session that can take the microphone.
+public protocol MicrophoneCapableSession: RemoteSession {
+    nonisolated var microphoneSink: any MicrophoneSink { get }
 }

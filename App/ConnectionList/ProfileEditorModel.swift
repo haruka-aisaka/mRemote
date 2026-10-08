@@ -52,6 +52,10 @@ final class ProfileEditorModel: Identifiable {
 
     var group = ""
     var isFavorite = false
+    var redirectsMicrophone = false
+    var usesH264 = true
+    var remoteProgram = ""
+    var remoteArguments = ""
     var wakesOnLAN = false
     var macAddress = ""
     var wakeTarget = WakeOnLANConfiguration.defaultTarget
@@ -103,6 +107,10 @@ final class ProfileEditorModel: Identifiable {
             let rdp = profile.configuration.rdp ?? RDPConfiguration()
             group = profile.group ?? ""
             isFavorite = profile.isFavorite
+            redirectsMicrophone = rdp.redirectsMicrophone
+            usesH264 = rdp.prefersH264
+            remoteProgram = rdp.remoteApp?.program ?? ""
+            remoteArguments = rdp.remoteApp?.arguments ?? ""
             if let wake = profile.wakeOnLAN {
                 wakesOnLAN = true
                 macAddress = wake.macAddress
@@ -233,6 +241,12 @@ final class ProfileEditorModel: Identifiable {
         } else {
             configuration.gateway = nil
         }
+        configuration.microphone = redirectsMicrophone ? true : nil
+        configuration.usesH264 = usesH264 ? nil : false
+        let program = remoteProgram.trimmingCharacters(in: .whitespaces)
+        configuration.remoteApp = program.isEmpty
+            ? nil
+            : RemoteAppConfiguration(program: program, arguments: remoteArguments.trimmingCharacters(in: .whitespaces))
         switch sharedFolder {
         case .none:
             configuration.sharedFolder = nil

@@ -163,6 +163,15 @@ public struct RDPFile: Hashable, Sendable {
                 bypassesLocalAddresses: integer("gatewayusagemethod") == 2
             )
         }
+        if integer("remoteapplicationmode") == 1, let program = string("remoteapplicationprogram") {
+            configuration.remoteApp = RemoteAppConfiguration(
+                program: program,
+                arguments: string("remoteapplicationcmdline") ?? ""
+            )
+        }
+        if let capture = integer("audiocapturemode") {
+            configuration.microphone = capture == 1
+        }
         if integer("dynamic resolution") == 0,
            let width = integer("desktopwidth"), let height = integer("desktopheight"),
            width > 0, height > 0 {
@@ -186,9 +195,6 @@ public struct RDPFile: Hashable, Sendable {
     /// Settings in the file this app does not carry out, named for the user.
     public var unsupportedSettings: [String] {
         var names: [String] = []
-        if string("remoteapplicationprogram") != nil, integer("remoteapplicationmode") == 1 {
-            names.append("RemoteApp")
-        }
         if integer("use multimon") == 1 {
             names.append("use multimon")
         }

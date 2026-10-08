@@ -7,6 +7,8 @@ public enum SessionControlEvent: Sendable {
     /// The remote clipboard changed. Carries whether it now holds text; the
     /// text itself is never part of an event.
     case clipboardChanged(hasRemoteText: Bool)
+    /// The server opened the microphone in this format, or closed it (nil).
+    case microphone(MicrophoneFormat?)
     /// The server ended the session on purpose. Not an error, and not a
     /// reason to reconnect: reconnecting after another connection took the
     /// session over takes it back, and the two then fight over it.

@@ -16,7 +16,7 @@ import SessionCore
 /// the session is authoritative for its own state and pending challenge -
 /// docs/architecture.md requires the event stream to be a "read me again"
 /// signal rather than a log a consumer rebuilds state from.
-actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSession {
+actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSession, MicrophoneCapableSession {
     nonisolated let id: SessionID
     nonisolated let profileID: ProfileID?
     nonisolated let frameStore = LatestDesktopFrameStore()
@@ -24,6 +24,8 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     nonisolated let audioStream = PCMAudioStream()
     nonisolated var audioSource: any RemoteAudioSource { audioStream }
     nonisolated let inputSink: any DesktopInputSink
+    nonisolated var microphoneSink: any MicrophoneSink { microphone }
+    private nonisolated let microphone = RDPMicrophoneSink()
     nonisolated let initialDesktopSize: (width: Int, height: Int)
     /// The concrete sink, kept separately so the actor can retarget it without
     /// casting back out of the protocol.
@@ -80,6 +82,10 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     private var displayScaleIsPending = false
 
     private(set) var remoteHasText = false
+    private(set) var remoteHasImage = false
+    private(set) var remoteHasFiles = false
+    private var pendingImageFetch: (id: UInt64, continuation: CheckedContinuation<RemoteClipboardImage, Error>)?
+    private var pendingFilesFetch: (id: UInt64, files: [ClipboardFile], continuation: CheckedContinuation<[ClipboardFile], Error>)?
     private var nextClipboardID: UInt64 = 0
     private var pendingOffers: [UInt64: CheckedContinuation<Void, Error>] = [:]
     private var pendingFetch: (id: UInt64, continuation: CheckedContinuation<String, Error>)?
@@ -373,6 +379,75 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         }
     }
 
+    func offerClipboardImage(png: Data?, dib: Data?) async throws {
+        guard configuration.clipboardPolicy.allowsSend else { throw ClipboardTransferError.unavailable }
+        guard machine.state == .connected, let native else { throw ClipboardTransferError.unavailable }
+        let id = nextClipboardRequestID()
+        guard native.offerClipboardImage(offerID: id, png: png, dib: dib) == .ok else {
+            throw ClipboardTransferError.unsupportedContent
+        }
+        try await awaitOffer(id)
+    }
+
+    func offerClipboardFiles(_ files: [ClipboardFile]) async throws {
+        guard configuration.clipboardPolicy.allowsSend else { throw ClipboardTransferError.unavailable }
+        guard machine.state == .connected, let native else { throw ClipboardTransferError.unavailable }
+        let id = nextClipboardRequestID()
+        guard native.offerClipboardFiles(offerID: id, files: files) == .ok else {
+            throw ClipboardTransferError.unsupportedContent
+        }
+        try await awaitOffer(id)
+    }
+
+    private func awaitOffer(_ id: UInt64) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            pendingOffers[id] = continuation
+            Task { [weak self] in
+                try? await Task.sleep(for: Self.clipboardTimeout)
+                await self?.expireOffer(id)
+            }
+        }
+    }
+
+    func fetchRemoteClipboardImage() async throws -> RemoteClipboardImage {
+        guard configuration.clipboardPolicy.allowsReceive else { throw ClipboardTransferError.unavailable }
+        guard machine.state == .connected, let native else { throw ClipboardTransferError.unavailable }
+        guard remoteHasImage else { throw ClipboardTransferError.nothingToCopy }
+        guard pendingFetch == nil, pendingImageFetch == nil, pendingFilesFetch == nil else {
+            throw ClipboardTransferError.failed
+        }
+        let id = nextClipboardRequestID()
+        guard native.requestClipboardImage(requestID: id) == .ok else { throw ClipboardTransferError.unavailable }
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingImageFetch = (id, continuation)
+        }
+    }
+
+    /// The bridge answers each message within its own timeout, so a large
+    /// file is not cut short here.
+    func fetchRemoteClipboardFiles() async throws -> [ClipboardFile] {
+        guard configuration.clipboardPolicy.allowsReceive else { throw ClipboardTransferError.unavailable }
+        guard machine.state == .connected, let native else { throw ClipboardTransferError.unavailable }
+        guard remoteHasFiles else { throw ClipboardTransferError.nothingToCopy }
+        guard pendingFetch == nil, pendingImageFetch == nil, pendingFilesFetch == nil else {
+            throw ClipboardTransferError.failed
+        }
+        let id = nextClipboardRequestID()
+        guard native.requestClipboardFiles(requestID: id) == .ok else { throw ClipboardTransferError.unavailable }
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingFilesFetch = (id, [], continuation)
+        }
+    }
+
+    private static func clipboardError(_ status: RDPBridgeStatus) -> ClipboardTransferError {
+        switch status {
+        case .timeout: return .timedOut
+        case .unsupported: return .nothingToCopy
+        case .limitExceeded: return .unsupportedContent
+        default: return .failed
+        }
+    }
+
     private func nextClipboardRequestID() -> UInt64 {
         nextClipboardID &+= 1
         if nextClipboardID == 0 { nextClipboardID = 1 }
@@ -397,6 +472,11 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         pendingOffers.removeAll()
         pendingFetch?.continuation.resume(throwing: ClipboardTransferError.unavailable)
         pendingFetch = nil
+        pendingImageFetch?.continuation.resume(throwing: ClipboardTransferError.unavailable)
+        pendingImageFetch = nil
+        pendingFilesFetch?.continuation.resume(throwing: ClipboardTransferError.unavailable)
+        pendingFilesFetch = nil
+        microphone.setOpen(false)
     }
 
     /// The profile's choice, as the bridge takes it. Legacy RDP Security is
@@ -431,6 +511,12 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         }
         if configuration.clipboardPolicy != .disabled {
             flags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_CLIPBOARD)
+        }
+        if configuration.redirectsMicrophone {
+            flags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_MICROPHONE)
+        }
+        if configuration.prefersH264 {
+            flags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_H264)
         }
         return flags
     }
@@ -476,6 +562,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         native = session
         session.setAudioFocused(visibility == .focused)
         pointerSink.attach(session)
+        microphone.attach(session)
         terminationCause = nil
         negotiatedChannels = []
         currentDesktopSize = initialDesktopSize
@@ -501,6 +588,9 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             securityPolicy: Self.securityPolicy(for: configuration.securityPolicy)
         )
         connection.gateway = gatewayConnection()
+        if let remoteApp = configuration.remoteApp, !remoteApp.program.isEmpty {
+            connection.remoteApp = (remoteApp.program, remoteApp.arguments)
+        }
         if let folder = openSharedFolder() {
             connection.drive = folder
             connection.channelFlags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_DRIVE)
@@ -677,9 +767,41 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             currentDesktopSize = (Int(width), Int(height))
             logger.session("desktop resized to \(width)x\(height)")
 
-        case let .clipboardRemoteFormats(hasText):
+        case let .clipboardRemoteFormatsRich(hasText, hasImage, hasFiles):
             remoteHasText = hasText
+            remoteHasImage = hasImage
+            remoteHasFiles = hasFiles
             emit(.clipboardChanged(hasRemoteText: hasText))
+
+        case let .clipboardImage(requestID, image, status):
+            guard let pending = pendingImageFetch, pending.id == requestID else { return }
+            pendingImageFetch = nil
+            if let image {
+                pending.continuation.resume(returning: image)
+            } else {
+                pending.continuation.resume(throwing: Self.clipboardError(status))
+            }
+
+        case let .clipboardFile(requestID, file, isLast, status):
+            guard var pending = pendingFilesFetch, pending.id == requestID else { return }
+            if let file {
+                pending.files.append(file)
+            } else {
+                pendingFilesFetch = nil
+                pending.continuation.resume(throwing: Self.clipboardError(status))
+                return
+            }
+            if isLast {
+                pendingFilesFetch = nil
+                pending.continuation.resume(returning: pending.files)
+            } else {
+                pendingFilesFetch = pending
+            }
+
+        case let .microphone(format):
+            microphone.setOpen(format != nil)
+            logger.session(format.map { "microphone opened \($0.sampleRate) Hz x\($0.channels)" } ?? "microphone closed")
+            emit(.microphone(format))
 
         case let .clipboardOffer(id, stage, _):
             switch stage {

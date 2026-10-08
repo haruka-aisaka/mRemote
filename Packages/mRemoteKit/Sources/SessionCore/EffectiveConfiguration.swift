@@ -20,6 +20,9 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
     public let securityPolicy: SecurityPolicy
     public let gateway: RDPGatewayConfiguration?
     public let sharedFolder: SharedFolder?
+    public let remoteApp: RemoteAppConfiguration?
+    public let redirectsMicrophone: Bool
+    public let prefersH264: Bool
 
     public init(
         profileID: ProfileID?,
@@ -36,7 +39,10 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
         reconnectPolicy: ReconnectPolicy,
         securityPolicy: SecurityPolicy,
         gateway: RDPGatewayConfiguration? = nil,
-        sharedFolder: SharedFolder? = nil
+        sharedFolder: SharedFolder? = nil,
+        remoteApp: RemoteAppConfiguration? = nil,
+        redirectsMicrophone: Bool = false,
+        prefersH264: Bool = true
     ) {
         self.profileID = profileID
         self.displayName = displayName
@@ -53,6 +59,9 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
         self.securityPolicy = securityPolicy
         self.gateway = gateway
         self.sharedFolder = sharedFolder
+        self.remoteApp = remoteApp
+        self.redirectsMicrophone = redirectsMicrophone
+        self.prefersH264 = prefersH264
     }
 
     /// Eisu/Kana to Muhenkan/Henkan is only promised for the Japanese layout,
@@ -85,7 +94,10 @@ public struct EffectiveProfileResolver: Sendable {
             reconnectPolicy: rdp.reconnectPolicy.resolved(default: globalSettings.reconnectPolicy),
             securityPolicy: rdp.securityPolicy,
             gateway: rdp.gateway,
-            sharedFolder: rdp.sharedFolder
+            sharedFolder: rdp.sharedFolder,
+            remoteApp: rdp.remoteApp,
+            redirectsMicrophone: rdp.redirectsMicrophone,
+            prefersH264: rdp.prefersH264
         )
     }
 }

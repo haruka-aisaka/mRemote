@@ -163,6 +163,22 @@ final class LiveRDPUITests: XCTestCase {
             guard let data = Data(base64Encoded: arguments.first ?? ""),
                   let text = String(data: data, encoding: .utf8) else { return "bad base64" }
             UIPasteboard.general.string = text
+        case "springboard":
+            // A system alert, such as the microphone permission prompt.
+            let button = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                .buttons[arguments.joined(separator: " ")].firstMatch
+            guard button.waitForExistence(timeout: 5) else { return "missing" }
+            button.tap()
+        case "setpasteboardimage":
+            // 120x80, red on the left and blue on the right, to recognise
+            // on the other side.
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 120, height: 80)).image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 60, height: 80))
+                UIColor.blue.setFill()
+                context.fill(CGRect(x: 60, y: 0, width: 60, height: 80))
+            }
+            UIPasteboard.general.image = image
         case "pasteboard":
             let text = UIPasteboard.general.string ?? ""
             return "pasteboard=" + Data(text.utf8).base64EncodedString()

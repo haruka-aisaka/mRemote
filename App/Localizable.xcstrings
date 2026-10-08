@@ -30,6 +30,16 @@
         }
       }
     },
+    "%@ から画像をコピーしました": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied the image from %@"
+          }
+        }
+      }
+    },
     "%@ が起動しませんでした（2 分待ちました）。": {
       "localizations": {
         "en": {
@@ -46,6 +56,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sign In to %@"
+          }
+        }
+      }
+    },
+    "%@ に画像を貼り付けました": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pasted the image into %@"
           }
         }
       }
@@ -126,6 +146,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ (adjustable)"
+          }
+        }
+      }
+    },
+    "%lld 個のファイルを %@ に貼り付けました": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pasted %lld files into %@"
+          }
+        }
+      }
+    },
+    "%lld 個のファイルをファイル App の「mRemote › 受信」に保存しました": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved %lld files to “mRemote › Received” in the Files app"
           }
         }
       }
@@ -235,6 +275,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Globe key"
+          }
+        }
+      }
+    },
+    "H.264 で画面を受け取る": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receive the Screen as H.264"
           }
         }
       }
@@ -1513,6 +1563,16 @@
         }
       }
     },
+    "ファイルを貼り付けで送る…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send Files by Pasting…"
+          }
+        }
+      }
+    },
     "フォルダの共有": {
       "localizations": {
         "en": {
@@ -1549,6 +1609,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Floating"
+          }
+        }
+      }
+    },
+    "プログラム（例 ||notepad）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Program (e.g. ||notepad)"
           }
         }
       }
@@ -1623,6 +1693,36 @@
         }
       }
     },
+    "マイクは Windows 側のアプリが使うときだけ録音します。H.264 は動きの多い画面で通信量が減ります（端末のハードウェアで復号します）。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The microphone records only while an app on the Windows side uses it. H.264 uses less data for screens with a lot of motion (decoded by the device's hardware)."
+          }
+        }
+      }
+    },
+    "マイクを使う": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Microphone"
+          }
+        }
+      }
+    },
+    "マイクを使用中（%lld kHz）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microphone in Use (%lld kHz)"
+          }
+        }
+      }
+    },
     "メモリなどが足りず接続を始められませんでした。ほかのセッションを閉じてからもう一度試してください。": {
       "localizations": {
         "en": {
@@ -1693,6 +1793,16 @@
         }
       }
     },
+    "リモートでコピーしたファイルを保存": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Files Copied on the Remote"
+          }
+        }
+      }
+    },
     "リモートでテキストをコピーすると、ここから端末へコピーできます": {
       "localizations": {
         "en": {
@@ -1723,12 +1833,42 @@
         }
       }
     },
+    "リモートにファイルがあります": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The remote has files"
+          }
+        }
+      }
+    },
+    "リモートに画像があります": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The remote has an image"
+          }
+        }
+      }
+    },
     "リモートのテキストを端末へコピー": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Copy Remote Text to This Device"
+          }
+        }
+      }
+    },
+    "リモートの画像を端末へコピー": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy the Remote Image to This Device"
           }
         }
       }
@@ -2243,6 +2383,16 @@
         }
       }
     },
+    "受信": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Received"
+          }
+        }
+      }
+    },
     "受信のみ": {
       "localizations": {
         "en": {
@@ -2479,6 +2629,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Always"
+          }
+        }
+      }
+    },
+    "引数（任意）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arguments (Optional)"
           }
         }
       }
@@ -3123,6 +3283,16 @@
         }
       }
     },
+    "画像を読み取れませんでした": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not read the image"
+          }
+        }
+      }
+    },
     "画面": {
       "localizations": {
         "en": {
@@ -3239,6 +3409,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Waiting for You"
+          }
+        }
+      }
+    },
+    "空欄ならデスクトップ全体に接続します。指定すると、そのプログラムのウィンドウだけを表示します（サーバー側で RemoteApp を許可しておく必要があります）。RemoteApp では H.264 を使いません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave empty to connect to the whole desktop. With a program, only its windows are shown (the server has to allow RemoteApp). RemoteApp does not use H.264."
           }
         }
       }
@@ -3789,6 +3969,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Audio"
+          }
+        }
+      }
+    },
+    "音声と画質": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio and Picture"
           }
         }
       }

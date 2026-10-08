@@ -67,6 +67,8 @@ struct RDPNativeConnection: Sendable {
     /// A folder the computer sees as a drive; channelFlags carries
     /// MR_RDP_CHANNEL_FLAG_DRIVE with it.
     var drive: (path: String, name: String)?
+    /// RemoteApp's program and its arguments.
+    var remoteApp: (program: String, arguments: String)?
 
     struct Gateway: Sendable {
         let host: String
@@ -90,10 +92,14 @@ enum RDPNativeEvent: Sendable {
     /// the session can record an approval it did not have to raise.
     case certificateSettled(accepted: Bool, detail: String)
     case displayResized(width: UInt32, height: UInt32)
-    case clipboardRemoteFormats(hasText: Bool)
     case clipboardOffer(id: UInt64, stage: RDPClipboardOfferStage, succeeded: Bool)
     /// The remote text, already decoded; nil when the request failed.
     case clipboardText(requestID: UInt64, text: String?, status: RDPBridgeStatus)
+    case clipboardRemoteFormatsRich(hasText: Bool, hasImage: Bool, hasFiles: Bool)
+    case clipboardImage(requestID: UInt64, image: RemoteClipboardImage?, status: RDPBridgeStatus)
+    /// One remote file, or the end of the request when `file` is nil.
+    case clipboardFile(requestID: UInt64, file: ClipboardFile?, isLast: Bool, status: RDPBridgeStatus)
+    case microphone(MicrophoneFormat?)
     /// `mr_rdp_session_run` returned and the handle has been destroyed. This,
     /// not a backend phase, is when the session may call itself disconnected.
     case finished(run: RDPBridgeStatus, destroy: RDPBridgeStatus?)
@@ -286,6 +292,27 @@ final class RDPNativeSession: @unchecked Sendable {
         context.requestClipboardText(requestID: requestID)
     }
 
+    func offerClipboardImage(offerID: UInt64, png: Data?, dib: Data?) -> RDPBridgeStatus {
+        context.offerClipboardImage(offerID: offerID, png: png, dib: dib)
+    }
+
+    func offerClipboardFiles(offerID: UInt64, files: [ClipboardFile]) -> RDPBridgeStatus {
+        context.offerClipboardFiles(offerID: offerID, files: files)
+    }
+
+    func requestClipboardImage(requestID: UInt64) -> RDPBridgeStatus {
+        context.requestClipboard(requestID: requestID, files: false)
+    }
+
+    func requestClipboardFiles(requestID: UInt64) -> RDPBridgeStatus {
+        context.requestClipboard(requestID: requestID, files: true)
+    }
+
+    /// From the audio thread: copied by the bridge before it returns.
+    func sendAudioCapture(_ pcm: Data) {
+        context.sendAudioCapture(pcm)
+    }
+
     private static func create(
         connection: RDPNativeConnection,
         generation: UInt64,
@@ -305,6 +332,9 @@ final class RDPNativeSession: @unchecked Sendable {
         callbacks.on_clipboard_remote_formats = rdpClipboardRemoteFormatsCallback
         callbacks.on_clipboard_offer = rdpClipboardOfferCallback
         callbacks.on_clipboard_text = rdpClipboardTextCallback
+        callbacks.on_clipboard_image = rdpClipboardImageCallback
+        callbacks.on_clipboard_file = rdpClipboardFileCallback
+        callbacks.on_audio_capture = rdpAudioCaptureCallback
 
         var config = mr_rdp_config()
         mr_rdp_config_init(&config)
@@ -339,6 +369,14 @@ final class RDPNativeSession: @unchecked Sendable {
             config.drive_path_length = drive.path.utf8.count
             config.drive_name = UnsafePointer(cString(drive.name))
             config.drive_name_length = drive.name.utf8.count
+        }
+        if let remoteApp = connection.remoteApp {
+            config.remote_program = UnsafePointer(cString(remoteApp.program))
+            config.remote_program_length = remoteApp.program.utf8.count
+            if !remoteApp.arguments.isEmpty {
+                config.remote_arguments = UnsafePointer(cString(remoteApp.arguments))
+                config.remote_arguments_length = remoteApp.arguments.utf8.count
+            }
         }
         var gatewayPassword: SecureBytes?
         if let gateway = connection.gateway {
@@ -459,8 +497,74 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
             ?? .invalidState
     }
 
-    func receiveClipboardRemoteFormats(hasText: Bool) {
-        continuation.yield(.clipboardRemoteFormats(hasText: hasText))
+    func receiveClipboardRemoteFormats(hasText: Bool, hasImage: Bool = false, hasFiles: Bool = false) {
+        continuation.yield(.clipboardRemoteFormatsRich(hasText: hasText, hasImage: hasImage, hasFiles: hasFiles))
+    }
+
+    func receiveClipboardImage(requestID: UInt64, image: RemoteClipboardImage?, status: RDPBridgeStatus) {
+        continuation.yield(.clipboardImage(requestID: requestID, image: image, status: status))
+    }
+
+    func receiveClipboardFile(requestID: UInt64, file: ClipboardFile?, isLast: Bool, status: RDPBridgeStatus) {
+        continuation.yield(.clipboardFile(requestID: requestID, file: file, isLast: isLast, status: status))
+    }
+
+    func receiveMicrophone(_ format: MicrophoneFormat?) {
+        continuation.yield(.microphone(format))
+    }
+
+    func offerClipboardImage(offerID: UInt64, png: Data?, dib: Data?) -> RDPBridgeStatus {
+        let png = png ?? Data()
+        let dib = dib ?? Data()
+        return png.withUnsafeBytes { pngBytes in
+            dib.withUnsafeBytes { dibBytes in
+                var offer = mr_rdp_clipboard_image_offer()
+                mr_rdp_clipboard_image_offer_init(&offer)
+                offer.offer_id = offerID
+                offer.png_bytes = pngBytes.isEmpty ? nil : pngBytes.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                offer.png_byte_count = pngBytes.count
+                offer.dib_bytes = dibBytes.isEmpty ? nil : dibBytes.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                offer.dib_byte_count = dibBytes.count
+                return calls.offerClipboardImage(&offer).flatMap(RDPBridgeStatus.init(rawValue:)) ?? .invalidState
+            }
+        }
+    }
+
+    /// Every name and body is pinned for the one call; the bridge copies.
+    func offerClipboardFiles(offerID: UInt64, files: [ClipboardFile]) -> RDPBridgeStatus {
+        let names: [UnsafeMutablePointer<CChar>] = files.map { strdup($0.name)! }
+        defer { names.forEach { free($0) } }
+        let bodies: [NSData] = files.map { $0.data as NSData }
+        var native: [mr_rdp_clipboard_file] = []
+        for (index, file) in files.enumerated() {
+            native.append(mr_rdp_clipboard_file(
+                name: UnsafePointer(names[index]),
+                name_length: file.name.utf8.count,
+                bytes: bodies[index].length == 0 ? nil : bodies[index].bytes.assumingMemoryBound(to: UInt8.self),
+                byte_count: bodies[index].length
+            ))
+        }
+        return native.withUnsafeBufferPointer { buffer in
+            var offer = mr_rdp_clipboard_files_offer()
+            mr_rdp_clipboard_files_offer_init(&offer)
+            offer.offer_id = offerID
+            offer.files = buffer.baseAddress
+            offer.file_count = buffer.count
+            let status = calls.offerClipboardFiles(&offer).flatMap(RDPBridgeStatus.init(rawValue:)) ?? .invalidState
+            withExtendedLifetime(bodies) {}
+            return status
+        }
+    }
+
+    func requestClipboard(requestID: UInt64, files: Bool) -> RDPBridgeStatus {
+        let status = files
+            ? calls.requestClipboardFiles(requestID: requestID)
+            : calls.requestClipboardImage(requestID: requestID)
+        return status.flatMap(RDPBridgeStatus.init(rawValue:)) ?? .invalidState
+    }
+
+    func sendAudioCapture(_ pcm: Data) {
+        pcm.withUnsafeBytes { _ = calls.sendAudioCapture($0) }
     }
 
     func receiveClipboardOffer(id: UInt64, stage: RDPClipboardOfferStage, succeeded: Bool) {
@@ -954,7 +1058,69 @@ private func rdpClipboardRemoteFormatsCallback(
               MemoryLayout<mr_rdp_clipboard_remote_formats_event>.size
           )
     else { return }
-    context.receiveClipboardRemoteFormats(hasText: eventPointer.pointee.has_text != 0)
+    let event = eventPointer.pointee
+    context.receiveClipboardRemoteFormats(
+        hasText: event.has_text != 0,
+        hasImage: event.has_image != 0,
+        hasFiles: event.has_files != 0
+    )
+}
+
+/// ABI 5. Copied here: the bridge's view ends with the callback.
+private func rdpClipboardImageCallback(
+    _ opaque: UnsafeMutableRawPointer?,
+    _ eventPointer: UnsafePointer<mr_rdp_clipboard_image_event>?
+) {
+    guard let context = callbackContext(opaque), let eventPointer,
+          eventPointer.pointee.struct_size >= UInt32(MemoryLayout<mr_rdp_clipboard_image_event>.size)
+    else { return }
+    let event = eventPointer.pointee
+    let status = RDPBridgeStatus(rawValue: event.status) ?? .backend
+    guard status == .ok, let bytes = event.bytes, event.byte_count > 0 else {
+        context.receiveClipboardImage(requestID: event.request_id, image: nil, status: status == .ok ? .invalidData : status)
+        return
+    }
+    let data = Data(bytes: bytes, count: event.byte_count)
+    let image: RemoteClipboardImage = event.format == mr_rdp_clipboard_image_format(MR_RDP_CLIPBOARD_IMAGE_PNG)
+        ? .png(data) : .dib(data)
+    context.receiveClipboardImage(requestID: event.request_id, image: image, status: .ok)
+}
+
+private func rdpClipboardFileCallback(
+    _ opaque: UnsafeMutableRawPointer?,
+    _ eventPointer: UnsafePointer<mr_rdp_clipboard_file_event>?
+) {
+    guard let context = callbackContext(opaque), let eventPointer,
+          eventPointer.pointee.struct_size >= UInt32(MemoryLayout<mr_rdp_clipboard_file_event>.size)
+    else { return }
+    let event = eventPointer.pointee
+    let status = RDPBridgeStatus(rawValue: event.status) ?? .backend
+    guard status == .ok, let namePointer = event.name, event.name_length > 0,
+          let name = String(data: Data(bytes: namePointer, count: event.name_length), encoding: .utf8) else {
+        context.receiveClipboardFile(requestID: event.request_id, file: nil, isLast: true,
+                                     status: status == .ok ? .invalidData : status)
+        return
+    }
+    let data = event.bytes.map { Data(bytes: $0, count: event.byte_count) } ?? Data()
+    context.receiveClipboardFile(
+        requestID: event.request_id,
+        file: ClipboardFile(name: name, data: data),
+        isLast: event.is_last != 0,
+        status: .ok
+    )
+}
+
+private func rdpAudioCaptureCallback(
+    _ opaque: UnsafeMutableRawPointer?,
+    _ eventPointer: UnsafePointer<mr_rdp_audio_capture_event>?
+) {
+    guard let context = callbackContext(opaque), let eventPointer,
+          eventPointer.pointee.struct_size >= UInt32(MemoryLayout<mr_rdp_audio_capture_event>.size)
+    else { return }
+    let event = eventPointer.pointee
+    context.receiveMicrophone(event.is_open != 0
+        ? MicrophoneFormat(sampleRate: Int(event.samples_per_second), channels: Int(event.channels))
+        : nil)
 }
 
 private func rdpClipboardOfferCallback(

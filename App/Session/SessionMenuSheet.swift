@@ -48,6 +48,7 @@ struct SessionMenuSheet: View {
     @AppStorage(KeyShortcutList.storageKey) private var shortcuts = KeyShortcutList.standard
     @AppStorage(ExternalDisplayMode.storageKey) private var externalMode = ExternalDisplayMode.desktop
     @AppStorage(PencilInput.storageKey) private var sendsPencilAsPen = true
+    @State private var isPickingFilesToSend = false
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -396,6 +397,11 @@ struct SessionMenuSheet: View {
 
                 if model.clipboardPolicy != .disabled {
                     clipboardSection
+                        .fileImporter(isPresented: $isPickingFilesToSend, allowedContentTypes: [.item],
+                                      allowsMultipleSelection: true) { result in
+                            guard case .success(let urls) = result else { return }
+                            Task { await model.sendFilesToRemote(urls) }
+                        }
                 }
 
                 Section("音声") {
@@ -446,6 +452,11 @@ extension SessionMenuSheet {
     @ViewBuilder
     var clipboardSection: some View {
         Section {
+            if let format = model.microphoneFormat {
+                Label(String(localized: "マイクを使用中（\(format.sampleRate / 1000) kHz）"), systemImage: "mic.fill")
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("session-microphone-in-use")
+            }
             if model.clipboardPolicy.allowsSend {
                 // PasteButton hands over the pasteboard without the system
                 // "allow paste" prompt, because the tap itself is the consent.
@@ -455,6 +466,23 @@ extension SessionMenuSheet {
                 }
                 .disabled(!model.canSendClipboard)
                 .accessibilityIdentifier("clipboard-paste-to-remote")
+                // An image from this device's clipboard, pasted as an image.
+                PasteButton(supportedContentTypes: [.image]) { providers in
+                    guard let provider = providers.first(where: { $0.canLoadObject(ofClass: UIImage.self) }) else { return }
+                    _ = provider.loadObject(ofClass: UIImage.self) { object, _ in
+                        guard let image = object as? UIImage else { return }
+                        Task { @MainActor in await model.pasteImageToRemote(image) }
+                    }
+                }
+                .disabled(!model.canSendClipboard)
+                .accessibilityIdentifier("clipboard-paste-image-to-remote")
+                Button {
+                    isPickingFilesToSend = true
+                } label: {
+                    Label("ファイルを貼り付けで送る…", systemImage: "doc.badge.arrow.up")
+                }
+                .disabled(!model.canSendClipboard)
+                .accessibilityIdentifier("clipboard-send-files")
             }
             if model.clipboardPolicy.allowsReceive {
                 Button {
@@ -468,12 +496,32 @@ extension SessionMenuSheet {
                 }
                 .disabled(!model.canReceiveClipboard)
                 .accessibilityIdentifier("clipboard-copy-to-device")
+                Button {
+                    Task {
+                        if let image = await model.copyRemoteImageToDevice() {
+                            UIPasteboard.general.image = image
+                        }
+                    }
+                } label: {
+                    Label("リモートの画像を端末へコピー", systemImage: "photo.on.rectangle")
+                }
+                .disabled(!model.canReceiveClipboardMedia || !model.remoteHasImage)
+                .accessibilityIdentifier("clipboard-copy-image-to-device")
+                Button {
+                    Task { await model.saveRemoteFilesToDevice() }
+                } label: {
+                    Label("リモートでコピーしたファイルを保存", systemImage: "square.and.arrow.down.on.square")
+                }
+                .disabled(!model.canReceiveClipboardMedia || !model.remoteHasFiles)
+                .accessibilityIdentifier("clipboard-save-files")
             }
         } header: {
             Text("クリップボード")
         } footer: {
-            if model.remoteHasText {
-                Text("リモートにテキストがあります")
+            if model.remoteHasText || model.remoteHasImage || model.remoteHasFiles {
+                Text(model.remoteHasFiles ? String(localized: "リモートにファイルがあります")
+                     : model.remoteHasImage ? String(localized: "リモートに画像があります")
+                     : String(localized: "リモートにテキストがあります"))
             } else if model.clipboardPolicy.allowsReceive {
                 Text("リモートでテキストをコピーすると、ここから端末へコピーできます")
             }

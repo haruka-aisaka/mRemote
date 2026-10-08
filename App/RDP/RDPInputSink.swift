@@ -187,3 +187,37 @@ final class RDPInputSink: DesktopInputSink, @unchecked Sendable {
         }
     }
 }
+
+/// Microphone PCM to the bridge, from the audio thread, only while the
+/// server has the microphone open.
+final class RDPMicrophoneSink: MicrophoneSink, @unchecked Sendable {
+    private let lock = NSLock()
+    private var native: RDPNativeSession?
+    private var isOpen = false
+
+    func attach(_ native: RDPNativeSession?) {
+        lock.lock()
+        self.native = native
+        isOpen = false
+        lock.unlock()
+    }
+
+    func setOpen(_ open: Bool) {
+        lock.lock()
+        isOpen = open
+        lock.unlock()
+    }
+
+    func send(pcm: Data) {
+        lock.lock()
+        let target = isOpen ? native : nil
+        lock.unlock()
+        // The bridge takes at most 64 KiB a call.
+        var offset = 0
+        while let target, offset < pcm.count {
+            let end = min(offset + 64 * 1024, pcm.count)
+            target.sendAudioCapture(pcm.subdata(in: offset..<end))
+            offset = end
+        }
+    }
+}

@@ -84,7 +84,8 @@ final class RDPFileTests: XCTestCase {
         gatewayhostname:s:gw.example
         gatewayusagemethod:i:1
         """)
-        XCTAssertEqual(file.unsupportedSettings, ["RemoteApp"])
+        XCTAssertEqual(file.unsupportedSettings, [])
+        XCTAssertEqual(file.configuration().remoteApp, RemoteAppConfiguration(program: "||excel"))
         let gateway = file.configuration().gateway
         XCTAssertEqual(gateway?.host, "gw.example")
         XCTAssertEqual(gateway?.port, 443)

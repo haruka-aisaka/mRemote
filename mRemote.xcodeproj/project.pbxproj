@@ -372,6 +372,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "config/mRemote-Info.plist";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to the Windows computers you choose on your local network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Send your voice to the remote computer, when you turn on its microphone.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -385,6 +386,12 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-all_load",
+					"-framework",
+					VideoToolbox,
+					"-framework",
+					CoreMedia,
+					"-framework",
+					CoreVideo,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mikuta0407.mRemote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -405,6 +412,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "config/mRemote-Info.plist";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to the Windows computers you choose on your local network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Send your voice to the remote computer, when you turn on its microphone.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -418,6 +426,12 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-all_load",
+					"-framework",
+					VideoToolbox,
+					"-framework",
+					CoreMedia,
+					"-framework",
+					CoreVideo,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mikuta0407.mRemote;
 				PRODUCT_NAME = "$(TARGET_NAME)";

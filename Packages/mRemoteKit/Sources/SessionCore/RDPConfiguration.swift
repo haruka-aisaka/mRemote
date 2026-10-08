@@ -149,6 +149,18 @@ public struct SharedFolder: Hashable, Sendable, Codable {
     }
 }
 
+/// A program to run as a RemoteApp: an alias the server publishes, such as
+/// "||notepad", or a path.
+public struct RemoteAppConfiguration: Hashable, Sendable, Codable {
+    public var program: String
+    public var arguments: String
+
+    public init(program: String, arguments: String = "") {
+        self.program = program
+        self.arguments = arguments
+    }
+}
+
 /// Version 1 of the RDP-specific profile payload.
 public struct RDPConfiguration: Hashable, Sendable, Codable {
     public var resolutionPolicy: Inheritable<ResolutionPolicy>
@@ -163,6 +175,15 @@ public struct RDPConfiguration: Hashable, Sendable, Codable {
     /// Added after version 1; absent in older documents, which decode as nil.
     public var gateway: RDPGatewayConfiguration?
     public var sharedFolder: SharedFolder?
+    /// RemoteApp: one program instead of the desktop.
+    public var remoteApp: RemoteAppConfiguration?
+    /// Sends this device's microphone when the computer asks for it.
+    public var microphone: Bool?
+    /// H.264 (AVC420) graphics. Nil is the default, on.
+    public var usesH264: Bool?
+
+    public var redirectsMicrophone: Bool { microphone ?? false }
+    public var prefersH264: Bool { usesH264 ?? true }
 
     public init(
         resolutionPolicy: Inheritable<ResolutionPolicy> = .inherit,

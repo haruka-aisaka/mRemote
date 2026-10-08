@@ -3,6 +3,7 @@ import Observation
 import UIKit
 import InputCore
 import SessionCore
+import AppleAdapters
 
 /// Drives the full-screen session: it mirrors the session's authoritative
 /// state into something a view can render, and turns the floating menu's
@@ -42,6 +43,10 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     private(set) var reconnectAttempt: Int?
     private var hadConnected = false
     private(set) var remoteHasText = false
+    private(set) var remoteHasImage = false
+    private(set) var remoteHasFiles = false
+    /// The microphone, while the server has it open.
+    private(set) var microphoneFormat: MicrophoneFormat?
     /// Shown as a toast; never contains clipboard text (docs/ui-flow.md 6.2).
     var clipboardMessage: String?
     private(set) var isTransferringClipboard = false
@@ -291,10 +296,103 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             // A new remote copy: whatever was received before is no longer
             // what the remote holds.
             lastReceivedText = nil
+            await refreshRemoteClipboardKinds()
+        case .microphone(let format):
+            microphoneFormat = format
+            if let format, let capable = session as? any MicrophoneCapableSession {
+                await MicrophoneCapture.shared.start(format: format, sink: capable.microphoneSink, owner: self)
+            } else {
+                MicrophoneCapture.shared.stop(for: self)
+            }
         }
     }
 
     // MARK: - Clipboard
+
+    @ObservationIgnored private let clipboardLog = AppLog.logger(.clipboard)
+
+    private func refreshRemoteClipboardKinds() async {
+        guard let clipboard = session as? any ClipboardCapableSession else { return }
+        remoteHasImage = await clipboard.remoteHasImage
+        remoteHasFiles = await clipboard.remoteHasFiles
+    }
+
+    /// An image from this device, pasted into the focused remote window.
+    func pasteImageToRemote(_ image: UIImage) async {
+        guard canSendClipboard, let clipboard = session as? any ClipboardCapableSession else { return }
+        isTransferringClipboard = true
+        defer { isTransferringClipboard = false }
+        let encoded = ClipboardMedia.encode(image)
+        do {
+            clipboardLog.info("image offer: png \(encoded.png?.count ?? 0, privacy: .public) dib \(encoded.dib?.count ?? 0, privacy: .public)")
+            try await clipboard.offerClipboardImage(png: encoded.png, dib: encoded.dib)
+            await pasteAfterOffer()
+            clipboardMessage = String(localized: "\(displayName) に画像を貼り付けました")
+        } catch {
+            clipboardMessage = Self.clipboardFailureText(error)
+        }
+    }
+
+    /// Files from this device onto the remote clipboard; pasted with Ctrl+V
+    /// into Explorer, or wherever the user pastes them next.
+    func sendFilesToRemote(_ urls: [URL]) async {
+        guard canSendClipboard, let clipboard = session as? any ClipboardCapableSession else { return }
+        let files = ClipboardMedia.read(urls)
+        guard !files.isEmpty else { return }
+        isTransferringClipboard = true
+        defer { isTransferringClipboard = false }
+        do {
+            try await clipboard.offerClipboardFiles(files)
+            await pasteAfterOffer()
+            clipboardMessage = String(localized: "\(files.count) 個のファイルを \(displayName) に貼り付けました")
+        } catch {
+            clipboardMessage = Self.clipboardFailureText(error)
+        }
+    }
+
+    private func pasteAfterOffer() async {
+        isMenuPresented = false
+        for _ in 0..<50 where !acceptsInput {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        sendPasteChord()
+    }
+
+    func copyRemoteImageToDevice() async -> UIImage? {
+        guard canReceiveClipboardMedia, let clipboard = session as? any ClipboardCapableSession else { return nil }
+        isTransferringClipboard = true
+        defer { isTransferringClipboard = false }
+        do {
+            let remote = try await clipboard.fetchRemoteClipboardImage()
+            let image = ClipboardMedia.image(from: remote)
+            switch remote {
+            case .png(let data): clipboardLog.info("image fetched: png \(data.count, privacy: .public) bytes, decoded=\(image != nil, privacy: .public)")
+            case .dib(let data): clipboardLog.info("image fetched: dib \(data.count, privacy: .public) bytes, decoded=\(image != nil, privacy: .public)")
+            }
+            clipboardMessage = image == nil
+                ? String(localized: "画像を読み取れませんでした")
+                : String(localized: "\(displayName) から画像をコピーしました")
+            return image
+        } catch {
+            clipboardLog.error("image fetch failed: \(String(describing: error), privacy: .public)")
+            clipboardMessage = Self.clipboardFailureText(error)
+            return nil
+        }
+    }
+
+    func saveRemoteFilesToDevice() async {
+        guard canReceiveClipboardMedia, let clipboard = session as? any ClipboardCapableSession else { return }
+        isTransferringClipboard = true
+        defer { isTransferringClipboard = false }
+        do {
+            let files = try await clipboard.fetchRemoteClipboardFiles()
+            clipboardLog.info("files fetched: \(files.count, privacy: .public)")
+            _ = try ClipboardMedia.save(files)
+            clipboardMessage = String(localized: "\(files.count) 個のファイルをファイル App の「mRemote › 受信」に保存しました")
+        } catch {
+            clipboardMessage = Self.clipboardFailureText(error)
+        }
+    }
 
     var clipboardPolicy: ClipboardPolicy { configuration.clipboardPolicy }
 
@@ -304,7 +402,12 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     }
 
     var canReceiveClipboard: Bool {
-        clipboardPolicy.allowsReceive && state == .connected && remoteHasText
+        canReceiveClipboardMedia && remoteHasText
+    }
+
+    /// Images and files have their own flags; text is not required.
+    var canReceiveClipboardMedia: Bool {
+        clipboardPolicy.allowsReceive && state == .connected
             && session is any ClipboardCapableSession && !isTransferringClipboard
     }
 
@@ -629,6 +732,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     }
 
     func disconnect() async {
+        MicrophoneCapture.shared.stop(for: self)
         cancelReconnect()
         isMenuPresented = false
         softwareKeyboard.hide()

@@ -117,6 +117,31 @@ struct ProfileEditorView: View {
 
                 wakeSection
                 gatewaySection
+                Section {
+                    Toggle("マイクを使う", isOn: $model.redirectsMicrophone)
+                        .accessibilityIdentifier("profile-microphone-toggle")
+                    Toggle("H.264 で画面を受け取る", isOn: $model.usesH264)
+                        .accessibilityIdentifier("profile-h264-toggle")
+                } header: {
+                    Text("音声と画質")
+                } footer: {
+                    Text("マイクは Windows 側のアプリが使うときだけ録音します。H.264 は動きの多い画面で通信量が減ります（端末のハードウェアで復号します）。")
+                }
+                Section {
+                    TextField("プログラム（例 ||notepad）", text: $model.remoteProgram)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("profile-remote-program-field")
+                    if !model.remoteProgram.trimmingCharacters(in: .whitespaces).isEmpty {
+                        TextField("引数（任意）", text: $model.remoteArguments)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                } header: {
+                    Text("RemoteApp")
+                } footer: {
+                    Text("空欄ならデスクトップ全体に接続します。指定すると、そのプログラムのウィンドウだけを表示します（サーバー側で RemoteApp を許可しておく必要があります）。RemoteApp では H.264 を使いません。")
+                }
                 sharedFolderSection
 
                 Section("チャネル") {
