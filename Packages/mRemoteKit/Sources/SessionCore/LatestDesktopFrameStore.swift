@@ -94,6 +94,13 @@ public final class LatestDesktopFrameStore: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// The newest whole surface, drawn or not: what a thumbnail is made from.
+    public var latestSurface: DesktopFrame? {
+        lock.lock()
+        defer { lock.unlock() }
+        return pending ?? retained
+    }
+
     public var hasRetainedSurface: Bool {
         lock.lock()
         defer { lock.unlock() }

@@ -87,6 +87,23 @@ public struct ConnectionProfile: Identifiable, Hashable, Sendable, Codable {
     public var createdAt: Date
     public var updatedAt: Date
     public var lastConnectedAt: Date?
+    /// Added after schema version 1; absent in older documents.
+    public var wakeOnLAN: WakeOnLANConfiguration?
+    /// A heading the list groups the connection under; nil for none.
+    public var group: String?
+    private var favorite: Bool?
+
+    /// Listed first, under お気に入り.
+    public var isFavorite: Bool {
+        get { favorite ?? false }
+        set { favorite = newValue ? true : nil }
+    }
+
+    /// The group as shown: trimmed, nil when empty.
+    public var groupName: String? {
+        let trimmed = group?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     public init(
         id: ProfileID = ProfileID(),
