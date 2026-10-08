@@ -166,7 +166,9 @@ final class ConnectionFlowUITests: XCTestCase {
         let suggestion = assertAppears("shortcut-suggestion-Win+D", "the editor offers common shortcuts")
         suggestion.tap()
         _ = assertAppears("shortcut-row-Win+D", "a suggestion joins the list")
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        // The editor's own bar: on an iPad the sheet's bar comes first.
+        app.navigationBars["ショートカット"].buttons.element(boundBy: 0).tap()
+        _ = assertAppears("session-menu-close", "back in the menu")
         element("session-menu-close").tap()
 
         element("session-menu-button").tap()
