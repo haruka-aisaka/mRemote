@@ -41,6 +41,7 @@ struct SessionMenuSheet: View {
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
     @AppStorage(LaptopDeckPreference.foldedLandscapeStorageKey) private var showsDeckFoldedInLandscape = false
+    @AppStorage(KeyboardButtonTarget.storageKey) private var keyboardButtonTarget = KeyboardButtonTarget.softwareKeyboard
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -151,6 +152,13 @@ struct SessionMenuSheet: View {
                         }
                     }
                     .accessibilityIdentifier("session-toggle-laptop-deck")
+                    // The button above this menu's: what it brings up when no
+                    // keyboard is showing. Whatever is showing, it hides.
+                    Picker("キーボードボタン", selection: $keyboardButtonTarget) {
+                        Text("iOS のキーボード").tag(KeyboardButtonTarget.softwareKeyboard)
+                        Text("手元キーボード（PC 配列）").tag(KeyboardButtonTarget.laptopDeck)
+                    }
+                    .accessibilityIdentifier("session-keyboard-button-target")
                 }
 
                 Section("表示") {

@@ -18,7 +18,19 @@ enum UITestConfiguration {
 
     /// Device settings a test changes through the UI, cleared on launch so
     /// one test's choice is not the next one's starting point.
-    static let resetDefaultsKeys = [LaptopDeckPreference.storageKey]
+    static let resetDefaultsKeys = [
+        LaptopDeckPreference.storageKey,
+        LaptopDeckPreference.foldedLandscapeStorageKey,
+        LaptopDeckPlacement.storageKey,
+        LaptopDeckArrangement.splitInLandscapeStorageKey,
+        KeyboardButtonTarget.storageKey,
+        FoldResolutionPolicy.storageKey,
+        DesktopSafeAreaPolicy.storageKey,
+        "laptop-deck-height-portrait",
+        "laptop-deck-height-landscape",
+        "laptop-deck-height-split",
+        FloatingDeckFrame.storageKey,
+    ]
 
     @MainActor
     static func makeEnvironment() -> AppEnvironment {

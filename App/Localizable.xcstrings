@@ -248,6 +248,16 @@
         }
       }
     },
+    "iOS のキーボード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS keyboard"
+          }
+        }
+      }
+    },
     "iOS のサーバー証明書要件を満たしていません": {
       "localizations": {
         "en": {
@@ -670,12 +680,42 @@
         }
       }
     },
+    "キーボードを表示": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show keyboard"
+          }
+        }
+      }
+    },
     "キーボードを閉じる": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Hide Keyboard"
+          }
+        }
+      }
+    },
+    "キーボードを隠す": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide keyboard"
+          }
+        }
+      }
+    },
+    "キーボードボタン": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard button"
           }
         }
       }
@@ -2026,6 +2066,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Resolution with the PC Keyboard Shown"
+          }
+        }
+      }
+    },
+    "手元キーボード（PC 配列）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC keyboard"
           }
         }
       }

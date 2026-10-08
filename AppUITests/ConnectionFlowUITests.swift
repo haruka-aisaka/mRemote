@@ -127,6 +127,27 @@ final class ConnectionFlowUITests: XCTestCase {
 
     /// Any device can put the PC keyboard on screen from the menu's action
     /// list, and take it away again, without hunting for the picker.
+    /// The button above the menu button, as in the Windows App: it brings
+    /// the iOS keyboard up, and takes whichever keyboard is up away.
+    func testTheKeyboardButtonShowsAndHidesTheKeyboard() {
+        element("profile-row-テスト接続先").tap()
+        _ = assertAppears("session-workspace", "connecting presents the workspace")
+
+        let button = assertAppears("session-keyboard-button", "the keyboard button is beside the menu")
+        button.tap()
+        _ = assertAppears("key-escape", "the iOS keyboard comes up with its key bar")
+        button.tap()
+        XCTAssertTrue(element("key-escape").waitForNonExistence(timeout: 5), "and goes away")
+
+        // A deck that is up is what the button takes away.
+        element("session-menu-button").tap()
+        _ = assertAppears("session-menu", "the floating menu opens")
+        element("session-toggle-laptop-deck").tap()
+        _ = assertAppears("laptop-deck", "the deck takes the lower half")
+        element("session-keyboard-button").tap()
+        XCTAssertTrue(element("laptop-deck").waitForNonExistence(timeout: 5), "the button hides the deck")
+    }
+
     func testTheMenuShowsAndHidesThePCKeyboard() {
         element("profile-row-テスト接続先").tap()
         _ = assertAppears("session-workspace", "connecting presents the workspace")

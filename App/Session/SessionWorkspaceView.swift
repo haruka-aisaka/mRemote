@@ -36,6 +36,7 @@ struct SessionWorkspaceView: View {
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
     @AppStorage(LaptopDeckPreference.foldedLandscapeStorageKey) private var showsDeckFoldedInLandscape = false
+    @AppStorage(KeyboardButtonTarget.storageKey) private var keyboardButtonTarget = KeyboardButtonTarget.softwareKeyboard
 
     var body: some View {
         ZStack {
@@ -184,7 +185,7 @@ struct SessionWorkspaceView: View {
                         status
                     }
                     endBanner
-                    floatingMenu
+                    floatingMenu(showsDeck: showsDeck)
                     toast
                 }
                 .frame(height: layout.desktopFrameHeight)
@@ -339,8 +340,16 @@ struct SessionWorkspaceView: View {
         }
     }
 
-    private var floatingMenu: some View {
-        FloatingMenuButton {
+    private func floatingMenu(showsDeck: Bool) -> some View {
+        let softwareKeyboardShown = model.softwareKeyboard.isVisible
+        return FloatingMenuButton(
+            keyboard: .init(
+                isShowingKeyboard: softwareKeyboardShown || showsDeck,
+                isEnabled: softwareKeyboardShown || showsDeck || keyboardButtonTarget == .laptopDeck
+                    || model.state.acceptsInput,
+                toggle: { toggleKeyboard(showsDeck: showsDeck) }
+            )
+        ) {
             model.isMenuPresented = true
         }
         // On the button rather than the workspace: the workspace already
@@ -349,6 +358,21 @@ struct SessionWorkspaceView: View {
         .sheet(isPresented: $model.isMenuPresented) {
             SessionMenuSheet(model: model)
                 .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// Whichever keyboard is up goes away; with none up, the one the user
+    /// chose for this button comes up.
+    private func toggleKeyboard(showsDeck: Bool) {
+        if model.softwareKeyboard.isVisible {
+            model.softwareKeyboard.hide()
+        } else if showsDeck {
+            deckPreference = .never
+        } else {
+            switch keyboardButtonTarget {
+            case .softwareKeyboard: model.showSoftwareKeyboard()
+            case .laptopDeck: deckPreference = .always
+            }
         }
     }
 

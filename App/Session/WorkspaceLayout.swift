@@ -1,6 +1,16 @@
 import SwiftUI
 import SessionCore
 
+/// What the keyboard button next to the menu button brings up when no
+/// keyboard is showing.
+enum KeyboardButtonTarget: String, CaseIterable {
+    /// The system keyboard with the extended key bar, as in the Windows App.
+    case softwareKeyboard
+    case laptopDeck
+
+    static let storageKey = "keyboard-button-target"
+}
+
 /// Where the laptop deck goes when it is not held at a foldable's hinge.
 enum LaptopDeckPlacement: String, CaseIterable {
     /// Along the bottom, as tall as the user drags it.
