@@ -24,6 +24,11 @@ final class AppEnvironment {
     private(set) var loadFailure: String?
 
     var presentedSession: SessionWorkspaceModel?
+    /// A profile read from a `.rdp` file or an `rdp://` link, waiting for
+    /// the user to look at it and save it.
+    var pendingImport: ProfileEditorModel?
+    /// A file that could not be read as a connection, said once.
+    var importFailure: String?
     /// Sessions that are still connected while the user is back on the list.
     /// SES-02 keeps a foreground connection alive until an explicit
     /// disconnect, so without this they would be running with no way back to

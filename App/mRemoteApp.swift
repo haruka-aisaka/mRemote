@@ -9,7 +9,13 @@ struct mRemoteApp: App {
         WindowGroup {
             RootView()
                 .environment(environment)
-                .task { await environment.start() }
+                .task {
+                    IntentRouter.attach(environment)
+                    await environment.start()
+                }
+                // .rdp files, rdp:// links and the Shortcuts app's
+                // mremote://connect.
+                .onOpenURL { url in Task { await environment.open(url) } }
         }
         // docs/architecture.md section 10: no audio from the background.
         .onChange(of: scenePhase) { _, phase in

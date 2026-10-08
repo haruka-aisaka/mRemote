@@ -21,6 +21,23 @@ final class ProfileEditorModelTests: XCTestCase {
         XCTAssertTrue(model.isValid)
     }
 
+    func testAnImportIsANewProfileThatKeepsTheFilesSettings() throws {
+        let file = RDPFile(text: "full address:s:pc.example:3390\nusername:s:CORP\\taro\naudiomode:i:2")
+        let imported = try XCTUnwrap(file.profile(named: "会社"))
+        let model = ProfileEditorModel(mode: .importing(imported, unsupported: ["RD Gateway"]))
+        XCTAssertTrue(model.isImport)
+        XCTAssertFalse(model.isEditing)
+        XCTAssertEqual(model.title, "接続先を読み込む")
+        XCTAssertEqual(model.host, "pc.example")
+        XCTAssertEqual(model.portText, "3390")
+        XCTAssertEqual(model.username, "taro")
+        XCTAssertEqual(model.domain, "CORP")
+        XCTAssertEqual(model.unsupportedImportSettings, ["RD Gateway"])
+        let profile = try XCTUnwrap(model.makeProfile())
+        XCTAssertEqual(profile.displayName, "会社")
+        XCTAssertEqual(profile.configuration.rdp?.audioPlayback, .explicit(false))
+    }
+
     func testDisplayNameFallsBackToTheHost() {
         let model = ProfileEditorModel(mode: .create)
         model.host = "  desk.example  "

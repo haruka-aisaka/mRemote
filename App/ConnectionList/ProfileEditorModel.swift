@@ -12,6 +12,9 @@ final class ProfileEditorModel: Identifiable {
     enum Mode {
         case create
         case edit(ConnectionProfile)
+        /// A new profile filled in from a `.rdp` file or an `rdp://` link,
+        /// with the settings it named that this app does not carry out.
+        case importing(ConnectionProfile, unsupported: [String])
     }
 
     nonisolated let id = UUID()
@@ -30,11 +33,19 @@ final class ProfileEditorModel: Identifiable {
     var resolutionPolicy: Inheritable<ResolutionPolicy>
 
     private let existing: ConnectionProfile?
+    /// What a new profile is built on: an import's settings beyond the form.
+    private let base: RDPConfiguration?
+    /// Shown above the form for an import.
+    let unsupportedImportSettings: [String]
+    let isImport: Bool
 
     init(mode: Mode, password: String? = nil) {
         switch mode {
         case .create:
             existing = nil
+            base = nil
+            unsupportedImportSettings = []
+            isImport = false
             displayName = ""
             host = ""
             portText = "3389"
@@ -46,8 +57,17 @@ final class ProfileEditorModel: Identifiable {
             clipboardPolicy = .inherit
             scrollDirection = .inherit
             resolutionPolicy = .inherit
-        case .edit(let profile):
-            existing = profile
+        case .edit(let profile), .importing(let profile, _):
+            if case .importing(_, let unsupported) = mode {
+                existing = nil
+                unsupportedImportSettings = unsupported
+                isImport = true
+            } else {
+                existing = profile
+                unsupportedImportSettings = []
+                isImport = false
+            }
+            base = profile.configuration.rdp
             displayName = profile.displayName
             host = profile.endpoint.host
             portText = String(profile.endpoint.port)
@@ -66,7 +86,10 @@ final class ProfileEditorModel: Identifiable {
 
     var isEditing: Bool { existing != nil }
 
-    var title: String { isEditing ? String(localized: "接続先を編集") : String(localized: "接続先を追加") }
+    var title: String {
+        isEditing ? String(localized: "接続先を編集")
+            : isImport ? String(localized: "接続先を読み込む") : String(localized: "接続先を追加")
+    }
 
     var port: UInt16? {
         guard let value = UInt16(portText.trimmingCharacters(in: .whitespaces)), value > 0 else {
@@ -121,7 +144,7 @@ final class ProfileEditorModel: Identifiable {
         guard let port else { return nil }
         // Built on what was there, so a field the form does not show is
         // kept rather than reset to inherit.
-        var configuration = existing?.configuration.rdp ?? RDPConfiguration()
+        var configuration = existing?.configuration.rdp ?? base ?? RDPConfiguration()
         configuration.keyboardLayout = keyboardLayout
         configuration.audioPlayback = audioPlayback
         configuration.clipboardPolicy = clipboardPolicy

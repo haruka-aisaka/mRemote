@@ -9,6 +9,20 @@ struct ProfileEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if model.isImport {
+                    Section {
+                        Label("ファイルまたはリンクの内容を入れました。確認して保存してください。", systemImage: "square.and.arrow.down")
+                        if !model.unsupportedImportSettings.isEmpty {
+                            Label(
+                                String(localized: "この設定には対応していないため使いません: \(model.unsupportedImportSettings.joined(separator: ", "))"),
+                                systemImage: "exclamationmark.triangle"
+                            )
+                            .foregroundStyle(.orange)
+                        }
+                    }
+                    .font(.footnote)
+                    .accessibilityIdentifier("profile-import-note")
+                }
                 Section(String(localized: "profile-editor.section.computer", defaultValue: "接続先")) {
                     TextField("名前", text: $model.displayName)
                         .accessibilityIdentifier("profile-name-field")

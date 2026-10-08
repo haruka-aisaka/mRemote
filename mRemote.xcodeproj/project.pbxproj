@@ -370,6 +370,7 @@
 				DEVELOPMENT_TEAM = 3R8LX96WPK;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "config/mRemote-Info.plist";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to the Windows computers you choose on your local network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -402,6 +403,7 @@
 				DEVELOPMENT_TEAM = 3R8LX96WPK;
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "config/mRemote-Info.plist";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connect to the Windows computers you choose on your local network.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

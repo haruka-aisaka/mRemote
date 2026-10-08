@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import SessionCore
 
 struct ConnectionListView: View {
@@ -7,6 +8,7 @@ struct ConnectionListView: View {
     /// same view do not both work in SwiftUI -- the later one wins -- so the
     /// route is modelled once and presented once.
     @State private var route: Route?
+    @State private var isImportingFile = false
 
     private enum Route: Identifiable {
         case editor(ProfileEditorModel)
@@ -47,6 +49,14 @@ struct ConnectionListView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        isImportingFile = true
+                    } label: {
+                        Label(".rdp ファイルから読み込む", systemImage: "square.and.arrow.down")
+                    }
+                    .accessibilityIdentifier("import-profile-button")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         route = .editor(ProfileEditorModel(mode: .create))
                     } label: {
                         Label("追加", systemImage: "plus")
@@ -58,6 +68,29 @@ struct ConnectionListView: View {
         // iPad shows a centred form sheet, iPhone a large sheet; the adaptive
         // presentation is what SwiftUI does by default for `.sheet`, so the
         // only thing worth stating is the detent for the compact case.
+        .fileImporter(
+            isPresented: $isImportingFile,
+            allowedContentTypes: [UTType(filenameExtension: "rdp") ?? .data]
+        ) { result in
+            guard case .success(let url) = result else { return }
+            Task { await environment.open(url) }
+        }
+        .onChange(of: environment.pendingImport?.id, initial: true) { _, _ in
+            guard let model = environment.pendingImport else { return }
+            environment.pendingImport = nil
+            route = .editor(model)
+        }
+        .alert(
+            "読み込めませんでした",
+            isPresented: Binding(
+                get: { environment.importFailure != nil },
+                set: { if !$0 { environment.importFailure = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(environment.importFailure ?? "")
+        }
         .sheet(item: $route) { route in
             switch route {
             case .editor(let model):

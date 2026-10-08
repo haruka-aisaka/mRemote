@@ -1,6 +1,19 @@
 {
   "sourceLanguage": "ja",
   "strings": {
+    "${connection} に接続": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to ${connection}"
+          }
+        }
+      }
+    },
+    "%@": {
+      "shouldTranslate": false
+    },
     "%@\n%@": {
       "shouldTranslate": false
     },
@@ -57,6 +70,16 @@
         }
       }
     },
+    "%@ は接続先として読めませんでした。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ could not be read as a connection."
+          }
+        }
+      }
+    },
     "%@ を切断しますか？": {
       "localizations": {
         "en": {
@@ -100,6 +123,16 @@
         }
       }
     },
+    ".rdp ファイルから読み込む": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import .rdp File"
+          }
+        }
+      }
+    },
     "100%": {
       "shouldTranslate": false
     },
@@ -119,6 +152,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Caps Key"
+          }
+        }
+      }
+    },
+    "Connect with ${applicationName}": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect with ${applicationName}"
           }
         }
       }
@@ -172,6 +215,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "NLA Required"
+          }
+        }
+      }
+    },
+    "OK": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
           }
         }
       }
@@ -476,6 +529,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Play on This Device"
+          }
+        }
+      }
+    },
+    "この設定には対応していないため使いません: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not supported, so not used: %@"
           }
         }
       }
@@ -1180,6 +1243,16 @@
         }
       }
     },
+    "ファイルまたはリンクの内容を入れました。確認して保存してください。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filled in from the file or link. Check it, then save."
+          }
+        }
+      }
+    },
     "フォーカス喪失": {
       "localizations": {
         "en": {
@@ -1506,6 +1579,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Save"
+          }
+        }
+      }
+    },
+    "保存した接続先に接続します。接続中ならその画面を開きます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connects to a saved computer, or opens its session if it is already connected."
           }
         }
       }
@@ -2340,6 +2423,16 @@
         }
       }
     },
+    "接続先に接続": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to Computer"
+          }
+        }
+      }
+    },
     "接続先を IP アドレスで指定したため、証明書のホスト名は検証されていません。Windows の自己署名証明書はコンピューター名しか持たないため、IP 指定では照合が成立しません。識別の根拠はフィンガープリントだけです。": {
       "localizations": {
         "en": {
@@ -2356,6 +2449,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Edit Computer"
+          }
+        }
+      }
+    },
+    "接続先を読み込む": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Connection"
           }
         }
       }
@@ -3056,6 +3159,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unreadable"
+          }
+        }
+      }
+    },
+    "読み込めませんでした": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could Not Import"
           }
         }
       }
