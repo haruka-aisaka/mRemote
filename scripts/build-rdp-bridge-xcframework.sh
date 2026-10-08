@@ -30,7 +30,7 @@ usage() {
 
 #> Usage: scripts/build-rdp-bridge-xcframework.sh [options]
 #>
-#> Build the FreeRDP-backed C ABI as a two-slice static XCFramework. FreeRDP
+#> Build the FreeRDP-backed C ABI as a three-slice static XCFramework. FreeRDP
 #> remains a separate XCFramework and must be linked by the final app.
 #>
 #> Options:
@@ -88,6 +88,7 @@ printf '%s\n' \
   "deployment target=iOS $IOS_DEPLOYMENT_TARGET" \
   "slice=device:arm64" \
   "slice=simulator:arm64" \
+  "slice=maccatalyst:arm64" \
   "backend=FreeRDP $FREERDP_VERSION" \
   "FreeRDP XCFramework=$FREERDP_XCFRAMEWORK" \
   "build root=$BUILD_ROOT" \
@@ -98,7 +99,7 @@ if ((DRY_RUN)); then
 fi
 
 [[ ! -e "$OUTPUT_PATH" ]] || die "output already exists; choose a fresh --output path: $OUTPUT_PATH"
-mkdir -p "$BUILD_ROOT/device" "$BUILD_ROOT/simulator" "$(dirname "$OUTPUT_PATH")"
+mkdir -p "$BUILD_ROOT/device" "$BUILD_ROOT/simulator" "$BUILD_ROOT/maccatalyst" "$(dirname "$OUTPUT_PATH")"
 
 build_slice() {
   local slice="$1"
@@ -158,6 +159,9 @@ build_slice \
 build_slice \
   simulator ios-arm64-simulator iphonesimulator \
   "arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-simulator"
+build_slice \
+  maccatalyst ios-arm64-maccatalyst macosx \
+  "arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-macabi"
 
 log "creating $BRIDGE_XCFRAMEWORK_NAME"
 xcodebuild -create-xcframework \
@@ -165,29 +169,28 @@ xcodebuild -create-xcframework \
   -headers "$REPO_ROOT/bridge/include" \
   -library "$BUILD_ROOT/simulator/libmRemoteRDPBridge.a" \
   -headers "$REPO_ROOT/bridge/include" \
+  -library "$BUILD_ROOT/maccatalyst/libmRemoteRDPBridge.a" \
+  -headers "$REPO_ROOT/bridge/include" \
   -output "$OUTPUT_PATH"
 
-# Keep deterministic device-then-simulator metadata ordering across Xcode
-# versions, matching the pinned FreeRDP artifact.
-first_identifier="$(/usr/libexec/PlistBuddy \
-  -c 'Print :AvailableLibraries:0:LibraryIdentifier' "$OUTPUT_PATH/Info.plist")"
-case "$first_identifier" in
-  ios-arm64)
-    ;;
-  ios-arm64-simulator)
-    /usr/libexec/PlistBuddy \
-      -c 'Copy :AvailableLibraries:0 :MRemoteSimulatorLibrary' "$OUTPUT_PATH/Info.plist"
-    /usr/libexec/PlistBuddy \
-      -c 'Delete :AvailableLibraries:0' "$OUTPUT_PATH/Info.plist"
-    /usr/libexec/PlistBuddy \
-      -c 'Copy :MRemoteSimulatorLibrary :AvailableLibraries:1' "$OUTPUT_PATH/Info.plist"
-    /usr/libexec/PlistBuddy \
-      -c 'Delete :MRemoteSimulatorLibrary' "$OUTPUT_PATH/Info.plist"
-    ;;
-  *)
-    die "unexpected first XCFramework slice: $first_identifier"
-    ;;
-esac
+# Keep deterministic device, simulator, Mac Catalyst metadata ordering across
+# Xcode versions, matching the pinned FreeRDP artifact.
+plist="$OUTPUT_PATH/Info.plist"
+count="$(plutil -extract AvailableLibraries raw -o - "$plist")"
+[[ "$count" == "3" ]] || die "unexpected XCFramework slice count: $count"
+for identifier in ios-arm64 ios-arm64-simulator ios-arm64-maccatalyst; do
+  position=""
+  for ((index = 0; index < count; index++)); do
+    if [[ "$(/usr/libexec/PlistBuddy -c "Print :AvailableLibraries:$index:LibraryIdentifier" "$plist")" == "$identifier" ]]; then
+      position="$index"
+    fi
+  done
+  [[ -n "$position" ]] || die "XCFramework slice is missing: $identifier"
+  /usr/libexec/PlistBuddy -c "Copy :AvailableLibraries:$position :MRemoteMovedLibrary" "$plist"
+  /usr/libexec/PlistBuddy -c "Delete :AvailableLibraries:$position" "$plist"
+  /usr/libexec/PlistBuddy -c "Copy :MRemoteMovedLibrary :AvailableLibraries:$((count - 1))" "$plist"
+  /usr/libexec/PlistBuddy -c 'Delete :MRemoteMovedLibrary' "$plist"
+done
 
 assert_no_host_paths() {
   local artifact="$1"

@@ -138,6 +138,7 @@ print_plan() {
     "OpenSSL runtime config=$RUNTIME_OPENSSLDIR" \
     "slice=device:arm64 (PLATFORM=OS64)" \
     "slice=simulator:arm64 (PLATFORM=SIMULATORARM64)" \
+    "slice=maccatalyst:arm64 (PLATFORM=MAC_CATALYST_ARM64)" \
     "static channels=cliprdr,rdpsnd,rdpdr,drdynvc,disp,rdpgfx,rdpei,drive,audin,rail" \
     "audio subsystems=upstream ios + fake (adapter must select sys:ios; iOS path is PCM-only)" \
     "disabled codecs=FFmpeg,OpenH264,Opus,JPEG,WebP" \
@@ -358,14 +359,19 @@ build_openssl_slice() {
   local config_args=(iphoneos-cross no-shared no-tests no-apps no-docs no-module)
   local cc_extra
 
+  local developer_dir sdk_version cross_top cross_sdk cc
   if [[ "$sdk" == "iphonesimulator" ]]; then
     config_args+=(no-asm)
     cc_extra="-target arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-simulator -mios-simulator-version-min=${IOS_DEPLOYMENT_TARGET}"
+  elif [[ "$sdk" == "macosx" ]]; then
+    # Mac Catalyst: the macOS SDK compiled for the iOS ABI (macabi). OpenSSL's
+    # darwin64 target supplies the arm64 assembly; the triple picks the ABI.
+    config_args=(darwin64-arm64-cc "${config_args[@]:1}")
+    cc_extra="-target arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-macabi -isysroot $(xcrun --sdk macosx --show-sdk-path)"
   else
     cc_extra="-miphoneos-version-min=${IOS_DEPLOYMENT_TARGET}"
   fi
 
-  local developer_dir sdk_version cross_top cross_sdk cc
   local xcode_version clang_version source_path source_manifest_hash input_payload expected_fingerprint
   developer_dir="$(xcode-select -print-path)"
   sdk_version="$(xcrun --sdk "$sdk" --show-sdk-version)"
@@ -582,7 +588,16 @@ build_freerdp_slice() {
     -DWITH_IOSAUDIO=ON
     -DWITH_ABSOLUTE_PLUGIN_LOAD_PATHS=OFF
     -DWITH_DEBUG_ALL=OFF
+    # pipe2() is declared by the 27.0 SDKs but only exists from iOS/macOS 27.
+    # The probe sees the declaration, WinPR then weak-links it, and every
+    # event creation calls through a null pointer below the deployment target.
+    -DWINPR_HAVE_PIPE2=OFF
   )
+  if [[ "$platform" == MAC_CATALYST* ]]; then
+    # libSystem exports pthread_setschedprio, so the link probe finds it, but
+    # the macOS headers do not declare it. iOS takes the fallback path anyway.
+    cmake_args+=(-DPTHREAD_SETSCHEDPRIO=OFF)
+  fi
   local channel
   for channel in "${disabled_channels[@]}"; do
     cmake_args+=("-DCHANNEL_${channel}=OFF" "-DCHANNEL_${channel}_CLIENT=OFF" "-DCHANNEL_${channel}_SERVER=OFF")
@@ -711,6 +726,8 @@ package_slice() {
   local target
   if [[ "$sdk" == "iphonesimulator" ]]; then
     target="arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-simulator"
+  elif [[ "$sdk" == "macosx" ]]; then
+    target="arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-macabi"
   else
     target="arm64-apple-ios${IOS_DEPLOYMENT_TARGET}"
   fi
@@ -743,26 +760,34 @@ build_openssl_slice simulator iphonesimulator iPhoneSimulator
 build_freerdp_slice simulator SIMULATORARM64 iphonesimulator
 package_slice simulator iphonesimulator
 
+build_openssl_slice maccatalyst macosx MacOSX
+build_freerdp_slice maccatalyst MAC_CATALYST_ARM64 macosx
+package_slice maccatalyst macosx
+
 verify_freerdp_source "$FREERDP_SOURCE_DIR"
 
 normalize_xcframework_plist() {
   local plist="$1/Info.plist"
-  local first_identifier
-  first_identifier="$(/usr/libexec/PlistBuddy -c 'Print :AvailableLibraries:0:LibraryIdentifier' "$plist")"
+  local wanted=(ios-arm64 ios-arm64-simulator ios-arm64-maccatalyst)
+  local count index identifier position
 
-  case "$first_identifier" in
-    ios-arm64)
-      ;;
-    ios-arm64-simulator)
-      /usr/libexec/PlistBuddy -c 'Copy :AvailableLibraries:0 :MRemoteSimulatorLibrary' "$plist"
-      /usr/libexec/PlistBuddy -c 'Delete :AvailableLibraries:0' "$plist"
-      /usr/libexec/PlistBuddy -c 'Copy :MRemoteSimulatorLibrary :AvailableLibraries:1' "$plist"
-      /usr/libexec/PlistBuddy -c 'Delete :MRemoteSimulatorLibrary' "$plist"
-      ;;
-    *)
-      die "unexpected first XCFramework slice: $first_identifier"
-      ;;
-  esac
+  # xcodebuild emits the slices in no fixed order, which would make otherwise
+  # identical output differ. Move each wanted slice to the end in turn.
+  count="$(plutil -extract AvailableLibraries raw -o - "$plist")"
+  [[ "$count" == "${#wanted[@]}" ]] || die "unexpected XCFramework slice count: $count"
+  for identifier in "${wanted[@]}"; do
+    position=""
+    for ((index = 0; index < count; index++)); do
+      if [[ "$(/usr/libexec/PlistBuddy -c "Print :AvailableLibraries:$index:LibraryIdentifier" "$plist")" == "$identifier" ]]; then
+        position="$index"
+      fi
+    done
+    [[ -n "$position" ]] || die "XCFramework slice is missing: $identifier"
+    /usr/libexec/PlistBuddy -c "Copy :AvailableLibraries:$position :MRemoteMovedLibrary" "$plist"
+    /usr/libexec/PlistBuddy -c "Delete :AvailableLibraries:$position" "$plist"
+    /usr/libexec/PlistBuddy -c "Copy :MRemoteMovedLibrary :AvailableLibraries:$((count - 1))" "$plist"
+    /usr/libexec/PlistBuddy -c 'Delete :MRemoteMovedLibrary' "$plist"
+  done
 }
 
 assert_no_input_paths() {
@@ -786,6 +811,8 @@ xcodebuild -create-xcframework \
   -headers "$BUILD_ROOT/slices/device/package/Headers" \
   -library "$BUILD_ROOT/slices/simulator/package/libmremote-freerdp.a" \
   -headers "$BUILD_ROOT/slices/simulator/package/Headers" \
+  -library "$BUILD_ROOT/slices/maccatalyst/package/libmremote-freerdp.a" \
+  -headers "$BUILD_ROOT/slices/maccatalyst/package/Headers" \
   -output "$OUTPUT_PATH"
 
 normalize_xcframework_plist "$OUTPUT_PATH"

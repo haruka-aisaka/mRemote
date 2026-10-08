@@ -26,7 +26,7 @@ for command_name in file plutil xcrun; do
 done
 
 library_count="$(plutil -extract AvailableLibraries raw -o - "$BRIDGE_XCFRAMEWORK/Info.plist")"
-[[ "$library_count" == "2" ]] || die "expected exactly 2 bridge slices, got $library_count"
+[[ "$library_count" == "3" ]] || die "expected exactly 3 bridge slices, got $library_count"
 
 required_bridge_symbols=(
   mr_rdp_config_init
@@ -76,8 +76,9 @@ required_linked_addins=(
 
 device_count=0
 simulator_count=0
+catalyst_count=0
 
-for index in 0 1; do
+for index in 0 1 2; do
   identifier="$(plutil -extract "AvailableLibraries.$index.LibraryIdentifier" raw -o - \
     "$BRIDGE_XCFRAMEWORK/Info.plist")"
   library_path="$(plutil -extract "AvailableLibraries.$index.LibraryPath" raw -o - \
@@ -112,6 +113,10 @@ for index in 0 1; do
     ((simulator_count += 1))
     sdk="iphonesimulator"
     target="arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-simulator"
+  elif [[ "$variant" == "maccatalyst" ]]; then
+    ((catalyst_count += 1))
+    sdk="macosx"
+    target="arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-macabi"
   elif [[ -z "$variant" ]]; then
     ((device_count += 1))
     sdk="iphoneos"
@@ -161,6 +166,7 @@ done
 
 [[ "$device_count" == "1" ]] || die "expected one bridge device slice"
 [[ "$simulator_count" == "1" ]] || die "expected one bridge simulator slice"
+[[ "$catalyst_count" == "1" ]] || die "expected one bridge Mac Catalyst slice"
 
 if find "$BRIDGE_XCFRAMEWORK" -type f \
   \( -name '*.dylib' -o -name '*.so' -o -name '*.bundle' \) -print | grep -q .; then
@@ -168,6 +174,6 @@ if find "$BRIDGE_XCFRAMEWORK" -type f \
 fi
 
 printf 'verified: %s\n' "$BRIDGE_XCFRAMEWORK"
-printf 'slices: ios-arm64, ios-arm64-simulator\n'
+printf 'slices: ios-arm64, ios-arm64-simulator, ios-arm64-maccatalyst\n'
 printf 'backend: pinned FreeRDP adapter (separate FreeRDP XCFramework)\n'
 printf 'link smoke: bridge + FreeRDP + retained static channel table/add-ins\n'

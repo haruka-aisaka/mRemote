@@ -22,19 +22,20 @@ command -v xcrun >/dev/null 2>&1 || die "xcrun is required"
 command -v grep >/dev/null 2>&1 || die "grep is required"
 
 library_count="$(plutil -extract AvailableLibraries raw -o - "$XCFRAMEWORK_PATH/Info.plist")"
-[[ "$library_count" == "2" ]] || die "expected exactly 2 slices, got $library_count"
+[[ "$library_count" == "3" ]] || die "expected exactly 3 slices, got $library_count"
 
-# The build normalizes this order because xcodebuild may emit the same two
-# slices in either order, which would make otherwise identical output differ.
-first_identifier="$(plutil -extract AvailableLibraries.0.LibraryIdentifier raw -o - "$XCFRAMEWORK_PATH/Info.plist")"
-second_identifier="$(plutil -extract AvailableLibraries.1.LibraryIdentifier raw -o - "$XCFRAMEWORK_PATH/Info.plist")"
-[[ "$first_identifier" == "ios-arm64" ]] ||
-  die "device slice must be first in Info.plist (got $first_identifier)"
-[[ "$second_identifier" == "ios-arm64-simulator" ]] ||
-  die "simulator slice must be second in Info.plist (got $second_identifier)"
+# The build normalizes this order because xcodebuild may emit the slices in
+# any order, which would make otherwise identical output differ.
+expected_identifiers=(ios-arm64 ios-arm64-simulator ios-arm64-maccatalyst)
+for index in 0 1 2; do
+  identifier="$(plutil -extract "AvailableLibraries.$index.LibraryIdentifier" raw -o - "$XCFRAMEWORK_PATH/Info.plist")"
+  [[ "$identifier" == "${expected_identifiers[$index]}" ]] ||
+    die "slice $index must be ${expected_identifiers[$index]} in Info.plist (got $identifier)"
+done
 
 device_count=0
 simulator_count=0
+catalyst_count=0
 
 required_symbols=(
   cliprdr_VirtualChannelEntryEx
@@ -62,7 +63,7 @@ forbidden_audio_symbols=(
   winmm_freerdp_rdpsnd_client_subsystem_entry
 )
 
-for index in 0 1; do
+for index in 0 1 2; do
   identifier="$(plutil -extract "AvailableLibraries.$index.LibraryIdentifier" raw -o - "$XCFRAMEWORK_PATH/Info.plist")"
   library_path="$(plutil -extract "AvailableLibraries.$index.LibraryPath" raw -o - "$XCFRAMEWORK_PATH/Info.plist")"
   platform="$(plutil -extract "AvailableLibraries.$index.SupportedPlatform" raw -o - "$XCFRAMEWORK_PATH/Info.plist")"
@@ -89,6 +90,10 @@ for index in 0 1; do
     ((simulator_count += 1))
     sdk="iphonesimulator"
     target="arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-simulator"
+  elif [[ "$variant" == "maccatalyst" ]]; then
+    ((catalyst_count += 1))
+    sdk="macosx"
+    target="arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-macabi"
   elif [[ -z "$variant" ]]; then
     ((device_count += 1))
     sdk="iphoneos"
@@ -106,6 +111,14 @@ for index in 0 1; do
   symbols="$(xcrun nm -gU "$archive")"
   for symbol in "${required_symbols[@]}"; do
     grep -Eq "[[:space:]]_${symbol}$" <<<"$symbols" || die "required static symbol missing: $symbol ($identifier)"
+  done
+  # Declared by the 27.0 SDKs, absent below iOS/macOS 27: a reference becomes
+  # a weak import that is null on every older system the app supports.
+  undefined_symbols="$(xcrun nm -u "$archive")"
+  for symbol in pipe2 dup3; do
+    if grep -Eq "^_${symbol}$" <<<"$undefined_symbols"; then
+      die "references $symbol, which is newer than the deployment target ($identifier)"
+    fi
   done
   for symbol in "${forbidden_audio_symbols[@]}"; do
     if grep -Eq "[[:space:]]_${symbol}$" <<<"$symbols"; then
@@ -154,6 +167,7 @@ done
 
 [[ "$device_count" == "1" ]] || die "expected one device slice"
 [[ "$simulator_count" == "1" ]] || die "expected one simulator slice"
+[[ "$catalyst_count" == "1" ]] || die "expected one Mac Catalyst slice"
 
 if find "$XCFRAMEWORK_PATH" -type f \( -name '*.dylib' -o -name '*.so' -o -name '*.bundle' \) -print | grep -q .; then
   die "dynamic library/plugin found in XCFramework"
@@ -168,7 +182,7 @@ host_path_match="$(LC_ALL=C grep -R -a -E -l \
 [[ -z "$host_path_match" ]] || die "host build path found in XCFramework: $host_path_match"
 
 printf 'verified: %s\n' "$XCFRAMEWORK_PATH"
-printf 'slices: ios-arm64, ios-arm64-simulator\n'
+printf 'slices: ios-arm64, ios-arm64-simulator, ios-arm64-maccatalyst\n'
 printf 'static add-ins: cliprdr, rdpsnd, rdpdr, drdynvc, disp, rdpgfx, rdpei, drive, audin, rail\n'
 printf 'link smoke: FreeRDP/OpenSSL/static add-ins + Foundation/AudioToolbox\n'
 printf 'audio subsystems: ios (PCM-only) + upstream fake; integration must select sys:ios\n'
