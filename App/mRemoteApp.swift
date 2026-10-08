@@ -2,7 +2,6 @@ import SwiftUI
 
 @main
 struct mRemoteApp: App {
-    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var environment = AppEnvironment.live()
     @Environment(\.scenePhase) private var scenePhase
 

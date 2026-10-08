@@ -35,7 +35,7 @@ struct SessionWorkspaceView: View {
     @AppStorage(FloatingDeckFrame.storageKey) private var floatingDeckFrame = FloatingDeckFrame.standard
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
-    @AppStorage(FoldedOrientation.storageKey) private var foldedOrientation = FoldedOrientation.laptop
+    @AppStorage(LaptopDeckPreference.foldedLandscapeStorageKey) private var showsDeckFoldedInLandscape = false
 
     var body: some View {
         ZStack {
@@ -74,12 +74,6 @@ struct SessionWorkspaceView: View {
         .onChange(of: hingePosture, initial: true) { _, posture in
             model.deviceHasHinge = posture != .unavailable
         }
-        // Folded, a foldable is a laptop: the screen turns to stand above the
-        // hinge however the device is held, unless the user lets it turn.
-        .onChange(of: hingePosture == .partiallyOpen && foldedOrientation == .laptop, initial: true) { _, locks in
-            OrientationLock.set(locks ? .portrait : nil)
-        }
-        .onDisappear { OrientationLock.set(nil) }
         .onChange(of: model.clipboardMessage) { _, message in
             guard let message else { return }
             withAnimation { toastText = message }
@@ -99,7 +93,7 @@ struct SessionWorkspaceView: View {
             "state=\(model.state) focused=\(model.isFocused) menu=\(model.isMenuPresented) "
                 + "phase=\(scenePhase) accepts=\(model.acceptsInput) "
                 + "safeArea=\(Int(windowSafeArea.top)),\(Int(windowSafeArea.leading)),"
-                + "\(Int(windowSafeArea.bottom)),\(Int(windowSafeArea.trailing))"
+                + "\(Int(windowSafeArea.bottom)),\(Int(windowSafeArea.trailing)) hinge=\(hingePosture)"
         )
         #endif
         .statusBarHidden()
@@ -154,7 +148,7 @@ struct SessionWorkspaceView: View {
         let showsDeck = deckPreference.showsDeck(
             posture: hingePosture,
             isPortrait: isPortrait,
-            landscapeWhenFolded: foldedOrientation == .free
+            landscapeWhenFolded: showsDeckFoldedInLandscape
         )
         let hingeAcross = hingePosture == .partiallyOpen && isPortrait
         let splitsDeck = splitsDeckInLandscape && !isPortrait && canFloatDeck

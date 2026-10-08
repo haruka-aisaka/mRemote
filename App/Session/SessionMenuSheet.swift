@@ -40,7 +40,7 @@ struct SessionMenuSheet: View {
     @AppStorage(LaptopDeckPlacement.storageKey) private var deckPlacement = LaptopDeckPlacement.docked
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
-    @AppStorage(FoldedOrientation.storageKey) private var foldedOrientation = FoldedOrientation.laptop
+    @AppStorage(LaptopDeckPreference.foldedLandscapeStorageKey) private var showsDeckFoldedInLandscape = false
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -270,14 +270,14 @@ struct SessionMenuSheet: View {
                             .accessibilityIdentifier("session-laptop-split-toggle")
                     }
                     if model.deviceHasHinge {
-                        Toggle("折り曲げても横向きで使う", isOn: Binding(
-                            get: { foldedOrientation == .free },
-                            set: { foldedOrientation = $0 ? .free : .laptop }
-                        ))
-                        .accessibilityIdentifier("session-folded-landscape-toggle")
-                        Text(foldedOrientation == .free
-                             ? String(localized: "折り曲げても持った向きに合わせて回転します。横向きで少し折ったときも、手元キーボードは画面の下に出ます。")
-                             : String(localized: "折り曲げると、画面はヒンジの上に立つ向き（ラップトップ）に固定されます。"))
+                        // The system decides which way the screen turns; this
+                        // only decides whether folding sideways means a deck.
+                        Toggle("横向きで折り曲げたときも手元キーボードを出す", isOn: $showsDeckFoldedInLandscape)
+                            .disabled(deckPreference != .automatic)
+                            .accessibilityIdentifier("session-folded-landscape-toggle")
+                        Text(showsDeckFoldedInLandscape
+                             ? String(localized: "本のように横向きで少し折ったときも、手元キーボードを画面の下に出します（左右分割の設定に従います）。")
+                             : String(localized: "手元キーボードが出るのは、縦向き（ラップトップの形）で折り曲げたときだけです。"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

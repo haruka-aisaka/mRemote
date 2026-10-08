@@ -580,6 +580,9 @@ enum LaptopDeckPreference: String, CaseIterable {
     /// keyboard is wanted on screen is a matter of the device and the
     /// user's hands, not of the host.
     static let storageKey = "laptop-deck-preference"
+    /// Whether 自動 also brings the deck up when a foldable is folded while
+    /// held sideways, like a book, rather than only in the laptop posture.
+    static let foldedLandscapeStorageKey = "laptop-deck-folded-landscape"
 
     /// - Parameter landscapeWhenFolded: the foldable may be folded while
     ///   held sideways, and the deck comes up then too.

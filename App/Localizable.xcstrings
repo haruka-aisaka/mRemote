@@ -1950,6 +1950,16 @@
         }
       }
     },
+    "手元キーボードが出るのは、縦向き（ラップトップの形）で折り曲げたときだけです。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The PC keyboard comes up only when folded upright, like a laptop."
+          }
+        }
+      }
+    },
     "手元キーボードの位置": {
       "localizations": {
         "en": {
@@ -2056,36 +2066,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "When a Foldable Is Folded"
-          }
-        }
-      }
-    },
-    "折り曲げても持った向きに合わせて回転します。横向きで少し折ったときも、手元キーボードは画面の下に出ます。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Folded, the screen still turns with the device. Folded a little while held sideways, the PC keyboard comes up along the bottom."
-          }
-        }
-      }
-    },
-    "折り曲げても横向きで使う": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Allow landscape when folded"
-          }
-        }
-      }
-    },
-    "折り曲げると、画面はヒンジの上に立つ向き（ラップトップ）に固定されます。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Folded, the screen stays upright above the hinge, like a laptop."
           }
         }
       }
@@ -2350,6 +2330,16 @@
         }
       }
     },
+    "本のように横向きで少し折ったときも、手元キーボードを画面の下に出します（左右分割の設定に従います）。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folded a little while held sideways, like a book, the PC keyboard also comes up along the bottom (split if that is on)."
+          }
+        }
+      }
+    },
     "標準": {
       "localizations": {
         "en": {
@@ -2366,6 +2356,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Split in landscape"
+          }
+        }
+      }
+    },
+    "横向きで折り曲げたときも手元キーボードを出す": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show the PC keyboard when folded sideways"
           }
         }
       }
