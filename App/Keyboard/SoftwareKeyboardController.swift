@@ -29,14 +29,18 @@ final class SoftwareKeyboardController {
     /// Nil when the profile does not allow sending the clipboard; the bar
     /// then offers no paste.
     @ObservationIgnored private let paste: ((String) -> Void)?
+    /// A Mac host: the bar names its keys as a Mac's (⌘ ⌥ ⌃, 英数/かな).
+    let isMacHost: Bool
 
     init(
         mode: SoftwareKeyboardMode,
         layout: KeyboardLayoutPreference,
         canSend: @escaping () -> Bool,
         paste: ((String) -> Void)? = nil,
+        isMacHost: Bool = false,
         send: @escaping (SoftwareKeyboardOutput) -> Void
     ) {
+        self.isMacHost = isMacHost
         self.mode = mode
         self.composer = SoftwareKeyboardComposer(mode: mode, layout: layout)
         self.canSend = canSend

@@ -116,6 +116,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             paste: configuration.clipboardPolicy.allowsSend
                 ? { [weak self] text in Task { await self?.pasteToRemote(text) } }
                 : nil,
+            isMacHost: configuration.remotePlatform == .macOS,
             send: { [weak self] output in
                 guard let sink = self?.inputSink else { return }
                 switch output {

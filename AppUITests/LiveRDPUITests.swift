@@ -45,7 +45,9 @@ import XCTest
 final class LiveRDPUITests: XCTestCase {
     private var app: XCUIApplication!
     private let environment = ProcessInfo.processInfo.environment
-    private let profileName = "Live RDP"
+    /// TEST_RUNNER_MREMOTE_LIVE_PROFILE picks another name, so a second host
+    /// (a Mac, say) keeps its own profile beside the Windows one.
+    private var profileName: String { environment["MREMOTE_LIVE_PROFILE"] ?? "Live RDP" }
 
     private func element(_ identifier: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
@@ -212,6 +214,27 @@ final class LiveRDPUITests: XCTestCase {
             ]
             guard let orientation = orientations[arguments.first ?? ""] else { return "unknown orientation" }
             XCUIDevice.shared.orientation = orientation
+        case "chord":
+            // chord <modifiers> <key>: cmd+shift+ctrl+opt, e.g. "chord cmd k",
+            // as a hardware keyboard event.
+            var flags: XCUIElement.KeyModifierFlags = []
+            for part in (arguments.first ?? "").split(separator: "+") {
+                switch part {
+                case "cmd": flags.insert(.command)
+                case "shift": flags.insert(.shift)
+                case "ctrl": flags.insert(.control)
+                case "opt": flags.insert(.option)
+                default: break
+                }
+            }
+            let key = arguments.count > 1 ? arguments[1] : ""
+            let special: [String: String] = [
+                "return": XCUIKeyboardKey.return.rawValue, "space": XCUIKeyboardKey.space.rawValue,
+                "up": XCUIKeyboardKey.upArrow.rawValue, "down": XCUIKeyboardKey.downArrow.rawValue,
+                "left": XCUIKeyboardKey.leftArrow.rawValue, "right": XCUIKeyboardKey.rightArrow.rawValue,
+                "tab": XCUIKeyboardKey.tab.rawValue, "escape": XCUIKeyboardKey.escape.rawValue,
+            ]
+            app.typeKey(special[key] ?? key, modifierFlags: flags)
         case "sleep":
             Thread.sleep(forTimeInterval: TimeInterval(number(0)))
         default:
@@ -240,9 +263,28 @@ final class LiveRDPUITests: XCTestCase {
         app.typeText(profileName)
         element("profile-host-field").tap()
         app.typeText(host)
+        // TEST_RUNNER_MREMOTE_LIVE_PORT: a forwarded port, for instance.
+        if let port = environment["MREMOTE_LIVE_PORT"] {
+            let field = element("profile-port-field")
+            field.tap()
+            let current = (field.value as? String) ?? ""
+            app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2) + port)
+        }
         let username = app.textFields["ユーザー名"].firstMatch
         username.tap()
         app.typeText(user)
+        // TEST_RUNNER_MREMOTE_LIVE_PLATFORM=macOS: a Mac running macos-rdp-server.
+        if environment["MREMOTE_LIVE_PLATFORM"] == "macOS" {
+            let picker = element("profile-platform-picker")
+            // The form builds rows as they scroll in: scroll the list itself
+            // (the keyboard from the fields may still be up).
+            let form = app.collectionViews
+                .matching(NSPredicate(format: "identifier != 'profile-list'")).firstMatch
+            for _ in 0..<15 where !(picker.exists && picker.isHittable) { form.swipeUp() }
+            picker.tap()
+            let option = app.buttons["macOS（macos-rdp-server）"].firstMatch
+            if option.waitForExistence(timeout: 3) { option.tap() }
+        }
         element("profile-save-button").tap()
     }
 

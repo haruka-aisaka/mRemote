@@ -145,6 +145,16 @@ public struct KeyShortcut: Hashable, Sendable, Codable, Identifiable {
     ]
 
     public static var defaults: [KeyShortcut] { Array(suggestions.prefix(4)) }
+
+    /// For a Mac host, where Win is ⌘ and Alt is ⌥: the shortcuts a touch
+    /// screen has no other way to send.
+    public static let macDefaults: [KeyShortcut] = [
+        KeyShortcut(title: "⌘Tab", modifiers: [.windows], usage: 0x2B),
+        KeyShortcut(title: "⌘Space", modifiers: [.windows], usage: 0x2C),
+        KeyShortcut(title: "⌃↑", modifiers: [.control], usage: 0x52),
+        KeyShortcut(title: "⌥⌘Esc", modifiers: [.windows, .alt], usage: 0x29),
+        KeyShortcut(title: "⌃⌘Q", modifiers: [.control, .windows], usage: 0x14),
+    ]
 }
 
 public extension VirtualModifier {

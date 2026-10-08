@@ -338,11 +338,16 @@ struct SessionWorkspaceView: View {
         UIDevice.current.userInterfaceIdiom == .pad || hingePosture != .unavailable
     }
 
+    /// A Mac host gets the Mac's own shortcuts; the user's list is for Windows.
+    private var deckShortcuts: [KeyShortcut] {
+        model.configuration.remotePlatform == .macOS ? KeyShortcut.macDefaults : shortcuts.shortcuts
+    }
+
     private func laptopDeck(split: Bool) -> some View {
         VStack(spacing: 0) {
-            if showsDeckShortcuts, !shortcuts.shortcuts.isEmpty {
+            if showsDeckShortcuts, !deckShortcuts.isEmpty {
                 ShortcutStrip(
-                    shortcuts: shortcuts.shortcuts,
+                    shortcuts: deckShortcuts,
                     isEnabled: model.acceptsInput && scenePhase == .active
                 ) { model.send($0) }
             }
@@ -360,7 +365,8 @@ struct SessionWorkspaceView: View {
             isInputEnabled: model.acceptsInput && scenePhase == .active,
             capsLockRole: capsLockRole,
             showsTrackpadButtons: showsTrackpadButtons,
-            platform: deckPlatform,
+            // A Mac server is typed on with a Mac's keys (⌘, 英数/かな).
+            platform: model.configuration.remotePlatform == .macOS ? .mac : deckPlatform,
             isSplit: split
         )
     }

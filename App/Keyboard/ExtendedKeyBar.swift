@@ -19,12 +19,13 @@ struct ExtendedKeyBar: View {
                     HStack(spacing: 6) {
                         key("Esc", .escape, allowedWhileComposing: true)
                         key("Tab", .tab)
-                        modifier("Ctrl", .control)
-                        modifier("Alt", .alt)
-                        modifier("Shift", .shift)
-                        modifier("Win", .windows)
-                        key(String(localized: "無変換"), .nonConvert)
-                        key(String(localized: "変換"), .convert)
+                        let mac = controller.isMacHost
+                        modifier(mac ? "⌃" : "Ctrl", .control)
+                        modifier(mac ? "⌥" : "Alt", .alt)
+                        modifier(mac ? "⇧" : "Shift", .shift)
+                        modifier(mac ? "⌘" : "Win", .windows)
+                        key(mac ? String(localized: "英数") : String(localized: "無変換"), .nonConvert)
+                        key(mac ? String(localized: "かな") : String(localized: "変換"), .convert)
                         symbolKey("arrow.left", .left, label: String(localized: "左"))
                         symbolKey("arrow.down", .down, label: String(localized: "下"))
                         symbolKey("arrow.up", .up, label: String(localized: "上"))
@@ -34,7 +35,7 @@ struct ExtendedKeyBar: View {
                         key("PgUp", .pageUp)
                         key("PgDn", .pageDown)
                         key("Del", .deleteForward)
-                        ForEach(shortcuts.shortcuts) { shortcut in
+                        ForEach(controller.isMacHost ? KeyShortcut.macDefaults : shortcuts.shortcuts) { shortcut in
                             Button(shortcut.displayTitle) { controller.send(shortcut) }
                                 .buttonStyle(.bordered)
                                 .tint(.orange)
