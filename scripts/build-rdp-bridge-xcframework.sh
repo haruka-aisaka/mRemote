@@ -128,6 +128,7 @@ build_slice() {
     certificate_chain.c \
     control_deadline.c \
     input_command_queue.c \
+    h264_decoder.c \
     freerdp_backend.c; do
     object="$slice_root/${source%.c}.o"
     xcrun --sdk "$sdk" clang \

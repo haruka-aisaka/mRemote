@@ -282,6 +282,8 @@ static void mr_owned_config_destroy(mr_rdp_owned_config *config)
     free(config->gateway_hostname);
     free(config->drive_path);
     free(config->drive_name);
+    free(config->remote_program);
+    free(config->remote_arguments);
     free(config->hostname);
     memset(config, 0, sizeof(*config));
 }
@@ -680,7 +682,7 @@ static mr_rdp_status mr_bridge_channel_event(
     mr_rdp_channel_event event;
     mr_rdp_status status;
     uint64_t sequence;
-    if (channel < MR_RDP_CHANNEL_CLIPRDR || channel > MR_RDP_CHANNEL_RDPDR ||
+    if (channel < MR_RDP_CHANNEL_CLIPRDR || channel > MR_RDP_CHANNEL_RAIL ||
         transition > MR_RDP_CHANNEL_CONNECTED) {
         return MR_RDP_ERROR_INVALID_DATA;
     }
@@ -932,7 +934,9 @@ static mr_rdp_status mr_bridge_audio_packet(
 
 static mr_rdp_status mr_bridge_clipboard_remote_formats(
     void *context,
-    int has_text)
+    int has_text,
+    int has_image,
+    int has_files)
 {
     mr_rdp_session *session = (mr_rdp_session *)context;
     mr_rdp_clipboard_remote_formats_callback callback;
@@ -952,6 +956,8 @@ static mr_rdp_status mr_bridge_clipboard_remote_formats(
     memset(&event, 0, sizeof(event));
     event.struct_size = (uint32_t)sizeof(event);
     event.has_text = has_text ? 1u : 0u;
+    event.has_image = has_image ? 1u : 0u;
+    event.has_files = has_files ? 1u : 0u;
     event.generation = session->config.generation;
     event.sequence = sequence;
     callback(session->callback_context, &event);
@@ -1032,6 +1038,161 @@ static mr_rdp_status mr_bridge_clipboard_text(
     event.utf16le_byte_count = utf16le_byte_count;
     callback(session->callback_context, &event);
     return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_bridge_clipboard_image(
+    void *context,
+    uint64_t request_id,
+    mr_rdp_status result,
+    mr_rdp_clipboard_image_format format,
+    const uint8_t *bytes,
+    size_t byte_count)
+{
+    mr_rdp_session *session = (mr_rdp_session *)context;
+    mr_rdp_clipboard_image_callback callback;
+    mr_rdp_clipboard_image_event event;
+    if (session == NULL || request_id == 0u || result > MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (result == MR_RDP_STATUS_OK) {
+        if (bytes == NULL || byte_count == 0u ||
+            byte_count > MR_RDP_MAX_CLIPBOARD_IMAGE_BYTES ||
+            (format != MR_RDP_CLIPBOARD_IMAGE_PNG && format != MR_RDP_CLIPBOARD_IMAGE_DIB)) {
+            return MR_RDP_ERROR_INVALID_DATA;
+        }
+    } else if (bytes != NULL || byte_count != 0u) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (mr_bridge_invoke_check(session) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    callback = session->callbacks.on_clipboard_image;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (callback == NULL) {
+        return MR_RDP_STATUS_OK;
+    }
+    memset(&event, 0, sizeof(event));
+    event.struct_size = (uint32_t)sizeof(event);
+    event.status = result;
+    event.generation = session->config.generation;
+    event.request_id = request_id;
+    event.format = result == MR_RDP_STATUS_OK ? format : 0u;
+    event.bytes = bytes;
+    event.byte_count = byte_count;
+    callback(session->callback_context, &event);
+    return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_bridge_clipboard_file(
+    void *context,
+    uint64_t request_id,
+    mr_rdp_status result,
+    uint32_t index,
+    uint32_t count,
+    int is_last,
+    const char *name,
+    size_t name_length,
+    const uint8_t *bytes,
+    size_t byte_count)
+{
+    mr_rdp_session *session = (mr_rdp_session *)context;
+    mr_rdp_clipboard_file_callback callback;
+    mr_rdp_clipboard_file_event event;
+    if (session == NULL || request_id == 0u || result > MR_RDP_STATUS_OK ||
+        count > MR_RDP_MAX_CLIPBOARD_FILES) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (result == MR_RDP_STATUS_OK) {
+        if (index >= count || name == NULL || name_length == 0u ||
+            name_length > MR_RDP_MAX_CLIPBOARD_FILE_NAME_BYTES ||
+            memchr(name, '\0', name_length) != NULL ||
+            (bytes == NULL) != (byte_count == 0u) ||
+            byte_count > MR_RDP_MAX_CLIPBOARD_FILES_BYTES ||
+            (is_last != 0) != (index + 1u == count)) {
+            return MR_RDP_ERROR_INVALID_DATA;
+        }
+    } else if (!is_last || bytes != NULL || byte_count != 0u || name != NULL) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (mr_bridge_invoke_check(session) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    callback = session->callbacks.on_clipboard_file;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (callback == NULL) {
+        return MR_RDP_STATUS_OK;
+    }
+    memset(&event, 0, sizeof(event));
+    event.struct_size = (uint32_t)sizeof(event);
+    event.status = result;
+    event.generation = session->config.generation;
+    event.request_id = request_id;
+    event.index = index;
+    event.count = count;
+    event.is_last = is_last ? 1u : 0u;
+    event.name = name;
+    event.name_length = name_length;
+    event.bytes = bytes;
+    event.byte_count = byte_count;
+    callback(session->callback_context, &event);
+    return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_bridge_audio_capture(
+    void *context,
+    int is_open,
+    uint32_t samples_per_second,
+    uint16_t channels,
+    uint16_t bits_per_sample)
+{
+    mr_rdp_session *session = (mr_rdp_session *)context;
+    mr_rdp_audio_capture_callback callback;
+    mr_rdp_audio_capture_event event;
+    if (session == NULL ||
+        (is_open && (samples_per_second < 8000u || samples_per_second > 192000u ||
+                     channels < 1u || channels > 2u || bits_per_sample != 16u))) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
+    if (mr_bridge_invoke_check(session) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    (void)pthread_mutex_lock(&session->mutex);
+    callback = session->callbacks.on_audio_capture;
+    (void)pthread_mutex_unlock(&session->mutex);
+    if (callback == NULL) {
+        return MR_RDP_STATUS_OK;
+    }
+    memset(&event, 0, sizeof(event));
+    event.struct_size = (uint32_t)sizeof(event);
+    event.is_open = is_open ? 1u : 0u;
+    event.generation = session->config.generation;
+    if (is_open) {
+        event.samples_per_second = samples_per_second;
+        event.channels = channels;
+        event.bits_per_sample = bits_per_sample;
+    }
+    callback(session->callback_context, &event);
+    return MR_RDP_STATUS_OK;
+}
+
+void mr_rdp_clipboard_image_offer_init(mr_rdp_clipboard_image_offer *offer)
+{
+    if (offer == NULL) {
+        return;
+    }
+    memset(offer, 0, sizeof(*offer));
+    offer->struct_size = (uint32_t)sizeof(*offer);
+}
+
+void mr_rdp_clipboard_files_offer_init(mr_rdp_clipboard_files_offer *offer)
+{
+    if (offer == NULL) {
+        return;
+    }
+    memset(offer, 0, sizeof(*offer));
+    offer->struct_size = (uint32_t)sizeof(*offer);
 }
 
 void mr_rdp_config_init(mr_rdp_config *config)
@@ -1233,11 +1394,18 @@ static mr_rdp_status mr_validate_config(const mr_rdp_config *config, size_t *out
          ~(mr_rdp_channel_flags)(MR_RDP_CHANNEL_FLAG_AUDIO |
                                  MR_RDP_CHANNEL_FLAG_CLIPBOARD |
                                  MR_RDP_CHANNEL_FLAG_DRIVE |
-                                 MR_RDP_CHANNEL_FLAG_TOUCH)) != 0u) {
+                                 MR_RDP_CHANNEL_FLAG_TOUCH |
+                                 MR_RDP_CHANNEL_FLAG_MICROPHONE |
+                                 MR_RDP_CHANNEL_FLAG_H264)) != 0u) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     if (mr_validate_gateway(config) != MR_RDP_STATUS_OK ||
-        mr_validate_drive(config) != MR_RDP_STATUS_OK) {
+        mr_validate_drive(config) != MR_RDP_STATUS_OK ||
+        !mr_valid_span(config->remote_program, config->remote_program_length,
+                       MR_RDP_MAX_REMOTE_PROGRAM_BYTES, 1) ||
+        !mr_valid_span(config->remote_arguments, config->remote_arguments_length,
+                       MR_RDP_MAX_REMOTE_PROGRAM_BYTES, 1) ||
+        (config->remote_program == NULL && config->remote_arguments != NULL)) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     if (!mr_valid_desktop_scale_factor(config->desktop_scale_factor) ||
@@ -1409,6 +1577,24 @@ mr_rdp_status mr_rdp_session_create_internal(
             }
         }
     }
+    if (config->remote_program != NULL) {
+        session->config.remote_program_length = config->remote_program_length;
+        status = mr_copy_string_span(
+            config->remote_program, config->remote_program_length,
+            &session->config.remote_program);
+        if (status != MR_RDP_STATUS_OK) {
+            goto fail;
+        }
+        if (config->remote_arguments != NULL) {
+            session->config.remote_arguments_length = config->remote_arguments_length;
+            status = mr_copy_string_span(
+                config->remote_arguments, config->remote_arguments_length,
+                &session->config.remote_arguments);
+            if (status != MR_RDP_STATUS_OK) {
+                goto fail;
+            }
+        }
+    }
     if (config->drive_path != NULL) {
         session->config.drive_path_length = config->drive_path_length;
         status = mr_copy_string_span(
@@ -1450,6 +1636,9 @@ mr_rdp_status mr_rdp_session_create_internal(
     host.clipboard_remote_formats = mr_bridge_clipboard_remote_formats;
     host.clipboard_offer_event = mr_bridge_clipboard_offer_event;
     host.clipboard_text = mr_bridge_clipboard_text;
+    host.clipboard_image = mr_bridge_clipboard_image;
+    host.clipboard_file = mr_bridge_clipboard_file;
+    host.audio_capture = mr_bridge_audio_capture;
     status = factory(&session->config, &host, factory_context, &session->backend);
     if (status != MR_RDP_STATUS_OK || session->backend == NULL ||
         session->backend->vtable == NULL ||
@@ -1464,6 +1653,11 @@ mr_rdp_status mr_rdp_session_create_internal(
         session->backend->vtable->offer_clipboard_text == NULL ||
         session->backend->vtable->request_clipboard_text == NULL ||
         session->backend->vtable->send_touch == NULL ||
+        session->backend->vtable->offer_clipboard_image == NULL ||
+        session->backend->vtable->offer_clipboard_files == NULL ||
+        session->backend->vtable->request_clipboard_image == NULL ||
+        session->backend->vtable->request_clipboard_files == NULL ||
+        session->backend->vtable->send_audio_capture == NULL ||
         session->backend->vtable->send_pen == NULL ||
         session->backend->vtable->destroy == NULL) {
         if (status == MR_RDP_STATUS_OK) {
@@ -2022,6 +2216,136 @@ mr_rdp_status mr_rdp_session_request_clipboard_text(
         return status;
     }
     status = backend->vtable->request_clipboard_text(backend, request_id);
+    mr_api_call_finished(session);
+    return status;
+}
+
+mr_rdp_status mr_rdp_session_offer_clipboard_image(
+    mr_rdp_session *session,
+    const mr_rdp_clipboard_image_offer *offer)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_status status;
+    if (session == NULL || offer == NULL ||
+        offer->struct_size < sizeof(*offer) || offer->reserved != 0u ||
+        offer->offer_id == 0u ||
+        (offer->png_bytes == NULL) != (offer->png_byte_count == 0u) ||
+        (offer->dib_bytes == NULL) != (offer->dib_byte_count == 0u) ||
+        (offer->png_bytes == NULL && offer->dib_bytes == NULL) ||
+        offer->png_byte_count > MR_RDP_MAX_CLIPBOARD_IMAGE_BYTES ||
+        offer->dib_byte_count > MR_RDP_MAX_CLIPBOARD_IMAGE_BYTES) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if ((session->config.channel_flags & MR_RDP_CHANNEL_FLAG_CLIPBOARD) == 0u) {
+        return MR_RDP_ERROR_INVALID_STATE;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    status = backend->vtable->offer_clipboard_image(backend, offer);
+    mr_api_call_finished(session);
+    return status;
+}
+
+mr_rdp_status mr_rdp_session_offer_clipboard_files(
+    mr_rdp_session *session,
+    const mr_rdp_clipboard_files_offer *offer)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_status status;
+    size_t index;
+    uint64_t total = 0u;
+    if (session == NULL || offer == NULL ||
+        offer->struct_size < sizeof(*offer) || offer->reserved != 0u ||
+        offer->offer_id == 0u || offer->files == NULL ||
+        offer->file_count == 0u || offer->file_count > MR_RDP_MAX_CLIPBOARD_FILES) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    for (index = 0u; index < offer->file_count; ++index) {
+        const mr_rdp_clipboard_file *file = &offer->files[index];
+        if (!mr_valid_span(file->name, file->name_length, MR_RDP_MAX_CLIPBOARD_FILE_NAME_BYTES, 0) ||
+            memchr(file->name, '/', file->name_length) != NULL ||
+            memchr(file->name, '\\', file->name_length) != NULL ||
+            (file->bytes == NULL) != (file->byte_count == 0u)) {
+            return MR_RDP_ERROR_INVALID_ARGUMENT;
+        }
+        total += file->byte_count;
+        if (total > MR_RDP_MAX_CLIPBOARD_FILES_BYTES) {
+            return MR_RDP_ERROR_LIMIT_EXCEEDED;
+        }
+    }
+    if ((session->config.channel_flags & MR_RDP_CHANNEL_FLAG_CLIPBOARD) == 0u) {
+        return MR_RDP_ERROR_INVALID_STATE;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    status = backend->vtable->offer_clipboard_files(backend, offer);
+    mr_api_call_finished(session);
+    return status;
+}
+
+/* files: 0 for the image, 1 for files. The backend is read only once the
+ * call is registered in flight, like every other entry point. */
+static mr_rdp_status mr_clipboard_request(
+    mr_rdp_session *session,
+    uint64_t request_id,
+    int files)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_status status;
+    if (session == NULL || request_id == 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if ((session->config.channel_flags & MR_RDP_CHANNEL_FLAG_CLIPBOARD) == 0u) {
+        return MR_RDP_ERROR_INVALID_STATE;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    status = files
+        ? backend->vtable->request_clipboard_files(backend, request_id)
+        : backend->vtable->request_clipboard_image(backend, request_id);
+    mr_api_call_finished(session);
+    return status;
+}
+
+mr_rdp_status mr_rdp_session_request_clipboard_image(
+    mr_rdp_session *session,
+    uint64_t request_id)
+{
+    return mr_clipboard_request(session, request_id, 0);
+}
+
+mr_rdp_status mr_rdp_session_request_clipboard_files(
+    mr_rdp_session *session,
+    uint64_t request_id)
+{
+    return mr_clipboard_request(session, request_id, 1);
+}
+
+mr_rdp_status mr_rdp_session_send_audio_capture(
+    mr_rdp_session *session,
+    const uint8_t *bytes,
+    size_t byte_count)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_status status;
+    if (session == NULL || bytes == NULL || byte_count == 0u ||
+        byte_count > MR_RDP_MAX_AUDIO_CAPTURE_PACKET_BYTES) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if ((session->config.channel_flags & MR_RDP_CHANNEL_FLAG_MICROPHONE) == 0u) {
+        return MR_RDP_ERROR_UNSUPPORTED;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    status = backend->vtable->send_audio_capture(backend, bytes, byte_count);
     mr_api_call_finished(session);
     return status;
 }

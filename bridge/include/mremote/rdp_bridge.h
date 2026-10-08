@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define MR_RDP_BRIDGE_ABI_VERSION 4u
+#define MR_RDP_BRIDGE_ABI_VERSION 5u
 #define MR_RDP_DEFAULT_PORT 3389u
 #define MR_RDP_DEFAULT_CERTIFICATE_TIMEOUT_MS 30000u
 #define MR_RDP_MAX_CERTIFICATE_CHAIN 16u
@@ -42,6 +42,13 @@ extern "C" {
 #define MR_RDP_MAX_VIRTUAL_DESKTOP_WIDTH 16384u
 #define MR_RDP_MAX_TOUCH_CONTACT_ID 255u
 #define MR_RDP_MAX_PEN_PRESSURE 1024u
+/* ABI 5. */
+#define MR_RDP_MAX_CLIPBOARD_IMAGE_BYTES (64u * 1024u * 1024u)
+#define MR_RDP_MAX_CLIPBOARD_FILES 256u
+#define MR_RDP_MAX_CLIPBOARD_FILES_BYTES (256u * 1024u * 1024u)
+#define MR_RDP_MAX_CLIPBOARD_FILE_NAME_BYTES 1024u
+#define MR_RDP_MAX_REMOTE_PROGRAM_BYTES 1024u
+#define MR_RDP_MAX_AUDIO_CAPTURE_PACKET_BYTES (64u * 1024u)
 
 typedef struct mr_rdp_session mr_rdp_session;
 typedef int32_t mr_rdp_status;
@@ -103,7 +110,12 @@ enum {
     /* ABI 4. One local folder shared as a drive (drive_path/drive_name). */
     MR_RDP_CHANNEL_FLAG_DRIVE = 1u << 2,
     /* ABI 4. Touch and pen input (RDPEI). */
-    MR_RDP_CHANNEL_FLAG_TOUCH = 1u << 3
+    MR_RDP_CHANNEL_FLAG_TOUCH = 1u << 3,
+    /* ABI 5. The microphone (audin): the app is told when the server opens
+     * it and feeds PCM with mr_rdp_session_send_audio_capture. */
+    MR_RDP_CHANNEL_FLAG_MICROPHONE = 1u << 4,
+    /* ABI 5. H.264 (AVC420) graphics, decoded with VideoToolbox. */
+    MR_RDP_CHANNEL_FLAG_H264 = 1u << 5
 };
 
 /* ABI 4. */
@@ -154,7 +166,18 @@ typedef struct mr_rdp_config {
     size_t drive_path_length;
     const char *drive_name;
     size_t drive_name_length;
+    /* ABI 5. RemoteApp: the program (an alias such as "||notepad" or a
+     * path) and its arguments, or NULL for a whole desktop. */
+    const char *remote_program;
+    size_t remote_program_length;
+    const char *remote_arguments;
+    size_t remote_arguments_length;
 } mr_rdp_config;
+
+/* ABI 5: remote_program is a span of 1...MR_RDP_MAX_REMOTE_PROGRAM_BYTES with
+ * no embedded NUL, or NULL/0; remote_arguments likewise, and only with a
+ * program. A RemoteApp session draws without the graphics pipeline: the
+ * server paints the program's windows on an otherwise black desktop. */
 
 /* ABI 4: gateway_hostname is NULL for a direct connection; otherwise a
  * NUL-terminated name of at most 253 bytes, reached on gateway_port (zero
@@ -285,7 +308,10 @@ enum {
     MR_RDP_CHANNEL_RDPGFX = 5,
     /* ABI 4. */
     MR_RDP_CHANNEL_RDPEI = 6,
-    MR_RDP_CHANNEL_RDPDR = 7
+    MR_RDP_CHANNEL_RDPDR = 7,
+    /* ABI 5. */
+    MR_RDP_CHANNEL_AUDIN = 8,
+    MR_RDP_CHANNEL_RAIL = 9
 };
 
 typedef uint8_t mr_rdp_channel_transition;
@@ -418,7 +444,10 @@ typedef struct mr_rdp_audio_packet {
 typedef struct mr_rdp_clipboard_remote_formats_event {
     uint32_t struct_size;
     uint8_t has_text;
-    uint8_t reserved[3];
+    /* ABI 5; reserved before. */
+    uint8_t has_image;
+    uint8_t has_files;
+    uint8_t reserved;
     uint64_t generation;
     uint64_t sequence;
 } mr_rdp_clipboard_remote_formats_event;
@@ -456,6 +485,58 @@ typedef struct mr_rdp_clipboard_text_event {
 /* On OK, utf16le_bytes is the remote CF_UNICODETEXT with any trailing NUL
  * code units removed; it may be empty. The view is borrowed for the duration
  * of the callback. On failure the span is NULL/0. */
+
+/* ABI 5. An image the server copied: PNG when it offered one, otherwise a
+ * device-independent bitmap (CF_DIB: a BITMAPINFO header and the pixels,
+ * without a file header). Borrowed for the callback. */
+typedef uint8_t mr_rdp_clipboard_image_format;
+enum {
+    MR_RDP_CLIPBOARD_IMAGE_PNG = 1,
+    MR_RDP_CLIPBOARD_IMAGE_DIB = 2
+};
+
+typedef struct mr_rdp_clipboard_image_event {
+    uint32_t struct_size;
+    mr_rdp_status status;
+    uint64_t generation;
+    uint64_t request_id;
+    mr_rdp_clipboard_image_format format;
+    uint8_t reserved[7];
+    const uint8_t *bytes;
+    size_t byte_count;
+} mr_rdp_clipboard_image_event;
+
+/* ABI 5. One file the server copied, in order; the last one, or a failure,
+ * has is_last set. name is UTF-8, without directories. A request for files
+ * when none were copied ends at once with is_last and UNSUPPORTED. Borrowed
+ * for the callback. */
+typedef struct mr_rdp_clipboard_file_event {
+    uint32_t struct_size;
+    mr_rdp_status status;
+    uint64_t generation;
+    uint64_t request_id;
+    uint32_t index;
+    uint32_t count;
+    uint8_t is_last;
+    uint8_t reserved[7];
+    const char *name;
+    size_t name_length;
+    const uint8_t *bytes;
+    size_t byte_count;
+} mr_rdp_clipboard_file_event;
+
+/* ABI 5. The server opened (is_open 1) or closed the microphone. While it is
+ * open the app sends interleaved signed 16-bit little-endian PCM at this
+ * rate and channel count. */
+typedef struct mr_rdp_audio_capture_event {
+    uint32_t struct_size;
+    uint8_t is_open;
+    uint8_t reserved[3];
+    uint64_t generation;
+    uint32_t samples_per_second;
+    uint16_t channels;
+    uint16_t bits_per_sample;
+} mr_rdp_audio_capture_event;
 
 typedef void (*mr_rdp_state_callback)(
     void *context,
@@ -495,6 +576,16 @@ typedef void (*mr_rdp_clipboard_text_callback)(
     void *context,
     const mr_rdp_clipboard_text_event *event);
 
+typedef void (*mr_rdp_clipboard_image_callback)(
+    void *context,
+    const mr_rdp_clipboard_image_event *event);
+typedef void (*mr_rdp_clipboard_file_callback)(
+    void *context,
+    const mr_rdp_clipboard_file_event *event);
+typedef void (*mr_rdp_audio_capture_callback)(
+    void *context,
+    const mr_rdp_audio_capture_event *event);
+
 typedef struct mr_rdp_callbacks {
     uint32_t struct_size;
     uint32_t abi_version;
@@ -511,6 +602,10 @@ typedef struct mr_rdp_callbacks {
     mr_rdp_clipboard_remote_formats_callback on_clipboard_remote_formats;
     mr_rdp_clipboard_offer_callback on_clipboard_offer;
     mr_rdp_clipboard_text_callback on_clipboard_text;
+    /* ABI 5. */
+    mr_rdp_clipboard_image_callback on_clipboard_image;
+    mr_rdp_clipboard_file_callback on_clipboard_file;
+    mr_rdp_audio_capture_callback on_audio_capture;
 } mr_rdp_callbacks;
 
 typedef uint8_t mr_rdp_key_action;
@@ -754,6 +849,71 @@ mr_rdp_status mr_rdp_session_set_audio_focused(
 mr_rdp_status mr_rdp_session_offer_clipboard_text(
     mr_rdp_session *session,
     const mr_rdp_clipboard_offer *offer);
+
+/* ABI 5. An image for the server to paste, as PNG and as CF_DIB (a
+ * BITMAPINFOHEADER and bottom-up pixels, no file header); either may be
+ * absent but not both, each at most MR_RDP_MAX_CLIPBOARD_IMAGE_BYTES. Copied
+ * before returning. Progress arrives on on_clipboard_offer. */
+typedef struct mr_rdp_clipboard_image_offer {
+    uint32_t struct_size;
+    uint32_t reserved;
+    uint64_t offer_id;
+    const uint8_t *png_bytes;
+    size_t png_byte_count;
+    const uint8_t *dib_bytes;
+    size_t dib_byte_count;
+} mr_rdp_clipboard_image_offer;
+
+void mr_rdp_clipboard_image_offer_init(mr_rdp_clipboard_image_offer *offer);
+mr_rdp_status mr_rdp_session_offer_clipboard_image(
+    mr_rdp_session *session,
+    const mr_rdp_clipboard_image_offer *offer);
+
+/* ABI 5. Files for the server to paste - into Explorer, for instance: 1 to
+ * MR_RDP_MAX_CLIPBOARD_FILES, names of 1...MR_RDP_MAX_CLIPBOARD_FILE_NAME_BYTES
+ * UTF-8 bytes without '/', '\\' or NUL, together at most
+ * MR_RDP_MAX_CLIPBOARD_FILES_BYTES. Copied before returning. */
+typedef struct mr_rdp_clipboard_file {
+    const char *name;
+    size_t name_length;
+    const uint8_t *bytes;
+    size_t byte_count;
+} mr_rdp_clipboard_file;
+
+typedef struct mr_rdp_clipboard_files_offer {
+    uint32_t struct_size;
+    uint32_t reserved;
+    uint64_t offer_id;
+    const mr_rdp_clipboard_file *files;
+    size_t file_count;
+} mr_rdp_clipboard_files_offer;
+
+void mr_rdp_clipboard_files_offer_init(mr_rdp_clipboard_files_offer *offer);
+mr_rdp_status mr_rdp_session_offer_clipboard_files(
+    mr_rdp_session *session,
+    const mr_rdp_clipboard_files_offer *offer);
+
+/* ABI 5. Ask for the server's image (one on_clipboard_image answers) or its
+ * files (on_clipboard_file, once per file, the last flagged). They share the
+ * text request's single outstanding slot, and its timeout applies to each
+ * message of the exchange. */
+mr_rdp_status mr_rdp_session_request_clipboard_image(
+    mr_rdp_session *session,
+    uint64_t request_id);
+mr_rdp_status mr_rdp_session_request_clipboard_files(
+    mr_rdp_session *session,
+    uint64_t request_id);
+
+/* ABI 5. Microphone PCM in the format on_audio_capture announced: a whole
+ * number of frames, at most MR_RDP_MAX_AUDIO_CAPTURE_PACKET_BYTES. Dropped
+ * while the server has the microphone closed, or when the session was
+ * created without MR_RDP_CHANNEL_FLAG_MICROPHONE (UNSUPPORTED). Copied
+ * before returning; the bridge keeps about a second and drops the oldest
+ * beyond it. */
+mr_rdp_status mr_rdp_session_send_audio_capture(
+    mr_rdp_session *session,
+    const uint8_t *bytes,
+    size_t byte_count);
 
 /* Asks the server for its CF_UNICODETEXT. Exactly one on_clipboard_text
  * answers each accepted request, unless the session stops first. Only one

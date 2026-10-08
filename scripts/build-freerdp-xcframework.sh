@@ -138,7 +138,7 @@ print_plan() {
     "OpenSSL runtime config=$RUNTIME_OPENSSLDIR" \
     "slice=device:arm64 (PLATFORM=OS64)" \
     "slice=simulator:arm64 (PLATFORM=SIMULATORARM64)" \
-    "static channels=cliprdr,rdpsnd,rdpdr,drdynvc,disp,rdpgfx,rdpei,drive" \
+    "static channels=cliprdr,rdpsnd,rdpdr,drdynvc,disp,rdpgfx,rdpei,drive,audin,rail" \
     "audio subsystems=upstream ios + fake (adapter must select sys:ios; iOS path is PCM-only)" \
     "disabled codecs=FFmpeg,OpenH264,Opus,JPEG,WebP" \
     "source=$FREERDP_SOURCE_DIR" \
@@ -439,11 +439,11 @@ build_openssl_slice() {
 }
 
 disabled_channels=(
-  AINPUT AUDIN ECHO ENCOMSP GEOMETRY GFXREDIR LOCATION PARALLEL PRINTER
-  RAIL RDP2TCP RDPEAR RDPECAM RDPEMSC RDPEWA REMDESK SERIAL
+  AINPUT ECHO ENCOMSP GEOMETRY GFXREDIR LOCATION PARALLEL PRINTER
+  RDP2TCP RDPEAR RDPECAM RDPEMSC RDPEWA REMDESK SERIAL
   SMARTCARD SSHAGENT TELEMETRY TSMF URBDRC VIDEO
 )
-required_channels=(CLIPRDR RDPSND RDPDR DRDYNVC DISP RDPGFX RDPEI DRIVE)
+required_channels=(CLIPRDR RDPSND RDPDR DRDYNVC DISP RDPGFX RDPEI DRIVE AUDIN RAIL)
 
 cache_value() {
   local cache="$1"
@@ -503,7 +503,9 @@ build_freerdp_slice() {
   verify_freerdp_source "$FREERDP_SOURCE_DIR"
   local source_path
   source_path="$(cd "$FREERDP_SOURCE_DIR" && pwd -P)"
-  local c_flags="-O2 -DNDEBUG -ffile-prefix-map=$source_path=/usr/src/FreeRDP -ffile-prefix-map=$build_dir=/usr/src/FreeRDP-build"
+  # WITH_GFX_H264: advertise AVC420 although FreeRDP has no decoder of its own
+  # here; the bridge decodes AVC420 with VideoToolbox (bridge/src/h264_decoder.c).
+  local c_flags="-O2 -DNDEBUG -DWITH_GFX_H264 -ffile-prefix-map=$source_path=/usr/src/FreeRDP -ffile-prefix-map=$build_dir=/usr/src/FreeRDP-build"
 
   local cmake_args=(
     -S "$FREERDP_SOURCE_DIR"

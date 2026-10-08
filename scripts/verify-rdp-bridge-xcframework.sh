@@ -69,6 +69,8 @@ required_linked_addins=(
   rdpgfx_DVCPluginEntry
   rdpei_DVCPluginEntry
   drive_DeviceServiceEntry
+  audin_DVCPluginEntry
+  rail_VirtualChannelEntryEx
   ios_freerdp_rdpsnd_client_subsystem_entry
 )
 
@@ -144,7 +146,8 @@ for index in 0 1; do
       -Wno-deprecated-declarations \
       -I "$headers" -I "$freerdp_headers" \
       -x c - -x none "$archive" "$freerdp_archive" \
-      -framework Foundation -framework AudioToolbox \
+      -framework Foundation -framework AudioToolbox -framework AVFoundation \
+      -framework VideoToolbox -framework CoreMedia -framework CoreVideo \
       -o "$link_output"
 
   linked_symbols="$(xcrun nm "$link_output")"

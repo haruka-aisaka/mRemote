@@ -46,6 +46,8 @@ required_symbols=(
   rdpgfx_DVCPluginEntry
   rdpei_DVCPluginEntry
   drive_DeviceServiceEntry
+  audin_DVCPluginEntry
+  rail_VirtualChannelEntryEx
   ios_freerdp_rdpsnd_client_subsystem_entry
   fake_freerdp_rdpsnd_client_subsystem_entry
 )
@@ -123,6 +125,8 @@ for index in 0 1; do
     'extern void rdpgfx_DVCPluginEntry(void);' \
     'extern void rdpei_DVCPluginEntry(void);' \
     'extern void drive_DeviceServiceEntry(void);' \
+    'extern void audin_DVCPluginEntry(void);' \
+    'extern void rail_VirtualChannelEntryEx(void);' \
     'extern void ios_freerdp_rdpsnd_client_subsystem_entry(void);' \
     'extern void fake_freerdp_rdpsnd_client_subsystem_entry(void);' \
     'typedef void (*entry_point)(void);' \
@@ -132,6 +136,7 @@ for index in 0 1; do
     '  drdynvc_VirtualChannelEntryEx,' \
     '  disp_DVCPluginEntry, rdpgfx_DVCPluginEntry,' \
     '  rdpei_DVCPluginEntry, drive_DeviceServiceEntry,' \
+    '  audin_DVCPluginEntry, rail_VirtualChannelEntryEx,' \
     '  ios_freerdp_rdpsnd_client_subsystem_entry,' \
     '  fake_freerdp_rdpsnd_client_subsystem_entry' \
     '};' \
@@ -144,7 +149,7 @@ for index in 0 1; do
     '}' |
     xcrun --sdk "$sdk" clang -target "$target" -Wno-deprecated-declarations \
       -I "$headers_dir" -x c - -x none "$archive" \
-      -framework Foundation -framework AudioToolbox -o /dev/null
+      -framework Foundation -framework AudioToolbox -framework AVFoundation -o /dev/null
 done
 
 [[ "$device_count" == "1" ]] || die "expected one device slice"
@@ -164,6 +169,6 @@ host_path_match="$(LC_ALL=C grep -R -a -E -l \
 
 printf 'verified: %s\n' "$XCFRAMEWORK_PATH"
 printf 'slices: ios-arm64, ios-arm64-simulator\n'
-printf 'static add-ins: cliprdr, rdpsnd, rdpdr, drdynvc, disp, rdpgfx, rdpei, drive\n'
+printf 'static add-ins: cliprdr, rdpsnd, rdpdr, drdynvc, disp, rdpgfx, rdpei, drive, audin, rail\n'
 printf 'link smoke: FreeRDP/OpenSSL/static add-ins + Foundation/AudioToolbox\n'
 printf 'audio subsystems: ios (PCM-only) + upstream fake; integration must select sys:ios\n'

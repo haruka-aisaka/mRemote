@@ -78,6 +78,18 @@ typedef void (*mr_rdp_mock_connection_observer)(
     void *context,
     const mr_rdp_mock_connection_config *config);
 
+/* ABI 5. */
+typedef void (*mr_rdp_mock_image_offer_observer)(
+    void *context,
+    const mr_rdp_clipboard_image_offer *offer);
+typedef void (*mr_rdp_mock_files_offer_observer)(
+    void *context,
+    const mr_rdp_clipboard_files_offer *offer);
+typedef void (*mr_rdp_mock_capture_observer)(
+    void *context,
+    const uint8_t *bytes,
+    size_t byte_count);
+
 typedef struct mr_rdp_mock_channel_transition {
     mr_rdp_channel_kind channel;
     mr_rdp_channel_transition transition;
@@ -123,6 +135,17 @@ typedef struct mr_rdp_mock_script {
     /* Presented with the gateway role before the server's chain. */
     const mr_rdp_der_blob *gateway_certificate_chain;
     size_t gateway_certificate_chain_count;
+    /* ABI 5. The remote clipboard's image (always offered as PNG) and files,
+     * borrowed through run returning; the microphone opens at this rate
+     * after connecting when the session asked for it (zero: never). */
+    const uint8_t *remote_image_png;
+    size_t remote_image_png_byte_count;
+    const mr_rdp_clipboard_file *remote_files;
+    size_t remote_file_count;
+    uint32_t audio_capture_rate;
+    mr_rdp_mock_image_offer_observer on_offer_clipboard_image;
+    mr_rdp_mock_files_offer_observer on_offer_clipboard_files;
+    mr_rdp_mock_capture_observer on_send_audio_capture;
 } mr_rdp_mock_script;
 
 void mr_rdp_mock_script_init(mr_rdp_mock_script *script);

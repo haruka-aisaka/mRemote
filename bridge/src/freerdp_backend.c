@@ -1,6 +1,7 @@
 #include "bridge_internal.h"
 #include "certificate_chain.h"
 #include "control_deadline.h"
+#include "h264_decoder.h"
 #include "input_command_queue.h"
 #include "mremote/rdpsnd.h"
 
@@ -8,10 +9,18 @@
 #include <freerdp/client.h>
 #include <freerdp/client/channels.h>
 #include <freerdp/client/rdpsnd.h>
+#include <freerdp/client/audin.h>
+#include <freerdp/channels/audin.h>
 #include <freerdp/graphics.h>
 #include <freerdp/client/cliprdr.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/client/rail.h>
+#include <freerdp/client/rdpgfx.h>
+#include <freerdp/codec/region.h>
+#include <freerdp/gdi/gfx.h>
+#include <freerdp/gdi/region.h>
+#include <freerdp/rail.h>
 #include <freerdp/channels/disp.h>
 #include <freerdp/channels/drdynvc.h>
 #include <freerdp/channels/rdpdr.h>
@@ -24,11 +33,16 @@
 #include <freerdp/input.h>
 #include <freerdp/locale/keyboard.h>
 #include <freerdp/settings.h>
+#include <freerdp/utils/cliprdr_utils.h>
 
 #include <winpr/crt.h>
+#include <winpr/shell.h>
+#include <winpr/string.h>
+#include <winpr/user.h>
 #include <winpr/input.h>
 #include <winpr/synch.h>
 #include <winpr/sysinfo.h>
+#include <winpr/wlog.h>
 
 #include <pthread.h>
 #include <stdint.h>
@@ -39,6 +53,8 @@
 #if !defined(CHANNEL_RDPEI_CLIENT) || !defined(CHANNEL_DRIVE_CLIENT)
 #error "FreeRDP must be built with CHANNEL_RDPEI and CHANNEL_DRIVE"
 #endif
+
+#define MR_FREERDP_LOG_TAG "com.mremote.bridge"
 
 #define MR_FREERDP_PROTOCOL_RDP 0x00000000u
 #define MR_FREERDP_PROTOCOL_SSL 0x00000001u
@@ -55,15 +71,79 @@ static mr_rdp_transport_security mr_freerdp_transport_security(uint32_t selected
 
 typedef struct mr_freerdp_backend mr_freerdp_backend;
 
+/* RemoteApp: Windows 11 draws each window on a graphics surface of its
+ * own, mapped to the window; this adapter lays them out on the desktop
+ * framebuffer where the server says the windows are. */
+#define MR_FREERDP_RAIL_WINDOWS 64u
+
+typedef struct mr_freerdp_rail_window {
+    UINT32 id;
+    INT32 x;
+    INT32 y;
+    BOOL shown;
+} mr_freerdp_rail_window;
+
+/* ABI 5: one H.264 decoder per graphics surface; Windows uses a handful. */
+#define MR_FREERDP_MAX_H264_SURFACES 16u
+
+typedef struct mr_freerdp_h264_surface {
+    UINT16 surface_id;
+    const void *surface;
+    mr_h264_decoder *decoder;
+} mr_freerdp_h264_surface;
+
+/* ABI 5: about a second of 48 kHz stereo 16-bit microphone audio. */
+#define MR_FREERDP_CAPTURE_CAPACITY (48000u * 2u * 2u)
+
+/* The microphone as FreeRDP's audin sees it: the app feeds it. */
+typedef struct mr_freerdp_audin_device {
+    IAudinDevice iface;
+    mr_freerdp_backend *backend;
+    AudinReceive receive;
+    void *user_data;
+    AUDIO_FORMAT format;
+    UINT32 frames_per_packet;
+} mr_freerdp_audin_device;
+
 typedef struct mr_freerdp_clipboard_probe {
     mr_rdp_backend_clipboard_probe descriptor;
     uint8_t *bytes;
 } mr_freerdp_clipboard_probe;
 
-typedef struct mr_freerdp_clipboard_offer {
-    uint64_t offer_id;
+/* ABI 5: what a clipboard offer or request is about. */
+enum {
+    MR_FREERDP_CLIP_TEXT = 1,
+    MR_FREERDP_CLIP_IMAGE = 2,
+    MR_FREERDP_CLIP_FILES = 3
+};
+
+/* Registered formats this client announces under its own ids. */
+#define MR_FREERDP_FORMAT_PNG 0xC0A0u
+#define MR_FREERDP_FORMAT_FILES 0xC0B0u
+#define MR_FREERDP_FORMAT_PNG_NAME "PNG"
+#define MR_FREERDP_FORMAT_FILES_NAME "FileGroupDescriptorW"
+/* How much of a remote file each contents request asks for. */
+#define MR_FREERDP_FILE_CHUNK (1024u * 1024u)
+
+typedef struct mr_freerdp_clipboard_file {
+    WCHAR name[260];
     uint8_t *bytes;
     size_t byte_count;
+} mr_freerdp_clipboard_file;
+
+typedef struct mr_freerdp_clipboard_offer {
+    uint64_t offer_id;
+    int kind;
+    /* Text: UTF-16LE with its NUL. */
+    uint8_t *bytes;
+    size_t byte_count;
+    /* Image: either or both. */
+    uint8_t *png;
+    size_t png_count;
+    uint8_t *dib;
+    size_t dib_count;
+    mr_freerdp_clipboard_file *files;
+    size_t file_count;
 } mr_freerdp_clipboard_offer;
 
 typedef struct mr_freerdp_context {
@@ -91,6 +171,15 @@ struct mr_freerdp_backend {
     CliprdrClientContext *cliprdr;
     int cliprdr_ready;
     DispClientContext *disp;
+    /* RemoteApp: the windows the server reported, and their stacking,
+     * topmost first. Read and written on the connection's thread. */
+    mr_freerdp_rail_window rail_windows[MR_FREERDP_RAIL_WINDOWS];
+    size_t rail_window_count;
+    UINT32 rail_zorder[MR_FREERDP_RAIL_WINDOWS];
+    size_t rail_zorder_count;
+    RdpgfxClientContext *gfx;
+    RailClientContext *rail;
+    int rail_started;
     mr_freerdp_clipboard_probe *pending_clipboard_probe;
     mr_freerdp_clipboard_probe *active_clipboard_probe;
     mr_control_deadline clipboard_probe_deadline;
@@ -120,7 +209,44 @@ struct mr_freerdp_backend {
     uint64_t expired_text_request_id;
     uint64_t outstanding_text_request_id;
     UINT64 outstanding_text_request_since;
+    /* ABI 5: the kind of the pending, outstanding and expired requests, and
+     * what the server last offered beyond text. */
+    int pending_request_kind;
+    int outstanding_request_kind;
+    int expired_request_kind;
+    UINT32 remote_png_id;
+    int remote_has_dib;
+    UINT32 remote_files_id;
+    /* Remote files being fetched, one at a time, a chunk per message. */
+    FILEDESCRIPTORW *incoming_files;
+    UINT32 incoming_count;
+    UINT32 incoming_index;
+    uint8_t *incoming_buffer;
+    uint64_t incoming_size;
+    uint64_t incoming_received;
+    uint64_t incoming_total;
+    UINT32 incoming_stream_id;
+    /* The image request asked for PNG rather than CF_DIB. */
+    int outstanding_image_png;
+    /* ABI 5 microphone: the open device, and what the app has sent that has
+     * not reached it yet. Both under the mutex. */
+    mr_freerdp_audin_device *audin;
+    int audin_open;
+    uint8_t capture[MR_FREERDP_CAPTURE_CAPACITY];
+    size_t capture_count;
+    /* ABI 5 H.264: gdi's own surface command, wrapped; only the worker
+     * touches these. */
+    pcRdpgfxSurfaceCommand gdi_surface_command;
+    mr_freerdp_h264_surface h264[MR_FREERDP_MAX_H264_SURFACES];
 };
+
+/* ABI 5 handlers wired up when their channel connects, defined further down. */
+static UINT mr_freerdp_surface_command(RdpgfxClientContext *context, const RDPGFX_SURFACE_COMMAND *cmd);
+static UINT mr_freerdp_update_window_from_surface(RdpgfxClientContext *gfx, gdiGfxSurface *surface);
+static UINT mr_freerdp_rail_execute_result(RailClientContext *rail, const RAIL_EXEC_RESULT_ORDER *result);
+static BOOL mr_freerdp_begin_paint(rdpContext *context);
+static BOOL mr_freerdp_end_paint(rdpContext *context);
+static UINT VCAPITYPE mr_freerdp_audin_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS entry);
 
 static mr_freerdp_backend *mr_freerdp_backend_from_instance(freerdp *instance)
 {
@@ -271,6 +397,15 @@ static void mr_freerdp_clipboard_offer_destroy(mr_freerdp_clipboard_offer *offer
         SecureZeroMemory(offer->bytes, offer->byte_count);
         free(offer->bytes);
     }
+    free(offer->png);
+    free(offer->dib);
+    if (offer->files != NULL) {
+        size_t index;
+        for (index = 0u; index < offer->file_count; ++index) {
+            free(offer->files[index].bytes);
+        }
+        free(offer->files);
+    }
     SecureZeroMemory(offer, sizeof(*offer));
     free(offer);
 }
@@ -310,6 +445,90 @@ static void mr_freerdp_emit_text(
     }
 }
 
+/* Forgets a remote file transfer in progress. */
+static void mr_freerdp_reset_incoming_locked(mr_freerdp_backend *backend)
+{
+    free(backend->incoming_files);
+    free(backend->incoming_buffer);
+    backend->incoming_files = NULL;
+    backend->incoming_buffer = NULL;
+    backend->incoming_count = 0u;
+    backend->incoming_index = 0u;
+    backend->incoming_size = 0u;
+    backend->incoming_received = 0u;
+    backend->incoming_total = 0u;
+}
+
+static void mr_freerdp_emit_image(
+    mr_freerdp_backend *backend,
+    uint64_t request_id,
+    mr_rdp_status status,
+    mr_rdp_clipboard_image_format format,
+    const uint8_t *bytes,
+    size_t byte_count)
+{
+    mr_rdp_status host_status;
+    if (request_id == 0u) {
+        return;
+    }
+    host_status = backend->host.clipboard_image(
+        backend->host.context, request_id, status, format, bytes, byte_count);
+    if (host_status != MR_RDP_STATUS_OK && host_status != MR_RDP_ERROR_STOPPED) {
+        mr_freerdp_record_status(backend, host_status);
+    }
+}
+
+static void mr_freerdp_emit_file(
+    mr_freerdp_backend *backend,
+    uint64_t request_id,
+    mr_rdp_status status,
+    uint32_t index,
+    uint32_t count,
+    const WCHAR *name,
+    const uint8_t *bytes,
+    size_t byte_count)
+{
+    mr_rdp_status host_status;
+    char *utf8 = NULL;
+    size_t utf8_length = 0u;
+    if (request_id == 0u) {
+        return;
+    }
+    if (status == MR_RDP_STATUS_OK) {
+        utf8 = ConvertWCharNToUtf8Alloc(name, 260u, &utf8_length);
+        if (utf8 == NULL || utf8_length == 0u) {
+            free(utf8);
+            status = MR_RDP_ERROR_INVALID_DATA;
+        }
+    }
+    host_status = status == MR_RDP_STATUS_OK
+        ? backend->host.clipboard_file(
+              backend->host.context, request_id, status, index, count, index + 1u == count,
+              utf8, utf8_length, byte_count == 0u ? NULL : bytes, byte_count)
+        : backend->host.clipboard_file(
+              backend->host.context, request_id, status, 0u, 0u, 1, NULL, 0u, NULL, 0u);
+    free(utf8);
+    if (host_status != MR_RDP_STATUS_OK && host_status != MR_RDP_ERROR_STOPPED) {
+        mr_freerdp_record_status(backend, host_status);
+    }
+}
+
+/* A request that ends without data, whatever its kind. */
+static void mr_freerdp_fail_request(
+    mr_freerdp_backend *backend,
+    uint64_t request_id,
+    int kind,
+    mr_rdp_status status)
+{
+    if (kind == MR_FREERDP_CLIP_IMAGE) {
+        mr_freerdp_emit_image(backend, request_id, status, 0u, NULL, 0u);
+    } else if (kind == MR_FREERDP_CLIP_FILES) {
+        mr_freerdp_emit_file(backend, request_id, status, 0u, 0u, NULL, NULL, 0u);
+    } else {
+        mr_freerdp_emit_text(backend, request_id, status, NULL, 0u);
+    }
+}
+
 /* Drops every clipboard obligation. Called with the mutex held when the
  * channel or the connection goes away; the caller frees what is returned. */
 static void mr_freerdp_take_clipboard_state_locked(
@@ -326,6 +545,13 @@ static void mr_freerdp_take_clipboard_state_locked(
     backend->expired_text_request_id = 0u;
     backend->outstanding_text_request_id = 0u;
     backend->outstanding_text_request_since = 0u;
+    backend->pending_request_kind = 0;
+    backend->outstanding_request_kind = 0;
+    backend->expired_request_kind = 0;
+    backend->remote_png_id = 0u;
+    backend->remote_has_dib = 0;
+    backend->remote_files_id = 0u;
+    mr_freerdp_reset_incoming_locked(backend);
 }
 
 static UINT mr_freerdp_cliprdr_monitor_ready(
@@ -346,7 +572,9 @@ static UINT mr_freerdp_cliprdr_monitor_ready(
     general.capabilitySetType = CB_CAPSTYPE_GENERAL;
     general.capabilitySetLength = CB_CAPSTYPE_GENERAL_LEN;
     general.version = CB_CAPS_VERSION_2;
-    general.generalFlags = CB_USE_LONG_FORMAT_NAMES;
+    /* ABI 5: files are streamed on request, by index, never by path. */
+    general.generalFlags = CB_USE_LONG_FORMAT_NAMES | CB_STREAM_FILECLIP_ENABLED |
+        CB_FILECLIP_NO_FILE_PATHS;
     {
         UINT status = cliprdr->ClientCapabilities(cliprdr, &capabilities);
         mr_freerdp_backend *backend =
@@ -391,6 +619,9 @@ static UINT mr_freerdp_cliprdr_server_format_list(
     uint64_t failed_offer_id = 0u;
     mr_rdp_status host_status;
     int has_text = 0;
+    int has_dib = 0;
+    UINT32 png_id = 0u;
+    UINT32 files_id = 0u;
     UINT32 index;
     UINT status;
     if (cliprdr == NULL || format_list == NULL || cliprdr->custom == NULL ||
@@ -400,8 +631,17 @@ static UINT mr_freerdp_cliprdr_server_format_list(
     backend = (mr_freerdp_backend *)cliprdr->custom;
     for (index = 0u; index < format_list->numFormats && format_list->formats != NULL;
          ++index) {
-        if (format_list->formats[index].formatId == CF_UNICODETEXT) {
+        const CLIPRDR_FORMAT *format = &format_list->formats[index];
+        if (format->formatId == CF_UNICODETEXT) {
             has_text = 1;
+        } else if (format->formatId == CF_DIB || format->formatId == CF_DIBV5) {
+            has_dib = 1;
+        } else if (format->formatName != NULL &&
+                   strcmp(format->formatName, MR_FREERDP_FORMAT_PNG_NAME) == 0) {
+            png_id = format->formatId;
+        } else if (format->formatName != NULL &&
+                   strcmp(format->formatName, MR_FREERDP_FORMAT_FILES_NAME) == 0) {
+            files_id = format->formatId;
         }
     }
     memset(&response, 0, sizeof(response));
@@ -418,12 +658,16 @@ static UINT mr_freerdp_cliprdr_server_format_list(
         failed_offer_id = replaced->offer_id;
     }
     backend->offer_awaiting_response = 0;
+    backend->remote_png_id = png_id;
+    backend->remote_has_dib = has_dib;
+    backend->remote_files_id = files_id;
     (void)pthread_mutex_unlock(&backend->mutex);
     mr_freerdp_emit_offer(
         backend, failed_offer_id, MR_RDP_CLIPBOARD_OFFER_FAILED, MR_RDP_ERROR_INVALID_STATE);
     mr_freerdp_clipboard_offer_destroy(replaced);
 
-    host_status = backend->host.clipboard_remote_formats(backend->host.context, has_text);
+    host_status = backend->host.clipboard_remote_formats(
+        backend->host.context, has_text, has_dib || png_id != 0u, files_id != 0u);
     if (host_status != MR_RDP_STATUS_OK && host_status != MR_RDP_ERROR_STOPPED) {
         mr_freerdp_record_status(backend, host_status);
     }
@@ -530,14 +774,57 @@ static UINT mr_freerdp_cliprdr_server_format_data_request(
         uint8_t *served = NULL;
         size_t served_count = 0u;
         uint64_t offer_id = 0u;
-        if (backend->current_offer != NULL &&
-            request->requestedFormatId == CF_UNICODETEXT) {
-            served = (uint8_t *)malloc(backend->current_offer->byte_count);
+        const mr_freerdp_clipboard_offer *offer = backend->current_offer;
+        const uint8_t *source = NULL;
+        size_t source_count = 0u;
+        if (offer != NULL) {
+            if (offer->kind == MR_FREERDP_CLIP_TEXT &&
+                request->requestedFormatId == CF_UNICODETEXT) {
+                source = offer->bytes;
+                source_count = offer->byte_count;
+            } else if (offer->kind == MR_FREERDP_CLIP_IMAGE &&
+                       request->requestedFormatId == CF_DIB) {
+                source = offer->dib;
+                source_count = offer->dib_count;
+            } else if (offer->kind == MR_FREERDP_CLIP_IMAGE &&
+                       request->requestedFormatId == MR_FREERDP_FORMAT_PNG) {
+                source = offer->png;
+                source_count = offer->png_count;
+            } else if (offer->kind == MR_FREERDP_CLIP_FILES &&
+                       request->requestedFormatId == MR_FREERDP_FORMAT_FILES) {
+                /* The file list, built from the names and sizes. */
+                FILEDESCRIPTORW *descriptors = (FILEDESCRIPTORW *)calloc(
+                    offer->file_count, sizeof(FILEDESCRIPTORW));
+                BYTE *list = NULL;
+                UINT32 list_length = 0u;
+                size_t file;
+                if (descriptors != NULL) {
+                    for (file = 0u; file < offer->file_count; ++file) {
+                        const uint64_t size = offer->files[file].byte_count;
+                        descriptors[file].dwFlags = FD_ATTRIBUTES | FD_FILESIZE | FD_SHOWPROGRESSUI;
+                        descriptors[file].dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
+                        descriptors[file].nFileSizeHigh = (DWORD)(size >> 32);
+                        descriptors[file].nFileSizeLow = (DWORD)(size & 0xFFFFFFFFu);
+                        memcpy(descriptors[file].cFileName, offer->files[file].name,
+                               sizeof(descriptors[file].cFileName));
+                    }
+                    if (cliprdr_serialize_file_list(
+                            descriptors, (UINT32)offer->file_count, &list, &list_length) ==
+                            CHANNEL_RC_OK) {
+                        served = list;
+                        served_count = list_length;
+                        offer_id = offer->offer_id;
+                    }
+                    free(descriptors);
+                }
+            }
+        }
+        if (source != NULL && source_count != 0u) {
+            served = (uint8_t *)malloc(source_count);
             if (served != NULL) {
-                memcpy(served, backend->current_offer->bytes,
-                       backend->current_offer->byte_count);
-                served_count = backend->current_offer->byte_count;
-                offer_id = backend->current_offer->offer_id;
+                memcpy(served, source, source_count);
+                served_count = source_count;
+                offer_id = offer->offer_id;
             }
         }
         (void)pthread_mutex_unlock(&backend->mutex);
@@ -607,24 +894,301 @@ static UINT mr_freerdp_cliprdr_server_format_data_request(
     return channel_status;
 }
 
-static UINT mr_freerdp_cliprdr_server_format_data_response(
+/* Asks for the next chunk of the current remote file, or hands over the
+ * file and moves to the next. Called on the worker with no lock held. */
+static UINT mr_freerdp_continue_files(
+    mr_freerdp_backend *backend,
     CliprdrClientContext *cliprdr,
+    uint64_t request_id)
+{
+    for (;;) {
+        CLIPRDR_FILE_CONTENTS_REQUEST request;
+        FILEDESCRIPTORW *descriptor;
+        uint64_t remaining;
+        (void)pthread_mutex_lock(&backend->mutex);
+        if (backend->outstanding_text_request_id != request_id ||
+            backend->incoming_index >= backend->incoming_count) {
+            (void)pthread_mutex_unlock(&backend->mutex);
+            return CHANNEL_RC_OK;
+        }
+        descriptor = &backend->incoming_files[backend->incoming_index];
+        remaining = backend->incoming_size - backend->incoming_received;
+        if (remaining == 0u) {
+            /* This file is complete: hand it over, then the next. */
+            const uint32_t index = backend->incoming_index;
+            const uint32_t count = backend->incoming_count;
+            WCHAR name[260];
+            uint8_t *bytes = backend->incoming_buffer;
+            const size_t size = (size_t)backend->incoming_size;
+            memcpy(name, descriptor->cFileName, sizeof(name));
+            name[259] = 0;
+            backend->incoming_buffer = NULL;
+            backend->incoming_index += 1u;
+            if (backend->incoming_index < backend->incoming_count) {
+                const FILEDESCRIPTORW *next = &backend->incoming_files[backend->incoming_index];
+                backend->incoming_size = ((uint64_t)next->nFileSizeHigh << 32) | next->nFileSizeLow;
+                backend->incoming_received = 0u;
+                backend->incoming_buffer = backend->incoming_size == 0u
+                    ? NULL : (uint8_t *)malloc((size_t)backend->incoming_size);
+                if (backend->incoming_size != 0u && backend->incoming_buffer == NULL) {
+                    backend->incoming_count = backend->incoming_index;
+                }
+            } else {
+                backend->outstanding_text_request_id = 0u;
+                backend->outstanding_text_request_since = 0u;
+                backend->outstanding_request_kind = 0;
+            }
+            (void)pthread_mutex_unlock(&backend->mutex);
+            mr_freerdp_emit_file(backend, request_id, MR_RDP_STATUS_OK, index, count, name, bytes, size);
+            free(bytes);
+            if (index + 1u == count) {
+                (void)pthread_mutex_lock(&backend->mutex);
+                mr_freerdp_reset_incoming_locked(backend);
+                (void)pthread_mutex_unlock(&backend->mutex);
+                return CHANNEL_RC_OK;
+            }
+            continue;
+        }
+        memset(&request, 0, sizeof(request));
+        request.common.msgType = CB_FILECONTENTS_REQUEST;
+        request.streamId = ++backend->incoming_stream_id;
+        request.listIndex = backend->incoming_index;
+        request.dwFlags = FILECONTENTS_RANGE;
+        request.nPositionLow = (UINT32)(backend->incoming_received & 0xFFFFFFFFu);
+        request.nPositionHigh = (UINT32)(backend->incoming_received >> 32);
+        request.cbRequested = remaining > MR_FREERDP_FILE_CHUNK
+            ? MR_FREERDP_FILE_CHUNK : (UINT32)remaining;
+        backend->outstanding_text_request_since = GetTickCount64();
+        (void)pthread_mutex_unlock(&backend->mutex);
+        if (cliprdr->ClientFileContentsRequest == NULL ||
+            cliprdr->ClientFileContentsRequest(cliprdr, &request) != CHANNEL_RC_OK) {
+            (void)pthread_mutex_lock(&backend->mutex);
+            backend->outstanding_text_request_id = 0u;
+            backend->outstanding_request_kind = 0;
+            mr_freerdp_reset_incoming_locked(backend);
+            (void)pthread_mutex_unlock(&backend->mutex);
+            mr_freerdp_emit_file(backend, request_id, MR_RDP_ERROR_BACKEND, 0u, 0u, NULL, NULL, 0u);
+        }
+        return CHANNEL_RC_OK;
+    }
+}
+
+/* The server's file list: what will be fetched, within the limits. */
+static UINT mr_freerdp_receive_file_list(
+    mr_freerdp_backend *backend,
+    CliprdrClientContext *cliprdr,
+    uint64_t request_id,
     const CLIPRDR_FORMAT_DATA_RESPONSE *response)
+{
+    FILEDESCRIPTORW *descriptors = NULL;
+    UINT32 count = 0u;
+    uint64_t total = 0u;
+    UINT32 index;
+    mr_rdp_status failure = MR_RDP_STATUS_OK;
+    if ((response->common.msgFlags & CB_RESPONSE_OK) == 0u ||
+        response->requestedFormatData == NULL ||
+        cliprdr_parse_file_list(response->requestedFormatData, response->common.dataLen,
+                                &descriptors, &count) != CHANNEL_RC_OK) {
+        failure = MR_RDP_ERROR_BACKEND;
+    } else if (count == 0u) {
+        failure = MR_RDP_ERROR_UNSUPPORTED;
+    } else if (count > MR_RDP_MAX_CLIPBOARD_FILES) {
+        failure = MR_RDP_ERROR_LIMIT_EXCEEDED;
+    } else {
+        for (index = 0u; index < count; ++index) {
+            /* Folders are not fetched: their files come in the list too. */
+            if ((descriptors[index].dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0u ||
+                (descriptors[index].dwFlags & FD_FILESIZE) == 0u) {
+                failure = MR_RDP_ERROR_UNSUPPORTED;
+                break;
+            }
+            total += ((uint64_t)descriptors[index].nFileSizeHigh << 32) |
+                descriptors[index].nFileSizeLow;
+        }
+        if (failure == MR_RDP_STATUS_OK && total > MR_RDP_MAX_CLIPBOARD_FILES_BYTES) {
+            failure = MR_RDP_ERROR_LIMIT_EXCEEDED;
+        }
+    }
+    (void)pthread_mutex_lock(&backend->mutex);
+    if (failure != MR_RDP_STATUS_OK || backend->outstanding_text_request_id != request_id) {
+        if (backend->outstanding_text_request_id == request_id) {
+            backend->outstanding_text_request_id = 0u;
+            backend->outstanding_text_request_since = 0u;
+            backend->outstanding_request_kind = 0;
+        }
+        (void)pthread_mutex_unlock(&backend->mutex);
+        free(descriptors);
+        mr_freerdp_emit_file(backend, request_id,
+                             failure != MR_RDP_STATUS_OK ? failure : MR_RDP_ERROR_INVALID_STATE,
+                             0u, 0u, NULL, NULL, 0u);
+        return CHANNEL_RC_OK;
+    }
+    mr_freerdp_reset_incoming_locked(backend);
+    backend->incoming_files = descriptors;
+    backend->incoming_count = count;
+    backend->incoming_index = 0u;
+    backend->incoming_total = total;
+    backend->incoming_size = ((uint64_t)descriptors[0].nFileSizeHigh << 32) | descriptors[0].nFileSizeLow;
+    backend->incoming_received = 0u;
+    backend->incoming_buffer = backend->incoming_size == 0u
+        ? NULL : (uint8_t *)malloc((size_t)backend->incoming_size);
+    if (backend->incoming_size != 0u && backend->incoming_buffer == NULL) {
+        backend->outstanding_text_request_id = 0u;
+        backend->outstanding_request_kind = 0;
+        mr_freerdp_reset_incoming_locked(backend);
+        (void)pthread_mutex_unlock(&backend->mutex);
+        mr_freerdp_emit_file(backend, request_id, MR_RDP_ERROR_OUT_OF_MEMORY, 0u, 0u, NULL, NULL, 0u);
+        return CHANNEL_RC_OK;
+    }
+    (void)pthread_mutex_unlock(&backend->mutex);
+    return mr_freerdp_continue_files(backend, cliprdr, request_id);
+}
+
+/* A chunk of the current remote file. */
+static UINT mr_freerdp_cliprdr_server_file_contents_response(
+    CliprdrClientContext *cliprdr,
+    const CLIPRDR_FILE_CONTENTS_RESPONSE *response)
 {
     mr_freerdp_backend *backend;
     uint64_t request_id;
+    int accepted = 0;
     if (cliprdr == NULL || response == NULL || cliprdr->custom == NULL) {
         return CHANNEL_RC_INITIALIZATION_ERROR;
     }
     backend = (mr_freerdp_backend *)cliprdr->custom;
     (void)pthread_mutex_lock(&backend->mutex);
     request_id = backend->outstanding_text_request_id;
-    backend->outstanding_text_request_id = 0u;
-    backend->outstanding_text_request_since = 0u;
+    if (backend->outstanding_request_kind == MR_FREERDP_CLIP_FILES && request_id != 0u &&
+        response->streamId == backend->incoming_stream_id &&
+        (response->common.msgFlags & CB_RESPONSE_OK) != 0u &&
+        response->requestedData != NULL && response->cbRequested != 0u &&
+        response->cbRequested <= backend->incoming_size - backend->incoming_received) {
+        memcpy(backend->incoming_buffer + backend->incoming_received,
+               response->requestedData, response->cbRequested);
+        backend->incoming_received += response->cbRequested;
+        accepted = 1;
+    } else if (backend->outstanding_request_kind == MR_FREERDP_CLIP_FILES && request_id != 0u) {
+        backend->outstanding_text_request_id = 0u;
+        backend->outstanding_request_kind = 0;
+        mr_freerdp_reset_incoming_locked(backend);
+    } else {
+        request_id = 0u;
+    }
+    (void)pthread_mutex_unlock(&backend->mutex);
+    if (request_id == 0u) {
+        return CHANNEL_RC_OK;
+    }
+    if (!accepted) {
+        mr_freerdp_emit_file(backend, request_id, MR_RDP_ERROR_BACKEND, 0u, 0u, NULL, NULL, 0u);
+        return CHANNEL_RC_OK;
+    }
+    return mr_freerdp_continue_files(backend, cliprdr, request_id);
+}
+
+/* The server reading a file this client offered. */
+static UINT mr_freerdp_cliprdr_server_file_contents_request(
+    CliprdrClientContext *cliprdr,
+    const CLIPRDR_FILE_CONTENTS_REQUEST *request)
+{
+    mr_freerdp_backend *backend;
+    CLIPRDR_FILE_CONTENTS_RESPONSE response;
+    uint8_t *served = NULL;
+    uint8_t size_bytes[8];
+    UINT32 served_count = 0u;
+    int answered = 0;
+    UINT status;
+    if (cliprdr == NULL || request == NULL || cliprdr->custom == NULL ||
+        cliprdr->ClientFileContentsResponse == NULL) {
+        return CHANNEL_RC_INITIALIZATION_ERROR;
+    }
+    backend = (mr_freerdp_backend *)cliprdr->custom;
+    (void)pthread_mutex_lock(&backend->mutex);
+    if (backend->current_offer != NULL && backend->current_offer->kind == MR_FREERDP_CLIP_FILES &&
+        request->listIndex < backend->current_offer->file_count) {
+        const mr_freerdp_clipboard_file *file = &backend->current_offer->files[request->listIndex];
+        const uint64_t position = ((uint64_t)request->nPositionHigh << 32) | request->nPositionLow;
+        if ((request->dwFlags & FILECONTENTS_SIZE) != 0u) {
+            uint64_t size = file->byte_count;
+            size_t index;
+            for (index = 0u; index < 8u; ++index) {
+                size_bytes[index] = (uint8_t)(size >> (8u * index));
+            }
+            served = size_bytes;
+            served_count = 8u;
+            answered = 1;
+        } else if (position <= file->byte_count) {
+            answered = 1;
+            uint64_t available = file->byte_count - position;
+            served_count = (UINT32)(available < request->cbRequested ? available : request->cbRequested);
+            if (served_count != 0u) {
+                served = (uint8_t *)malloc(served_count);
+                if (served != NULL) {
+                    memcpy(served, file->bytes + position, served_count);
+                } else {
+                    served_count = 0u;
+                }
+            }
+        }
+    }
+    (void)pthread_mutex_unlock(&backend->mutex);
+    memset(&response, 0, sizeof(response));
+    response.common.msgType = CB_FILECONTENTS_RESPONSE;
+    response.streamId = request->streamId;
+    if (answered && (served != NULL || served_count == 0u)) {
+        response.common.msgFlags = CB_RESPONSE_OK;
+        response.cbRequested = served_count;
+        response.requestedData = served;
+    } else {
+        response.common.msgFlags = CB_RESPONSE_FAIL;
+    }
+    status = cliprdr->ClientFileContentsResponse(cliprdr, &response);
+    if (served != NULL && served != size_bytes) {
+        free(served);
+    }
+    return status;
+}
+
+static UINT mr_freerdp_cliprdr_server_format_data_response(
+    CliprdrClientContext *cliprdr,
+    const CLIPRDR_FORMAT_DATA_RESPONSE *response)
+{
+    mr_freerdp_backend *backend;
+    uint64_t request_id;
+    int kind;
+    if (cliprdr == NULL || response == NULL || cliprdr->custom == NULL) {
+        return CHANNEL_RC_INITIALIZATION_ERROR;
+    }
+    backend = (mr_freerdp_backend *)cliprdr->custom;
+    (void)pthread_mutex_lock(&backend->mutex);
+    request_id = backend->outstanding_text_request_id;
+    kind = backend->outstanding_request_kind;
+    if (kind != MR_FREERDP_CLIP_FILES) {
+        backend->outstanding_text_request_id = 0u;
+        backend->outstanding_text_request_since = 0u;
+        backend->outstanding_request_kind = 0;
+    }
     (void)pthread_mutex_unlock(&backend->mutex);
     if (request_id == 0u) {
         /* Nobody is waiting: a response to a request that already timed out. */
         return CHANNEL_RC_OK;
+    }
+    if (kind == MR_FREERDP_CLIP_IMAGE) {
+        const int is_png = backend->outstanding_image_png;
+        if ((response->common.msgFlags & CB_RESPONSE_OK) == 0u ||
+            response->requestedFormatData == NULL || response->common.dataLen == 0u) {
+            mr_freerdp_emit_image(backend, request_id, MR_RDP_ERROR_BACKEND, 0u, NULL, 0u);
+        } else if (response->common.dataLen > MR_RDP_MAX_CLIPBOARD_IMAGE_BYTES) {
+            mr_freerdp_emit_image(backend, request_id, MR_RDP_ERROR_LIMIT_EXCEEDED, 0u, NULL, 0u);
+        } else {
+            mr_freerdp_emit_image(
+                backend, request_id, MR_RDP_STATUS_OK,
+                is_png ? MR_RDP_CLIPBOARD_IMAGE_PNG : MR_RDP_CLIPBOARD_IMAGE_DIB,
+                response->requestedFormatData, response->common.dataLen);
+        }
+        return CHANNEL_RC_OK;
+    }
+    if (kind == MR_FREERDP_CLIP_FILES) {
+        return mr_freerdp_receive_file_list(backend, cliprdr, request_id, response);
     }
     if ((response->common.msgFlags & CB_RESPONSE_OK) == 0u) {
         mr_freerdp_emit_text(backend, request_id, MR_RDP_ERROR_BACKEND, NULL, 0u);
@@ -678,6 +1242,11 @@ static int mr_freerdp_channel_kind_from_name(
         *out_kind = MR_RDP_CHANNEL_RDPEI;
     } else if (strcmp(name, RDPDR_SVC_CHANNEL_NAME) == 0) {
         *out_kind = MR_RDP_CHANNEL_RDPDR;
+    } else if (strcmp(name, AUDIN_DVC_CHANNEL_NAME) == 0 ||
+               strcmp(name, AUDIN_CHANNEL_NAME) == 0) {
+        *out_kind = MR_RDP_CHANNEL_AUDIN;
+    } else if (strcmp(name, RAIL_SVC_CHANNEL_NAME) == 0) {
+        *out_kind = MR_RDP_CHANNEL_RAIL;
     } else {
         return 0;
     }
@@ -698,6 +1267,34 @@ static void mr_freerdp_on_channel_connected(
     }
     backend = client_context->backend;
     freerdp_client_OnChannelConnectedEventHandler(context, event);
+    /* The common handler has just set gdi up on the graphics pipeline;
+     * AVC420 is taken from it here. */
+    if ((backend->channel_flags & MR_RDP_CHANNEL_FLAG_H264) != 0u &&
+        (strcmp(event->name, RDPGFX_DVC_CHANNEL_NAME) == 0 ||
+         strcmp(event->name, RDPGFX_CHANNEL_NAME) == 0) && event->pInterface != NULL) {
+        RdpgfxClientContext *gfx = (RdpgfxClientContext *)event->pInterface;
+        if (gfx->SurfaceCommand != mr_freerdp_surface_command) {
+            backend->gdi_surface_command = gfx->SurfaceCommand;
+            gfx->SurfaceCommand = mr_freerdp_surface_command;
+        }
+    }
+    if ((strcmp(event->name, RDPGFX_DVC_CHANNEL_NAME) == 0 ||
+         strcmp(event->name, RDPGFX_CHANNEL_NAME) == 0) && event->pInterface != NULL &&
+        freerdp_settings_get_bool(((rdpContext *)context)->settings,
+                                  FreeRDP_RemoteApplicationMode)) {
+        RdpgfxClientContext *gfx = (RdpgfxClientContext *)event->pInterface;
+        backend->gfx = gfx;
+        gfx->UpdateWindowFromSurface = mr_freerdp_update_window_from_surface;
+    }
+    if (strcmp(event->name, RAIL_SVC_CHANNEL_NAME) == 0 && event->pInterface != NULL) {
+        /* FreeRDP answers the server's handshake itself (only with custom
+         * set); the program is started once the server has sent its
+         * windows (see the desktop order). */
+        backend->rail = (RailClientContext *)event->pInterface;
+        backend->rail->custom = backend;
+        backend->rail->ServerExecuteResult = mr_freerdp_rail_execute_result;
+        backend->rail_started = 0;
+    }
     (void)pthread_mutex_lock(&backend->mutex);
     if (strcmp(event->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
         backend->cliprdr = (CliprdrClientContext *)event->pInterface;
@@ -716,6 +1313,10 @@ static void mr_freerdp_on_channel_connected(
                 mr_freerdp_cliprdr_server_format_data_request;
             backend->cliprdr->ServerFormatDataResponse =
                 mr_freerdp_cliprdr_server_format_data_response;
+            backend->cliprdr->ServerFileContentsRequest =
+                mr_freerdp_cliprdr_server_file_contents_request;
+            backend->cliprdr->ServerFileContentsResponse =
+                mr_freerdp_cliprdr_server_file_contents_response;
         }
     } else if (strcmp(event->name, DISP_DVC_CHANNEL_NAME) == 0) {
         backend->disp = (DispClientContext *)event->pInterface;
@@ -772,6 +1373,9 @@ static void mr_freerdp_on_channel_disconnected(
         backend->display_resize_pending = 0;
         memset(&backend->pending_display_resize, 0,
                sizeof(backend->pending_display_resize));
+    } else if (backend->gfx != NULL &&
+               backend->gfx == (RdpgfxClientContext *)event->pInterface) {
+        backend->gfx = NULL;
     }
     (void)pthread_mutex_unlock(&backend->mutex);
     mr_freerdp_clipboard_probe_destroy(pending_probe);
@@ -1393,7 +1997,546 @@ static PVIRTUALCHANNELENTRY mr_freerdp_addin_provider(
         PFREERDP_RDPSND_DEVICE_ENTRY entry = mr_freerdp_rdpsnd_entry;
         return WINPR_FUNC_PTR_CAST(entry, PVIRTUALCHANNELENTRY);
     }
+    if (name != NULL && subsystem != NULL &&
+        strcmp(name, AUDIN_CHANNEL_NAME) == 0 &&
+        strcmp(subsystem, MR_FREERDP_RDPSND_SUBSYSTEM) == 0) {
+        PFREERDP_AUDIN_DEVICE_ENTRY entry = mr_freerdp_audin_entry;
+        return WINPR_FUNC_PTR_CAST(entry, PVIRTUALCHANNELENTRY);
+    }
     return freerdp_channels_load_static_addin_entry(name, subsystem, type, flags);
+}
+
+static mr_freerdp_backend *mr_freerdp_backend_from_gfx(RdpgfxClientContext *gfx)
+{
+    rdpGdi *gdi = gfx != NULL ? (rdpGdi *)gfx->custom : NULL;
+    if (gdi == NULL || gdi->context == NULL) {
+        return NULL;
+    }
+    return ((mr_freerdp_context *)gdi->context)->backend;
+}
+
+/* The decoder for a surface: kept while the surface is the same, renewed
+ * when the id comes back for a new one. */
+static mr_h264_decoder *mr_freerdp_h264_for(mr_freerdp_backend *backend, const gdiGfxSurface *surface)
+{
+    size_t index;
+    mr_freerdp_h264_surface *free_slot = NULL;
+    for (index = 0u; index < MR_FREERDP_MAX_H264_SURFACES; ++index) {
+        mr_freerdp_h264_surface *slot = &backend->h264[index];
+        if (slot->decoder != NULL && slot->surface_id == surface->surfaceId) {
+            if (slot->surface != surface) {
+                mr_h264_decoder_free(slot->decoder);
+                slot->decoder = mr_h264_decoder_new();
+                slot->surface = surface;
+            }
+            return slot->decoder;
+        }
+        if (slot->decoder == NULL && free_slot == NULL) {
+            free_slot = slot;
+        }
+    }
+    if (free_slot == NULL) {
+        /* Full: start over; the next key frame rebuilds what is in use. */
+        for (index = 0u; index < MR_FREERDP_MAX_H264_SURFACES; ++index) {
+            mr_h264_decoder_free(backend->h264[index].decoder);
+            backend->h264[index].decoder = NULL;
+        }
+        free_slot = &backend->h264[0];
+    }
+    free_slot->decoder = mr_h264_decoder_new();
+    free_slot->surface_id = surface->surfaceId;
+    free_slot->surface = surface;
+    return free_slot->decoder;
+}
+
+static void mr_freerdp_h264_release_all(mr_freerdp_backend *backend)
+{
+    size_t index;
+    for (index = 0u; index < MR_FREERDP_MAX_H264_SURFACES; ++index) {
+        mr_h264_decoder_free(backend->h264[index].decoder);
+        backend->h264[index].decoder = NULL;
+        backend->h264[index].surface = NULL;
+    }
+}
+
+/* AVC420 goes to VideoToolbox; every other codec to gdi as before. The
+ * update that follows mirrors gdi's own: the region is invalidated, and
+ * drawn now when it arrived outside a frame. */
+static UINT mr_freerdp_surface_command(RdpgfxClientContext *context, const RDPGFX_SURFACE_COMMAND *cmd)
+{
+    mr_freerdp_backend *backend = mr_freerdp_backend_from_gfx(context);
+    const RDPGFX_AVC420_BITMAP_STREAM *stream;
+    gdiGfxSurface *surface;
+    mr_h264_decoder *decoder;
+    rdpGdi *gdi;
+    UINT32 index;
+    UINT status = CHANNEL_RC_OK;
+    if (backend == NULL || backend->gdi_surface_command == NULL) {
+        return ERROR_INTERNAL_ERROR;
+    }
+    if (cmd == NULL || (cmd->codecId != RDPGFX_CODECID_AVC420 &&
+                        cmd->codecId != RDPGFX_CODECID_AVC444 &&
+                        cmd->codecId != RDPGFX_CODECID_AVC444v2)) {
+        return backend->gdi_surface_command(context, cmd);
+    }
+    if (cmd->codecId == RDPGFX_CODECID_AVC420) {
+        stream = (const RDPGFX_AVC420_BITMAP_STREAM *)cmd->extra;
+    } else {
+        /* AVC444: the first stream is an ordinary 4:2:0 picture and is
+         * drawn; the second only sharpens colour and is left out. An
+         * update that carries only the second (LC 2) changes nothing here. */
+        const RDPGFX_AVC444_BITMAP_STREAM *avc444 = (const RDPGFX_AVC444_BITMAP_STREAM *)cmd->extra;
+        if (avc444 == NULL) {
+            return ERROR_INTERNAL_ERROR;
+        }
+        if (avc444->LC == 2u) {
+            return CHANNEL_RC_OK;
+        }
+        stream = &avc444->bitstream[0];
+    }
+    surface = context->GetSurfaceData != NULL
+        ? (gdiGfxSurface *)context->GetSurfaceData(context, (UINT16)cmd->surfaceId)
+        : NULL;
+    if (stream == NULL || surface == NULL || surface->data == NULL) {
+        return ERROR_NOT_FOUND;
+    }
+    decoder = mr_freerdp_h264_for(backend, surface);
+    if (decoder == NULL) {
+        return CHANNEL_RC_NO_MEMORY;
+    }
+    {
+        const int decoded = mr_h264_decoder_decode(
+            decoder, stream->data, stream->length, surface->data, surface->scanline,
+            surface->width, surface->height,
+            (const mr_h264_rect *)stream->meta.regionRects, stream->meta.numRegionRects);
+        if (decoded != MR_H264_OK) {
+            /* As gdi does: a picture that cannot be decoded is skipped, not
+             * fatal; the server's next key frame repairs it. */
+            WLog_WARN(MR_FREERDP_LOG_TAG, "H.264 picture skipped (%d), codec %" PRIu16 ", %" PRIu32 " bytes",
+                      decoded, cmd->codecId, stream->length);
+            return CHANNEL_RC_OK;
+        }
+        WLog_DBG(MR_FREERDP_LOG_TAG, "H.264 codec %" PRIu16 ": %" PRIu32 " rects into surface %" PRIu16 " %" PRIu32 "x%" PRIu32,
+                 cmd->codecId, stream->meta.numRegionRects, surface->surfaceId, surface->width, surface->height);
+    }
+    for (index = 0u; index < stream->meta.numRegionRects; ++index) {
+        if (!region16_union_rect(&surface->invalidRegion, &surface->invalidRegion,
+                                 &stream->meta.regionRects[index])) {
+            return ERROR_INTERNAL_ERROR;
+        }
+    }
+    if (context->UpdateSurfaceArea != NULL) {
+        status = context->UpdateSurfaceArea(
+            context, surface->surfaceId, stream->meta.numRegionRects, stream->meta.regionRects);
+    }
+    gdi = (rdpGdi *)context->custom;
+    if (status == CHANNEL_RC_OK && gdi != NULL && !gdi->inGfxFrame && context->UpdateSurfaces != NULL) {
+        status = context->UpdateSurfaces(context);
+    }
+    return status;
+}
+
+static UINT mr_freerdp_rail_execute_result(RailClientContext *rail, const RAIL_EXEC_RESULT_ORDER *result)
+{
+    (void)rail;
+    if (result != NULL) {
+        WLog_INFO(MR_FREERDP_LOG_TAG, "RemoteApp start: result %" PRIu16 ", raw 0x%08" PRIx32,
+                  result->execResult, result->rawResult);
+    }
+    return CHANNEL_RC_OK;
+}
+
+static mr_freerdp_rail_window *mr_freerdp_rail_find(mr_freerdp_backend *backend, UINT32 id)
+{
+    size_t index;
+    for (index = 0u; index < backend->rail_window_count; index++) {
+        if (backend->rail_windows[index].id == id) {
+            return &backend->rail_windows[index];
+        }
+    }
+    return NULL;
+}
+
+/* 0 is the bottom: windows missing from the stacking list first, then the
+ * list from its end, since it is given topmost first. */
+static size_t mr_freerdp_rail_rank(const mr_freerdp_backend *backend, UINT32 id)
+{
+    size_t index;
+    for (index = 0u; index < backend->rail_zorder_count; index++) {
+        if (backend->rail_zorder[index] == id) {
+            return 1u + backend->rail_zorder_count - index;
+        }
+    }
+    return 0u;
+}
+
+/* Repaints one desktop rectangle from the window surfaces under it,
+ * bottom to top; nothing under a window is black. The caller holds the
+ * graphics lock and is inside a paint. */
+static void mr_freerdp_rail_compose(mr_freerdp_backend *backend, rdpGdi *gdi,
+                                    INT32 left, INT32 top, INT32 right, INT32 bottom)
+{
+    RdpgfxClientContext *gfx = backend->gfx;
+    UINT16 *ids = NULL;
+    UINT16 count = 0u;
+    gdiGfxSurface *order[MR_FREERDP_RAIL_WINDOWS];
+    size_t ranks[MR_FREERDP_RAIL_WINDOWS];
+    size_t drawn = 0u;
+    size_t index;
+
+    left = left < 0 ? 0 : left;
+    top = top < 0 ? 0 : top;
+    right = right > (INT32)gdi->width ? (INT32)gdi->width : right;
+    bottom = bottom > (INT32)gdi->height ? (INT32)gdi->height : bottom;
+    if (left >= right || top >= bottom || gdi->primary_buffer == NULL) {
+        return;
+    }
+    (void)freerdp_image_fill(gdi->primary_buffer, gdi->dstFormat, gdi->stride,
+                             (UINT32)left, (UINT32)top, (UINT32)(right - left),
+                             (UINT32)(bottom - top), 0u);
+    if (gfx != NULL && gfx->GetSurfaceIds != NULL && gfx->GetSurfaceData != NULL &&
+        gfx->GetSurfaceIds(gfx, &ids, &count) == CHANNEL_RC_OK) {
+        for (index = 0u; index < count && drawn < MR_FREERDP_RAIL_WINDOWS; index++) {
+            gdiGfxSurface *surface = (gdiGfxSurface *)gfx->GetSurfaceData(gfx, ids[index]);
+            const mr_freerdp_rail_window *window;
+            size_t rank;
+            size_t slot;
+            if (surface == NULL || !surface->windowMapped || surface->data == NULL) {
+                continue;
+            }
+            window = mr_freerdp_rail_find(backend, (UINT32)surface->windowId);
+            if (window == NULL || !window->shown) {
+                continue;
+            }
+            rank = mr_freerdp_rail_rank(backend, window->id);
+            slot = drawn;
+            while (slot > 0u && ranks[slot - 1u] > rank) {
+                order[slot] = order[slot - 1u];
+                ranks[slot] = ranks[slot - 1u];
+                slot--;
+            }
+            order[slot] = surface;
+            ranks[slot] = rank;
+            drawn++;
+        }
+        free(ids);
+    }
+    for (index = 0u; index < drawn; index++) {
+        const gdiGfxSurface *surface = order[index];
+        const mr_freerdp_rail_window *window =
+            mr_freerdp_rail_find(backend, (UINT32)surface->windowId);
+        const UINT32 width = surface->mappedWidth < surface->width ? surface->mappedWidth : surface->width;
+        const UINT32 height = surface->mappedHeight < surface->height ? surface->mappedHeight : surface->height;
+        INT32 x0 = window->x;
+        INT32 y0 = window->y;
+        INT32 x1 = window->x + (INT32)width;
+        INT32 y1 = window->y + (INT32)height;
+        x0 = x0 < left ? left : x0;
+        y0 = y0 < top ? top : y0;
+        x1 = x1 > right ? right : x1;
+        y1 = y1 > bottom ? bottom : y1;
+        if (x0 >= x1 || y0 >= y1) {
+            continue;
+        }
+        (void)freerdp_image_copy_no_overlap(
+            gdi->primary_buffer, gdi->dstFormat, gdi->stride, (UINT32)x0, (UINT32)y0,
+            (UINT32)(x1 - x0), (UINT32)(y1 - y0), surface->data, surface->format,
+            surface->scanline, (UINT32)(x0 - window->x), (UINT32)(y0 - window->y),
+            NULL, FREERDP_FLIP_NONE);
+    }
+    (void)gdi_InvalidateRegion(gdi->primary->hdc, left, top, right - left, bottom - top);
+}
+
+static void mr_freerdp_rail_compose_all(rdpContext *context)
+{
+    mr_freerdp_backend *backend = ((mr_freerdp_context *)context)->backend;
+    rdpGdi *gdi = context->gdi;
+    if (backend == NULL || gdi == NULL || gdi->primary == NULL) {
+        return;
+    }
+    if (backend->gfx != NULL) {
+        EnterCriticalSection(&backend->gfx->mux);
+    }
+    mr_freerdp_rail_compose(backend, gdi, 0, 0, (INT32)gdi->width, (INT32)gdi->height);
+    if (backend->gfx != NULL) {
+        LeaveCriticalSection(&backend->gfx->mux);
+    }
+}
+
+/* Window orders arrive inside the paint of the update that carries them. */
+static BOOL mr_freerdp_window_state(rdpContext *context, const WINDOW_ORDER_INFO *info,
+                                    const WINDOW_STATE_ORDER *state)
+{
+    mr_freerdp_backend *backend = ((mr_freerdp_context *)context)->backend;
+    mr_freerdp_rail_window *window;
+    if (backend == NULL || info == NULL || state == NULL) {
+        return TRUE;
+    }
+    window = mr_freerdp_rail_find(backend, info->windowId);
+    if (window == NULL) {
+        if (backend->rail_window_count >= MR_FREERDP_RAIL_WINDOWS) {
+            return TRUE;
+        }
+        window = &backend->rail_windows[backend->rail_window_count++];
+        memset(window, 0, sizeof(*window));
+        window->id = info->windowId;
+        window->shown = TRUE;
+    }
+    if ((info->fieldFlags & WINDOW_ORDER_FIELD_WND_OFFSET) != 0u) {
+        window->x = state->windowOffsetX;
+        window->y = state->windowOffsetY;
+    }
+    if ((info->fieldFlags & WINDOW_ORDER_FIELD_SHOW) != 0u) {
+        /* SW_HIDE and SW_MINIMIZE. */
+        window->shown = state->showState != 0u && state->showState != 2u;
+    }
+    if ((info->fieldFlags & (WINDOW_ORDER_FIELD_WND_OFFSET | WINDOW_ORDER_FIELD_SHOW |
+                             WINDOW_ORDER_FIELD_WND_SIZE)) != 0u) {
+        mr_freerdp_rail_compose_all(context);
+    }
+    return TRUE;
+}
+
+static BOOL mr_freerdp_window_delete(rdpContext *context, const WINDOW_ORDER_INFO *info)
+{
+    mr_freerdp_backend *backend = ((mr_freerdp_context *)context)->backend;
+    mr_freerdp_rail_window *window;
+    if (backend == NULL || info == NULL) {
+        return TRUE;
+    }
+    window = mr_freerdp_rail_find(backend, info->windowId);
+    if (window != NULL) {
+        *window = backend->rail_windows[--backend->rail_window_count];
+        mr_freerdp_rail_compose_all(context);
+    }
+    return TRUE;
+}
+
+static BOOL mr_freerdp_monitored_desktop(rdpContext *context, const WINDOW_ORDER_INFO *info,
+                                         const MONITORED_DESKTOP_ORDER *desktop)
+{
+    mr_freerdp_backend *backend = ((mr_freerdp_context *)context)->backend;
+    size_t index;
+    if (backend == NULL || info == NULL) {
+        return TRUE;
+    }
+    /* The server has sent the windows it already has: say who we are and
+     * what to run, as FreeRDP's own clients do. */
+    if ((info->fieldFlags & WINDOW_ORDER_FIELD_DESKTOP_ARC_COMPLETED) != 0u &&
+        backend->rail != NULL && !backend->rail_started) {
+        backend->rail_started = 1;
+        if (client_rail_server_start_cmd(backend->rail) != CHANNEL_RC_OK) {
+            return FALSE;
+        }
+    }
+    if (desktop == NULL || (info->fieldFlags & WINDOW_ORDER_FIELD_DESKTOP_ZORDER) == 0u) {
+        return TRUE;
+    }
+    backend->rail_zorder_count = 0u;
+    for (index = 0u; index < desktop->numWindowIds && index < MR_FREERDP_RAIL_WINDOWS; index++) {
+        backend->rail_zorder[backend->rail_zorder_count++] = desktop->windowIds[index];
+    }
+    mr_freerdp_rail_compose_all(context);
+    return TRUE;
+}
+
+/* A window surface changed: repaint what it covers. Called by the
+ * graphics pipeline with its lock held, outside a paint. */
+static UINT mr_freerdp_update_window_from_surface(RdpgfxClientContext *gfx, gdiGfxSurface *surface)
+{
+    rdpGdi *gdi = (rdpGdi *)gfx->custom;
+    mr_freerdp_backend *backend;
+    const mr_freerdp_rail_window *window;
+    const RECTANGLE_16 *rects;
+    UINT32 count = 0u;
+    UINT32 index;
+    if (gdi == NULL || gdi->context == NULL) {
+        return CHANNEL_RC_OK;
+    }
+    backend = ((mr_freerdp_context *)gdi->context)->backend;
+    window = backend != NULL ? mr_freerdp_rail_find(backend, (UINT32)surface->windowId) : NULL;
+    if (window != NULL && window->shown && !gdi->suppressOutput) {
+        rects = region16_rects(&surface->invalidRegion, &count);
+        /* Graphics run on the connection's thread (synchronous channels), so
+         * this paints between updates, as gdi's own output update does. */
+        if (rects != NULL && count > 0u && mr_freerdp_begin_paint(gdi->context)) {
+            for (index = 0u; index < count; index++) {
+                mr_freerdp_rail_compose(backend, gdi, window->x + rects[index].left,
+                                        window->y + rects[index].top,
+                                        window->x + rects[index].right,
+                                        window->y + rects[index].bottom);
+            }
+            (void)mr_freerdp_end_paint(gdi->context);
+        }
+    }
+    region16_clear(&surface->invalidRegion);
+    return CHANNEL_RC_OK;
+}
+
+
+static BOOL mr_freerdp_audin_format_supported(IAudinDevice *device, const AUDIO_FORMAT *format)
+{
+    (void)device;
+    return format != NULL && format->wFormatTag == WAVE_FORMAT_PCM &&
+        format->wBitsPerSample == 16u && format->nChannels >= 1u && format->nChannels <= 2u &&
+        format->nSamplesPerSec >= 8000u && format->nSamplesPerSec <= 48000u;
+}
+
+static UINT mr_freerdp_audin_set_format(IAudinDevice *device, const AUDIO_FORMAT *format, UINT32 frames)
+{
+    mr_freerdp_audin_device *audin = (mr_freerdp_audin_device *)device;
+    if (audin == NULL || format == NULL) {
+        return ERROR_INVALID_PARAMETER;
+    }
+    audin->format = *format;
+    audin->format.data = NULL;
+    audin->format.cbSize = 0u;
+    audin->frames_per_packet = frames;
+    return CHANNEL_RC_OK;
+}
+
+static UINT mr_freerdp_audin_open(IAudinDevice *device, AudinReceive receive, void *user_data)
+{
+    mr_freerdp_audin_device *audin = (mr_freerdp_audin_device *)device;
+    mr_freerdp_backend *backend;
+    mr_rdp_status status;
+    if (audin == NULL || receive == NULL) {
+        return ERROR_INVALID_PARAMETER;
+    }
+    backend = audin->backend;
+    audin->receive = receive;
+    audin->user_data = user_data;
+    (void)pthread_mutex_lock(&backend->mutex);
+    backend->audin = audin;
+    backend->audin_open = 1;
+    backend->capture_count = 0u;
+    (void)pthread_mutex_unlock(&backend->mutex);
+    status = backend->host.audio_capture(
+        backend->host.context, 1, audin->format.nSamplesPerSec,
+        audin->format.nChannels, audin->format.wBitsPerSample);
+    if (status != MR_RDP_STATUS_OK && status != MR_RDP_ERROR_STOPPED) {
+        mr_freerdp_record_status(backend, status);
+    }
+    return CHANNEL_RC_OK;
+}
+
+static UINT mr_freerdp_audin_close(IAudinDevice *device)
+{
+    mr_freerdp_audin_device *audin = (mr_freerdp_audin_device *)device;
+    mr_freerdp_backend *backend;
+    int was_open;
+    if (audin == NULL) {
+        return ERROR_INVALID_PARAMETER;
+    }
+    backend = audin->backend;
+    (void)pthread_mutex_lock(&backend->mutex);
+    was_open = backend->audin_open && backend->audin == audin;
+    if (backend->audin == audin) {
+        backend->audin_open = 0;
+        backend->capture_count = 0u;
+    }
+    (void)pthread_mutex_unlock(&backend->mutex);
+    if (was_open) {
+        (void)backend->host.audio_capture(backend->host.context, 0, 0u, 0u, 0u);
+    }
+    return CHANNEL_RC_OK;
+}
+
+static UINT mr_freerdp_audin_free(IAudinDevice *device)
+{
+    mr_freerdp_audin_device *audin = (mr_freerdp_audin_device *)device;
+    if (audin == NULL) {
+        return CHANNEL_RC_OK;
+    }
+    (void)pthread_mutex_lock(&audin->backend->mutex);
+    if (audin->backend->audin == audin) {
+        audin->backend->audin = NULL;
+        audin->backend->audin_open = 0;
+    }
+    (void)pthread_mutex_unlock(&audin->backend->mutex);
+    free(audin);
+    return CHANNEL_RC_OK;
+}
+
+static UINT VCAPITYPE mr_freerdp_audin_entry(PFREERDP_AUDIN_DEVICE_ENTRY_POINTS entry)
+{
+    mr_freerdp_audin_device *audin;
+    mr_freerdp_backend *backend;
+    if (entry == NULL || entry->rdpcontext == NULL || entry->pRegisterAudinDevice == NULL) {
+        return ERROR_INVALID_PARAMETER;
+    }
+    backend = ((mr_freerdp_context *)entry->rdpcontext)->backend;
+    if (backend == NULL) {
+        return ERROR_INVALID_PARAMETER;
+    }
+    audin = (mr_freerdp_audin_device *)calloc(1u, sizeof(*audin));
+    if (audin == NULL) {
+        return CHANNEL_RC_NO_MEMORY;
+    }
+    audin->backend = backend;
+    audin->iface.Open = mr_freerdp_audin_open;
+    audin->iface.FormatSupported = mr_freerdp_audin_format_supported;
+    audin->iface.SetFormat = mr_freerdp_audin_set_format;
+    audin->iface.Close = mr_freerdp_audin_close;
+    audin->iface.Free = mr_freerdp_audin_free;
+    if (entry->pRegisterAudinDevice(entry->plugin, &audin->iface) != CHANNEL_RC_OK) {
+        free(audin);
+        return ERROR_INTERNAL_ERROR;
+    }
+    return CHANNEL_RC_OK;
+}
+
+/* Hands what the app captured to audin, a packet at a time. On the worker. */
+static void mr_freerdp_feed_audio_capture(mr_freerdp_backend *backend)
+{
+    uint8_t packet[MR_RDP_MAX_AUDIO_CAPTURE_PACKET_BYTES];
+    for (;;) {
+        mr_freerdp_audin_device *audin;
+        size_t take;
+        (void)pthread_mutex_lock(&backend->mutex);
+        audin = backend->audin_open ? backend->audin : NULL;
+        take = backend->capture_count < sizeof(packet) ? backend->capture_count : sizeof(packet);
+        if (audin != NULL && audin->format.nBlockAlign != 0u) {
+            take -= take % audin->format.nBlockAlign;
+        }
+        if (audin == NULL || take == 0u) {
+            (void)pthread_mutex_unlock(&backend->mutex);
+            return;
+        }
+        memcpy(packet, backend->capture, take);
+        memmove(backend->capture, backend->capture + take, backend->capture_count - take);
+        backend->capture_count -= take;
+        (void)pthread_mutex_unlock(&backend->mutex);
+        (void)audin->receive(&audin->format, packet, take, audin->user_data);
+    }
+}
+
+static mr_rdp_status mr_freerdp_send_audio_capture(
+    mr_rdp_backend *base,
+    const uint8_t *bytes,
+    size_t byte_count)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    (void)pthread_mutex_lock(&backend->mutex);
+    if (!backend->audin_open) {
+        (void)pthread_mutex_unlock(&backend->mutex);
+        return MR_RDP_STATUS_OK;
+    }
+    if (byte_count >= MR_FREERDP_CAPTURE_CAPACITY) {
+        bytes += byte_count - MR_FREERDP_CAPTURE_CAPACITY;
+        byte_count = MR_FREERDP_CAPTURE_CAPACITY;
+        backend->capture_count = 0u;
+    } else if (backend->capture_count + byte_count > MR_FREERDP_CAPTURE_CAPACITY) {
+        /* Behind: the oldest goes, so the voice stays close to real time. */
+        const size_t drop = backend->capture_count + byte_count - MR_FREERDP_CAPTURE_CAPACITY;
+        memmove(backend->capture, backend->capture + drop, backend->capture_count - drop);
+        backend->capture_count -= drop;
+    }
+    memcpy(backend->capture + backend->capture_count, bytes, byte_count);
+    backend->capture_count += byte_count;
+    (void)SetEvent(backend->command_event);
+    (void)pthread_mutex_unlock(&backend->mutex);
+    return MR_RDP_STATUS_OK;
 }
 
 static BOOL mr_freerdp_pre_connect(freerdp *instance)
@@ -1408,6 +2551,10 @@ static BOOL mr_freerdp_pre_connect(freerdp *instance)
     /* ABI 4. MultiTouchInput makes the loader add rdpei. */
     const BOOL touch = (backend != NULL &&
         (backend->channel_flags & MR_RDP_CHANNEL_FLAG_TOUCH) != 0u) ? TRUE : FALSE;
+    /* ABI 5. audin with this adapter's own subsystem: the app's PCM. */
+    const BOOL microphone = (backend != NULL &&
+        (backend->channel_flags & MR_RDP_CHANNEL_FLAG_MICROPHONE) != 0u) ? TRUE : FALSE;
+    const char *audin[] = { "audin", "sys:" MR_FREERDP_RDPSND_SUBSYSTEM };
 
     if (backend == NULL || instance->context == NULL ||
         instance->context->settings == NULL || mr_freerdp_is_stopped(backend)) {
@@ -1429,7 +2576,9 @@ static BOOL mr_freerdp_pre_connect(freerdp *instance)
      * PCM reaches the app's per-session focus policy instead of FreeRDP's
      * process-wide iOS AudioQueue. */
     if (!freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, audio) ||
-        !freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, FALSE) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, microphone) ||
+        (microphone &&
+         !freerdp_client_add_dynamic_channel(settings, sizeof(audin) / sizeof(audin[0]), audin)) ||
         !freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, clipboard) ||
         !freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE) ||
         !freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate, TRUE) ||
@@ -1534,6 +2683,13 @@ static BOOL mr_freerdp_post_connect(freerdp *instance)
     context->update->BeginPaint = mr_freerdp_begin_paint;
     context->update->EndPaint = mr_freerdp_end_paint;
     context->update->DesktopResize = mr_freerdp_desktop_resize;
+    if (freerdp_settings_get_bool(context->settings, FreeRDP_RemoteApplicationMode) &&
+        context->update->window != NULL) {
+        context->update->window->WindowCreate = mr_freerdp_window_state;
+        context->update->window->WindowUpdate = mr_freerdp_window_state;
+        context->update->window->WindowDelete = mr_freerdp_window_delete;
+        context->update->window->MonitoredDesktop = mr_freerdp_monitored_desktop;
+    }
 
     (void)pthread_mutex_lock(&backend->mutex);
     backend->accepting_input = !backend->stop_requested;
@@ -1562,8 +2718,12 @@ static void mr_freerdp_post_disconnect(freerdp *instance)
     if (backend == NULL || instance->context == NULL) {
         return;
     }
+    /* The decoders belong to surfaces that are gone with the connection. */
+    mr_freerdp_h264_release_all(backend);
     (void)pthread_mutex_lock(&backend->mutex);
     backend->accepting_input = 0;
+    backend->audin_open = 0;
+    backend->capture_count = 0u;
     mr_input_command_queue_reset(&backend->command_queue);
     if (backend->cliprdr != NULL) {
         backend->cliprdr->custom = NULL;
@@ -1571,6 +2731,10 @@ static void mr_freerdp_post_disconnect(freerdp *instance)
     backend->cliprdr = NULL;
     backend->cliprdr_ready = 0;
     backend->disp = NULL;
+    backend->gfx = NULL;
+    backend->rail = NULL;
+    backend->rail_window_count = 0u;
+    backend->rail_zorder_count = 0u;
     pending_probe = backend->pending_clipboard_probe;
     active_probe = backend->active_clipboard_probe;
     backend->pending_clipboard_probe = NULL;
@@ -1940,7 +3104,10 @@ static mr_rdp_status mr_freerdp_process_clipboard_command(
     mr_freerdp_clipboard_offer *announce = NULL;
     mr_freerdp_clipboard_offer *replaced = NULL;
     uint64_t expired_request = 0u;
+    int expired_kind = 0;
     uint64_t request = 0u;
+    int request_kind = 0;
+    UINT32 request_format = CF_UNICODETEXT;
     uint64_t replaced_failed_id = 0u;
     CliprdrClientContext *cliprdr = NULL;
     UINT channel_status;
@@ -1954,7 +3121,9 @@ static mr_rdp_status mr_freerdp_process_clipboard_command(
     cliprdr = backend->cliprdr_ready ? backend->cliprdr : NULL;
     if (backend->expired_text_request_id != 0u) {
         expired_request = backend->expired_text_request_id;
+        expired_kind = backend->expired_request_kind;
         backend->expired_text_request_id = 0u;
+        backend->expired_request_kind = 0;
     } else if (backend->offer_to_announce != NULL) {
         announce = backend->offer_to_announce;
         backend->offer_to_announce = NULL;
@@ -1966,9 +3135,21 @@ static mr_rdp_status mr_freerdp_process_clipboard_command(
         backend->offer_awaiting_response = cliprdr != NULL;
     } else if (backend->pending_text_request_id != 0u) {
         request = backend->pending_text_request_id;
+        request_kind = backend->pending_request_kind;
         backend->pending_text_request_id = 0u;
-        if (cliprdr != NULL) {
+        backend->pending_request_kind = 0;
+        /* PNG when the server offered it, CF_DIB otherwise; the file list
+         * under the server's own id for it. Zero: nothing to ask for. */
+        if (request_kind == MR_FREERDP_CLIP_IMAGE) {
+            request_format = backend->remote_png_id != 0u ? backend->remote_png_id
+                : backend->remote_has_dib ? CF_DIB : 0u;
+            backend->outstanding_image_png = backend->remote_png_id != 0u;
+        } else if (request_kind == MR_FREERDP_CLIP_FILES) {
+            request_format = backend->remote_files_id;
+        }
+        if (cliprdr != NULL && request_format != 0u) {
             backend->outstanding_text_request_id = request;
+            backend->outstanding_request_kind = request_kind;
             backend->outstanding_text_request_since = GetTickCount64();
         }
     }
@@ -1976,7 +3157,7 @@ static mr_rdp_status mr_freerdp_process_clipboard_command(
 
     if (expired_request != 0u) {
         *out_processed = 1;
-        mr_freerdp_emit_text(backend, expired_request, MR_RDP_ERROR_TIMEOUT, NULL, 0u);
+        mr_freerdp_fail_request(backend, expired_request, expired_kind, MR_RDP_ERROR_TIMEOUT);
         return MR_RDP_STATUS_OK;
     }
     if (announce != NULL) {
@@ -1995,14 +3176,31 @@ static mr_rdp_status mr_freerdp_process_clipboard_command(
             return MR_RDP_STATUS_OK;
         }
         {
-            CLIPRDR_FORMAT format;
+            /* What the offer is, in the formats a Windows program pastes. */
+            CLIPRDR_FORMAT formats[2];
             CLIPRDR_FORMAT_LIST format_list;
-            memset(&format, 0, sizeof(format));
+            char png_name[] = MR_FREERDP_FORMAT_PNG_NAME;
+            char files_name[] = MR_FREERDP_FORMAT_FILES_NAME;
+            memset(formats, 0, sizeof(formats));
             memset(&format_list, 0, sizeof(format_list));
-            format.formatId = CF_UNICODETEXT;
             format_list.common.msgType = CB_FORMAT_LIST;
-            format_list.numFormats = 1u;
-            format_list.formats = &format;
+            if (announce->kind == MR_FREERDP_CLIP_IMAGE) {
+                if (announce->dib != NULL) {
+                    formats[format_list.numFormats++].formatId = CF_DIB;
+                }
+                if (announce->png != NULL) {
+                    formats[format_list.numFormats].formatId = MR_FREERDP_FORMAT_PNG;
+                    formats[format_list.numFormats++].formatName = png_name;
+                }
+            } else if (announce->kind == MR_FREERDP_CLIP_FILES) {
+                formats[0].formatId = MR_FREERDP_FORMAT_FILES;
+                formats[0].formatName = files_name;
+                format_list.numFormats = 1u;
+            } else {
+                formats[0].formatId = CF_UNICODETEXT;
+                format_list.numFormats = 1u;
+            }
+            format_list.formats = formats;
             channel_status = cliprdr->ClientFormatList(cliprdr, &format_list);
         }
         if (channel_status != CHANNEL_RC_OK) {
@@ -2025,18 +3223,21 @@ static mr_rdp_status mr_freerdp_process_clipboard_command(
     if (request != 0u) {
         CLIPRDR_FORMAT_DATA_REQUEST data_request;
         *out_processed = 1;
-        if (cliprdr == NULL || cliprdr->ClientFormatDataRequest == NULL) {
+        if (cliprdr == NULL || cliprdr->ClientFormatDataRequest == NULL || request_format == 0u) {
             (void)pthread_mutex_lock(&backend->mutex);
             if (backend->outstanding_text_request_id == request) {
                 backend->outstanding_text_request_id = 0u;
+                backend->outstanding_request_kind = 0;
             }
             (void)pthread_mutex_unlock(&backend->mutex);
-            mr_freerdp_emit_text(backend, request, MR_RDP_ERROR_INVALID_STATE, NULL, 0u);
+            mr_freerdp_fail_request(
+                backend, request, request_kind,
+                request_format == 0u ? MR_RDP_ERROR_UNSUPPORTED : MR_RDP_ERROR_INVALID_STATE);
             return MR_RDP_STATUS_OK;
         }
         memset(&data_request, 0, sizeof(data_request));
         data_request.common.msgType = CB_FORMAT_DATA_REQUEST;
-        data_request.requestedFormatId = CF_UNICODETEXT;
+        data_request.requestedFormatId = request_format;
         channel_status = cliprdr->ClientFormatDataRequest(cliprdr, &data_request);
         if (channel_status != CHANNEL_RC_OK) {
             int owned = 0;
@@ -2047,7 +3248,7 @@ static mr_rdp_status mr_freerdp_process_clipboard_command(
             }
             (void)pthread_mutex_unlock(&backend->mutex);
             if (owned) {
-                mr_freerdp_emit_text(backend, request, MR_RDP_ERROR_BACKEND, NULL, 0u);
+                mr_freerdp_fail_request(backend, request, request_kind, MR_RDP_ERROR_BACKEND);
             }
         }
     }
@@ -2060,7 +3261,8 @@ static int mr_freerdp_has_pending_work_locked(const mr_freerdp_backend *backend)
         backend->display_resize_pending ||
         backend->offer_to_announce != NULL ||
         backend->pending_text_request_id != 0u ||
-        backend->expired_text_request_id != 0u;
+        backend->expired_text_request_id != 0u ||
+        (backend->audin_open && backend->capture_count != 0u);
 }
 
 static mr_rdp_status mr_freerdp_enqueue_command(
@@ -2153,6 +3355,7 @@ static mr_rdp_status mr_freerdp_drain_commands(mr_freerdp_backend *backend)
         if (processed_control) {
             continue;
         }
+        mr_freerdp_feed_audio_capture(backend);
         control_status = mr_freerdp_process_clipboard_command(
             backend, &processed_control);
         if (control_status != MR_RDP_STATUS_OK) {
@@ -2495,14 +3698,16 @@ static void mr_freerdp_set_audio_focused(mr_rdp_backend *base, int focused)
     (void)pthread_mutex_unlock(&backend->mutex);
 }
 
+static mr_rdp_status mr_freerdp_queue_offer(
+    mr_freerdp_backend *backend,
+    mr_freerdp_clipboard_offer *copy);
+
 static mr_rdp_status mr_freerdp_offer_clipboard_text(
     mr_rdp_backend *base,
     const mr_rdp_backend_clipboard_offer *offer)
 {
     mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
     mr_freerdp_clipboard_offer *copy;
-    mr_freerdp_clipboard_offer *superseded = NULL;
-    mr_rdp_status status = MR_RDP_STATUS_OK;
     if (offer == NULL || offer->offer_id == 0u || offer->utf16le_bytes == NULL ||
         offer->utf16le_byte_count == 0u) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
@@ -2519,6 +3724,17 @@ static mr_rdp_status mr_freerdp_offer_clipboard_text(
     memcpy(copy->bytes, offer->utf16le_bytes, offer->utf16le_byte_count);
     copy->byte_count = offer->utf16le_byte_count;
     copy->offer_id = offer->offer_id;
+    copy->kind = MR_FREERDP_CLIP_TEXT;
+    return mr_freerdp_queue_offer(backend, copy);
+}
+
+/* Takes ownership of `copy`: the newest offer is announced on the worker. */
+static mr_rdp_status mr_freerdp_queue_offer(
+    mr_freerdp_backend *backend,
+    mr_freerdp_clipboard_offer *copy)
+{
+    mr_freerdp_clipboard_offer *superseded = NULL;
+    mr_rdp_status status = MR_RDP_STATUS_OK;
 
     (void)pthread_mutex_lock(&backend->mutex);
     if (backend->stop_requested) {
@@ -2545,9 +3761,86 @@ static mr_rdp_status mr_freerdp_offer_clipboard_text(
     return status;
 }
 
-static mr_rdp_status mr_freerdp_request_clipboard_text(
+static uint8_t *mr_freerdp_copy_bytes(const uint8_t *bytes, size_t count)
+{
+    uint8_t *copy;
+    if (bytes == NULL || count == 0u) {
+        return NULL;
+    }
+    copy = (uint8_t *)malloc(count);
+    if (copy != NULL) {
+        memcpy(copy, bytes, count);
+    }
+    return copy;
+}
+
+static mr_rdp_status mr_freerdp_offer_clipboard_image(
     mr_rdp_backend *base,
-    uint64_t request_id)
+    const mr_rdp_clipboard_image_offer *offer)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    mr_freerdp_clipboard_offer *copy =
+        (mr_freerdp_clipboard_offer *)calloc(1u, sizeof(mr_freerdp_clipboard_offer));
+    if (copy == NULL) {
+        return MR_RDP_ERROR_OUT_OF_MEMORY;
+    }
+    copy->offer_id = offer->offer_id;
+    copy->kind = MR_FREERDP_CLIP_IMAGE;
+    copy->png = mr_freerdp_copy_bytes(offer->png_bytes, offer->png_byte_count);
+    copy->png_count = copy->png != NULL ? offer->png_byte_count : 0u;
+    copy->dib = mr_freerdp_copy_bytes(offer->dib_bytes, offer->dib_byte_count);
+    copy->dib_count = copy->dib != NULL ? offer->dib_byte_count : 0u;
+    if ((offer->png_bytes != NULL && copy->png == NULL) ||
+        (offer->dib_bytes != NULL && copy->dib == NULL)) {
+        mr_freerdp_clipboard_offer_destroy(copy);
+        return MR_RDP_ERROR_OUT_OF_MEMORY;
+    }
+    return mr_freerdp_queue_offer(backend, copy);
+}
+
+static mr_rdp_status mr_freerdp_offer_clipboard_files(
+    mr_rdp_backend *base,
+    const mr_rdp_clipboard_files_offer *offer)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    mr_freerdp_clipboard_offer *copy =
+        (mr_freerdp_clipboard_offer *)calloc(1u, sizeof(mr_freerdp_clipboard_offer));
+    size_t index;
+    if (copy == NULL) {
+        return MR_RDP_ERROR_OUT_OF_MEMORY;
+    }
+    copy->offer_id = offer->offer_id;
+    copy->kind = MR_FREERDP_CLIP_FILES;
+    copy->files = (mr_freerdp_clipboard_file *)calloc(offer->file_count, sizeof(mr_freerdp_clipboard_file));
+    if (copy->files == NULL) {
+        mr_freerdp_clipboard_offer_destroy(copy);
+        return MR_RDP_ERROR_OUT_OF_MEMORY;
+    }
+    copy->file_count = offer->file_count;
+    for (index = 0u; index < offer->file_count; ++index) {
+        const mr_rdp_clipboard_file *file = &offer->files[index];
+        /* A Windows file name is at most 259 UTF-16 units plus its NUL. */
+        const SSIZE_T converted = ConvertUtf8NToWChar(
+            file->name, file->name_length, copy->files[index].name, 259u);
+        if (converted <= 0) {
+            mr_freerdp_clipboard_offer_destroy(copy);
+            return MR_RDP_ERROR_INVALID_ARGUMENT;
+        }
+        copy->files[index].name[259] = 0;
+        copy->files[index].bytes = mr_freerdp_copy_bytes(file->bytes, file->byte_count);
+        if (file->byte_count != 0u && copy->files[index].bytes == NULL) {
+            mr_freerdp_clipboard_offer_destroy(copy);
+            return MR_RDP_ERROR_OUT_OF_MEMORY;
+        }
+        copy->files[index].byte_count = file->byte_count;
+    }
+    return mr_freerdp_queue_offer(backend, copy);
+}
+
+static mr_rdp_status mr_freerdp_request_clipboard(
+    mr_rdp_backend *base,
+    uint64_t request_id,
+    int kind)
 {
     mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
     mr_rdp_status status = MR_RDP_STATUS_OK;
@@ -2571,8 +3864,11 @@ static mr_rdp_status mr_freerdp_request_clipboard_text(
                  * request would be read as this one's, which is acceptable
                  * only because both ask for the same remote clipboard. */
                 backend->expired_text_request_id = backend->outstanding_text_request_id;
+                backend->expired_request_kind = backend->outstanding_request_kind;
                 backend->outstanding_text_request_id = 0u;
                 backend->outstanding_text_request_since = 0u;
+                backend->outstanding_request_kind = 0;
+                mr_freerdp_reset_incoming_locked(backend);
             }
         }
         if (status == MR_RDP_STATUS_OK) {
@@ -2580,11 +3876,27 @@ static mr_rdp_status mr_freerdp_request_clipboard_text(
                 status = MR_RDP_ERROR_BACKEND;
             } else {
                 backend->pending_text_request_id = request_id;
+                backend->pending_request_kind = kind;
             }
         }
     }
     (void)pthread_mutex_unlock(&backend->mutex);
     return status;
+}
+
+static mr_rdp_status mr_freerdp_request_clipboard_text(mr_rdp_backend *base, uint64_t request_id)
+{
+    return mr_freerdp_request_clipboard(base, request_id, MR_FREERDP_CLIP_TEXT);
+}
+
+static mr_rdp_status mr_freerdp_request_clipboard_image(mr_rdp_backend *base, uint64_t request_id)
+{
+    return mr_freerdp_request_clipboard(base, request_id, MR_FREERDP_CLIP_IMAGE);
+}
+
+static mr_rdp_status mr_freerdp_request_clipboard_files(mr_rdp_backend *base, uint64_t request_id)
+{
+    return mr_freerdp_request_clipboard(base, request_id, MR_FREERDP_CLIP_FILES);
 }
 
 static void mr_freerdp_destroy(mr_rdp_backend *base)
@@ -2630,6 +3942,11 @@ static const mr_rdp_backend_vtable mr_freerdp_vtable = {
     .set_audio_focused = mr_freerdp_set_audio_focused,
     .offer_clipboard_text = mr_freerdp_offer_clipboard_text,
     .request_clipboard_text = mr_freerdp_request_clipboard_text,
+    .offer_clipboard_image = mr_freerdp_offer_clipboard_image,
+    .offer_clipboard_files = mr_freerdp_offer_clipboard_files,
+    .request_clipboard_image = mr_freerdp_request_clipboard_image,
+    .request_clipboard_files = mr_freerdp_request_clipboard_files,
+    .send_audio_capture = mr_freerdp_send_audio_capture,
     .send_touch = mr_freerdp_send_touch,
     .send_pen = mr_freerdp_send_pen,
     .destroy = mr_freerdp_destroy
@@ -2748,6 +4065,8 @@ static mr_rdp_status mr_freerdp_configure_settings(
     const mr_rdp_owned_config *config)
 {
     rdpSettings *settings = backend->context->settings;
+    const BOOL h264 = (config->channel_flags & MR_RDP_CHANNEL_FLAG_H264) != 0u &&
+        config->remote_program == NULL;
     if (!freerdp_settings_set_string_len(
             settings, FreeRDP_ServerHostname,
             config->hostname, config->hostname_length) ||
@@ -2797,15 +4116,35 @@ static mr_rdp_status mr_freerdp_configure_settings(
             settings, FreeRDP_SynchronousStaticChannels, TRUE) ||
         !freerdp_settings_set_bool(
             settings, FreeRDP_SynchronousDynamicChannels, TRUE) ||
+        /* RemoteApp windows arrive on surfaces of their own too (see the
+         * window compositor). */
         !freerdp_settings_set_bool(settings, FreeRDP_SupportGraphicsPipeline, TRUE) ||
-        !freerdp_settings_set_bool(settings, FreeRDP_GfxH264, FALSE) ||
-        !freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444, FALSE) ||
-        !freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2, FALSE) ||
+        /* ABI 5: H.264, decoded by this adapter with VideoToolbox. Not for
+         * RemoteApp: Windows 11 drops a RemoteApp connection a few seconds
+         * after its windows start coming as AVC. */
+        !freerdp_settings_set_bool(settings, FreeRDP_GfxH264, h264) ||
+        /* Windows only uses AVC with the 10.x capabilities, which imply
+         * AVC444; its first stream is drawn as 4:2:0 (see the surface
+         * command). */
+        !freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444, h264) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2, h264) ||
         !freerdp_settings_set_bool(settings, FreeRDP_GfxCodecAV1, FALSE)) {
         return MR_RDP_ERROR_BACKEND;
     }
     if (config->gateway_hostname != NULL &&
         !mr_freerdp_configure_gateway(settings, config)) {
+        return MR_RDP_ERROR_BACKEND;
+    }
+    if (config->remote_program != NULL &&
+        (!freerdp_settings_set_bool(settings, FreeRDP_RemoteApplicationMode, TRUE) ||
+         !freerdp_settings_set_string_len(
+             settings, FreeRDP_RemoteApplicationProgram,
+             config->remote_program, config->remote_program_length) ||
+         (config->remote_arguments != NULL &&
+          !freerdp_settings_set_string_len(
+              settings, FreeRDP_RemoteApplicationCmdLine,
+              config->remote_arguments, config->remote_arguments_length)) ||
+         !freerdp_settings_set_bool(settings, FreeRDP_RemoteAppLanguageBarSupported, TRUE))) {
         return MR_RDP_ERROR_BACKEND;
     }
     /* ABI 4: one folder, as a drive under the name given. rdpdr loads the

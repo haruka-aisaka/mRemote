@@ -51,6 +51,11 @@ typedef struct mr_rdp_owned_config {
     size_t drive_path_length;
     char *drive_name;
     size_t drive_name_length;
+    /* ABI 5. NULL for a desktop. */
+    char *remote_program;
+    size_t remote_program_length;
+    char *remote_arguments;
+    size_t remote_arguments_length;
 } mr_rdp_owned_config;
 
 typedef struct mr_rdp_backend_clipboard_offer {
@@ -94,7 +99,9 @@ typedef struct mr_rdp_backend_host {
         const mr_rdp_audio_packet *packet);
     mr_rdp_status (*clipboard_remote_formats)(
         void *context,
-        int has_text);
+        int has_text,
+        int has_image,
+        int has_files);
     mr_rdp_status (*clipboard_offer_event)(
         void *context,
         uint64_t offer_id,
@@ -106,6 +113,31 @@ typedef struct mr_rdp_backend_host {
         mr_rdp_status status,
         const uint8_t *utf16le_bytes,
         size_t utf16le_byte_count);
+    /* ABI 5. */
+    mr_rdp_status (*clipboard_image)(
+        void *context,
+        uint64_t request_id,
+        mr_rdp_status status,
+        mr_rdp_clipboard_image_format format,
+        const uint8_t *bytes,
+        size_t byte_count);
+    mr_rdp_status (*clipboard_file)(
+        void *context,
+        uint64_t request_id,
+        mr_rdp_status status,
+        uint32_t index,
+        uint32_t count,
+        int is_last,
+        const char *name,
+        size_t name_length,
+        const uint8_t *bytes,
+        size_t byte_count);
+    mr_rdp_status (*audio_capture)(
+        void *context,
+        int is_open,
+        uint32_t samples_per_second,
+        uint16_t channels,
+        uint16_t bits_per_sample);
 } mr_rdp_backend_host;
 
 typedef struct mr_rdp_backend_vtable {
@@ -135,6 +167,23 @@ typedef struct mr_rdp_backend_vtable {
     mr_rdp_status (*request_clipboard_text)(
         mr_rdp_backend *backend,
         uint64_t request_id);
+    /* ABI 5. Offers are validated and must be copied before returning. */
+    mr_rdp_status (*offer_clipboard_image)(
+        mr_rdp_backend *backend,
+        const mr_rdp_clipboard_image_offer *offer);
+    mr_rdp_status (*offer_clipboard_files)(
+        mr_rdp_backend *backend,
+        const mr_rdp_clipboard_files_offer *offer);
+    mr_rdp_status (*request_clipboard_image)(
+        mr_rdp_backend *backend,
+        uint64_t request_id);
+    mr_rdp_status (*request_clipboard_files)(
+        mr_rdp_backend *backend,
+        uint64_t request_id);
+    mr_rdp_status (*send_audio_capture)(
+        mr_rdp_backend *backend,
+        const uint8_t *bytes,
+        size_t byte_count);
     /* ABI 4. */
     mr_rdp_status (*send_touch)(
         mr_rdp_backend *backend,

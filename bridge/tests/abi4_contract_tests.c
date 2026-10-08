@@ -245,7 +245,7 @@ static int test_defaults(void)
     mr_rdp_pen_event pen;
     mr_rdp_display_resize_request request;
     initialize_config(&config, 1u);
-    REQUIRE(config.abi_version == 4u);
+    REQUIRE(config.abi_version == MR_RDP_BRIDGE_ABI_VERSION && MR_RDP_BRIDGE_ABI_VERSION >= 4u);
     REQUIRE(config.gateway_hostname == NULL);
     REQUIRE(config.gateway_flags == 0u);
     REQUIRE(config.drive_path == NULL);
