@@ -22,6 +22,7 @@ import XCTest
 ///
 ///     tap <id>                         tap
 ///     twotap <id>                      two-finger tap
+///     doubletap <id>                   double tap
 ///     hold <id> <seconds>              press and hold
 ///     tapat <id> <fx> <fy>             tap at a point
 ///     drag <id> <fx1> <fy1> <fx2> <fy2> [holdSeconds]
@@ -123,6 +124,9 @@ final class LiveRDPUITests: XCTestCase {
             let back = app.navigationBars.buttons.firstMatch
             guard back.waitForExistence(timeout: 3) else { return "missing" }
             back.tap()
+        case "doubletap":
+            guard let target = target() else { return "missing" }
+            target.doubleTap()
         case "twotap":
             guard let target = target() else { return "missing" }
             target.twoFingerTap()
