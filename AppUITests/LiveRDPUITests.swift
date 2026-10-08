@@ -65,6 +65,9 @@ final class LiveRDPUITests: XCTestCase {
         for (key, value) in environment where key.hasPrefix("MREMOTE_APP_") {
             app.launchEnvironment[String(key.dropFirst("MREMOTE_APP_".count))] = value
         }
+        // TEST_RUNNER_MREMOTE_LIVE_ARGS: launch arguments, space separated,
+        // such as -mremote-fake-external-display.
+        app.launchArguments += (environment["MREMOTE_LIVE_ARGS"] ?? "").split(separator: " ").map(String.init)
         app.launch()
 
         let row = element("profile-row-\(profileName)")
