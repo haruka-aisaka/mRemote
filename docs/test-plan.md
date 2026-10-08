@@ -279,3 +279,10 @@ Windows 側で既知周波数/timestamp の test tone を再生し、次を測�
 - crash、hang、credential leak、silent certificate acceptance の既知 blocker がない。
 - dependency pin、license notice、SBOM、暗号輸出回答、privacy manifest/用途説明を確認する。App Store 提出に必須なので、ここは規模を下げない。
 - 未検証の機種/キーボード/Windows 版と、iOS 予約 shortcut の制約を release note/help に明記する。
+
+## 14. Windows で残っている確認（2026-10-09 時点）
+
+UTM の Windows 11 ARM VM では次が決着しなかった。実機の Windows で確認する。
+
+- iPad を縦向きにして DISP で 2048x2692 へリサイズした直後、Windows 側からセッションが切断された（2 回）。横向きでは安定。標準接続の経路は今回変えていないが、変更前のビルドでの比較は未実施。
+- mstsc → macos-rdp-server（サーバー側の残課題。macos-rdp-server の docs/TESTING.md「Known issues」7 を参照）。
