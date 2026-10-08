@@ -147,6 +147,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// the whole screen while the laptop deck takes part of it and the user
     /// would rather keep the resolution and draw it smaller.
     private var renderSizeOverride: CGSize?
+    /// How far up the software keyboard reaches into this view.
+    private var keyboardOverlap: CGFloat = 0
+    /// Whether the desktop is lifted above the software keyboard to keep the
+    /// pointer in sight, as the Windows App on iPhone does.
+    private var followsPointerAboveKeyboard = true
     private var viewportDoubleTap: UITapGestureRecognizer?
     /// False until the surface is configured, so nothing is delivered before
     /// the workspace has said whether the session can carry it.
@@ -258,6 +263,19 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
         attachToFrameStore()
         attachToCursorStore()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardFrameWillChange(_:)),
+            name: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillHide(_:)),
+            name: UIResponder.keyboardWillHideNotification,
+            object: nil
+        )
     }
 
     required init(coder: NSCoder) {
@@ -422,7 +440,8 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             viewport: ViewportSize(width: bounds.width, height: bounds.height),
             scaleMode: scaleMode,
             zoom: zoom,
-            pan: pan
+            pan: pan,
+            occludedBottom: followsPointerAboveKeyboard ? Double(keyboardOverlap) : 0
         )
         // Clamping happens inside the transform, so read the accepted values
         // back rather than keeping a copy that disagrees with what is drawn.
@@ -801,19 +820,68 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     /// Zoomed in, the view follows the pointer the way a magnifier does, so
-    /// the trackpad can reach the whole desktop without a pan gesture.
+    /// the trackpad can reach the whole desktop without a pan gesture. With
+    /// the software keyboard up it also follows it above the keyboard.
     private func keepRelativePointerInView() {
-        guard let relativePointerPixel, zoom > 1 || scaleMode == .oneToOne else { return }
-        let point = viewportTransform.localPoint(fromRemote: relativePointerPixel)
+        guard let relativePointerPixel else { return }
+        keepInView(relativePointerPixel)
+    }
+
+    private func keepInView(_ pixel: PixelPoint) {
+        let covered = viewportTransform.occludedBottom > 0
+        guard zoom > 1 || scaleMode == .oneToOne || covered else { return }
+        let point = viewportTransform.localPoint(fromRemote: pixel)
         let margin = 24.0
+        let bottom = viewportTransform.visibleHeight
         var shift = ViewportPoint.zero
         if point.x < margin { shift.x = margin - point.x }
         if point.x > bounds.width - margin { shift.x = bounds.width - margin - point.x }
         if point.y < margin { shift.y = margin - point.y }
-        if point.y > bounds.height - margin { shift.y = bounds.height - margin - point.y }
+        if point.y > bottom - margin { shift.y = bottom - margin - point.y }
         guard shift != .zero else { return }
         pan = ViewportPoint(x: pan.x + shift.x, y: pan.y + shift.y)
         updateTransform()
+        setNeedsDisplay()
+    }
+
+    // MARK: - Software keyboard
+
+    func setFollowsPointerAboveKeyboard(_ follows: Bool) {
+        guard follows != followsPointerAboveKeyboard else { return }
+        followsPointerAboveKeyboard = follows
+        keyboardCoverChanged()
+    }
+
+    @objc private func keyboardFrameWillChange(_ notification: Notification) {
+        guard let window,
+              let end = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
+            return
+        }
+        let screen = window.screen.bounds
+        // Only a keyboard docked along the bottom covers a band of the view;
+        // a floating or split one on an iPad is left to the user to move.
+        let docked = end.maxY >= screen.maxY - 1 && end.width >= screen.width - 1
+        let frame = convert(end, from: window.screen.coordinateSpace)
+        setKeyboardOverlap(docked ? min(max(bounds.maxY - frame.minY, 0), bounds.height) : 0)
+    }
+
+    @objc private func keyboardWillHide(_ notification: Notification) {
+        setKeyboardOverlap(0)
+    }
+
+    private func setKeyboardOverlap(_ overlap: CGFloat) {
+        guard overlap != keyboardOverlap else { return }
+        keyboardOverlap = overlap
+        keyboardCoverChanged()
+    }
+
+    /// Lifts the desktop until the pointer clears the keyboard, or lets it
+    /// fall back once the keyboard has gone.
+    private func keyboardCoverChanged() {
+        updateTransform()
+        if let pixel = relativePointerPixel ?? pointerRouter.knownPixel {
+            keepInView(pixel)
+        }
         setNeedsDisplay()
     }
 

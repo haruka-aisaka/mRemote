@@ -15,6 +15,12 @@ enum TouchPointerMode: String, CaseIterable {
     static let storageKey = "touch-pointer-mode"
 }
 
+/// Whether the desktop is lifted above the software keyboard so the pointer
+/// stays in sight. Kept on the device, for every session.
+enum KeyboardPointerFollowing {
+    static let storageKey = "follows-pointer-above-keyboard"
+}
+
 /// Bridges the Metal surface into the SwiftUI workspace.
 ///
 /// The view is built once per session and reconfigured afterwards: rebuilding
@@ -29,6 +35,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     /// Where the laptop deck finds this surface, when there is one.
     let laptopChannel: LaptopDeckChannel?
     let touchMode: TouchPointerMode
+    var followsPointerAboveKeyboard = true
     /// Points to ask the server for instead of the surface's own size.
     let renderSizeOverride: CGSize?
     /// False while the scene is inactive or the session is not connected. The
@@ -60,6 +67,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     private func configure(_ view: RemoteDesktopView) {
         laptopChannel?.surface = view
         view.setTouchMode(touchMode)
+        view.setFollowsPointerAboveKeyboard(followsPointerAboveKeyboard)
         view.setRenderSizeOverride(renderSizeOverride)
         view.onRenderSizeChange = onRenderSizeChange
         view.onDesktopSizeChange = onDesktopSizeChange

@@ -27,6 +27,7 @@ struct SessionWorkspaceView: View {
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
     @AppStorage(LaptopKeyboardPlatform.storageKey) private var deckPlatform = LaptopKeyboardPlatform.windows
     @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
+    @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
 
     var body: some View {
         ZStack {
@@ -195,6 +196,7 @@ struct SessionWorkspaceView: View {
                 scrollDirection: model.runtime.scrollDirection,
                 laptopChannel: laptopChannel,
                 touchMode: touchMode,
+                followsPointerAboveKeyboard: followsPointerAboveKeyboard,
                 renderSizeOverride: renderSizeOverride,
                 // Input is gated on both halves of docs/architecture.md
                 // section 10: the session must be able to deliver it, and the

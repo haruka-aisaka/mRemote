@@ -219,6 +219,8 @@ view point (pt)
 
 RDP へは remote desktop の absolute pixel 座標を送る。描画側と別々の式を実装しない。
 
+content は常に中央に置いてから pan する。pan はどの軸もはみ出し分の範囲内で、拡大しても desktop の外（地の黒）は出ない。下端が覆われている間（`occludedBottom`、ソフトウェアキーボード）は、desktop の下端がその上に来るまで上へ動かせる。
+
 ### 8.3 ボタン
 
 - 左、右の down/up を個別に保持し、drag 中も state を維持する。
@@ -277,7 +279,11 @@ pinch が成立すると UIKit が touch を cancel するため、途中のド�
 
 local IME mode で marked text がある間は、`確定` と `キャンセル` を表示する。文字以外の remote modifier/chord を押した場合は暗黙送信せず、先に確定またはキャンセルを選ばせる。Esc はまず composition のキャンセルに使い、未変換文字がないときだけ remote Esc とする。
 
-### 10.4 モード切替
+### 10.4 ポインターへの追従
+
+ソフトウェアキーボードが画面下に出ている間、`RemoteDesktopView` はキーボードが覆う高さを `ViewportTransform.occludedBottom` に渡し、リモートのポインター（トラックパッドで動かした位置、またはタッチで置いた位置）がキーボードの上 24pt 以内に見えるまで desktop を持ち上げる。トラックパッドで動かすとそのまま追いかけ、キーボードを閉じると元に戻る。iPhone 向け Windows App と同じ動き。セッションメニューの「キーボード表示中はポインターに合わせて画面を動かす」（既定オン、端末に保存）で切れる。iPad のフローティング/分割キーボードは帯状に覆わないので対象外。
+
+### 10.5 モード切替
 
 marked text がある最中に切り替える場合は確定またはキャンセルしてから responder を交換する。交換中は入力 gate を閉じ、旧 responder の遅延 callback を generation ID で破棄する。
 

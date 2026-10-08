@@ -100,6 +100,23 @@ final class ViewportTransformTests: XCTestCase {
         XCTAssertEqual(left.x, 0, accuracy: 0.001)
     }
 
+    func testACoveredBottomLetsTheDesktopRiseAboveTheCover() {
+        let covered = transform(pan: ViewportPoint(x: 0, y: -10_000)).with(zoom: 1)
+        XCTAssertEqual(covered.pan, .zero, "nothing covers it yet")
+        let keyboard = ViewportTransform(
+            desktopWidth: 1_920, desktopHeight: 1_080, viewport: viewport,
+            pan: ViewportPoint(x: 0, y: -10_000), occludedBottom: 200
+        )
+        XCTAssertEqual(keyboard.contentRect.maxY, 300, accuracy: 0.001)
+        XCTAssertEqual(keyboard.visibleHeight, 300, accuracy: 0.001)
+        let down = keyboard.with(pan: ViewportPoint(x: 0, y: 10_000))
+        XCTAssertEqual(down.contentRect.y, 0, accuracy: 0.001, "still not past the top")
+        let uncovered = ViewportTransform(
+            desktopWidth: 1_920, desktopHeight: 1_080, viewport: viewport, pan: keyboard.pan
+        )
+        XCTAssertEqual(uncovered.pan, .zero, "falls back once the cover is gone")
+    }
+
     func testZoomIsClampedToTheSupportedRange() {
         XCTAssertEqual(transform(zoom: 0.1).zoom, 1)
         XCTAssertEqual(transform(zoom: 100).zoom, 8)

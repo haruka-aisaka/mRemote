@@ -37,6 +37,7 @@ struct SessionMenuSheet: View {
     @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
     @AppStorage(DesktopSafeAreaPolicy.storageKey)
     private var safeAreaPolicy = DesktopSafeAreaPolicy.avoid
+    @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
 
     var body: some View {
         NavigationStack {
@@ -214,6 +215,9 @@ struct SessionMenuSheet: View {
                     Text(touchModeHint)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    // Kept across sessions and launches, like the touch mode.
+                    Toggle("キーボード表示中はポインターに合わせて画面を動かす", isOn: $followsPointerAboveKeyboard)
+                        .accessibilityIdentifier("session-follow-pointer-toggle")
                     // Live rather than a profile edit: which way a trackpad
                     // should scroll a remote desktop is settled by trying it.
                     Picker("スクロール方向", selection: Binding(

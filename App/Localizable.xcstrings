@@ -700,6 +700,16 @@
         }
       }
     },
+    "キーボード表示中はポインターに合わせて画面を動かす": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move the screen with the pointer while the keyboard is up"
+          }
+        }
+      }
+    },
     "クリップボード": {
       "localizations": {
         "en": {

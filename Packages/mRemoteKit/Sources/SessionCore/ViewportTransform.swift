@@ -60,6 +60,10 @@ public struct ViewportTransform: Hashable, Sendable {
     /// Pan in viewport points, already clamped so the desktop cannot be
     /// dragged off screen.
     public let pan: ViewportPoint
+    /// How much of the viewport's bottom is covered - by the software
+    /// keyboard, say. The desktop may be lifted that far so its lower part
+    /// can be brought above the cover.
+    public let occludedBottom: Double
 
     public static let minimumZoom = 1.0
     public static let maximumZoom = 8.0
@@ -70,19 +74,22 @@ public struct ViewportTransform: Hashable, Sendable {
         viewport: ViewportSize,
         scaleMode: InitialScale = .fit,
         zoom: Double = 1.0,
-        pan: ViewportPoint = .zero
+        pan: ViewportPoint = .zero,
+        occludedBottom: Double = 0
     ) {
         let clampedZoom = Self.clampZoom(zoom)
+        let occluded = occludedBottom.isFinite ? min(max(occludedBottom, 0), max(viewport.height, 0)) : 0
         self.desktopWidth = desktopWidth
         self.desktopHeight = desktopHeight
         self.viewport = viewport
         self.scaleMode = scaleMode
         self.zoom = clampedZoom
+        self.occludedBottom = occluded
         // Pan is stored already clamped so that no consumer can observe an
         // offset that would show the ground behind the desktop.
         self.pan = Self.clampPan(
             pan,
-            limits: Self.panLimits(
+            ranges: Self.panRanges(
                 desktopWidth: desktopWidth,
                 desktopHeight: desktopHeight,
                 viewport: viewport,
@@ -91,7 +98,8 @@ public struct ViewportTransform: Hashable, Sendable {
                     desktopHeight: desktopHeight,
                     viewport: viewport,
                     scaleMode: scaleMode
-                ) * clampedZoom
+                ) * clampedZoom,
+                occludedBottom: occluded
             )
         )
     }
@@ -147,6 +155,9 @@ public struct ViewportTransform: Hashable, Sendable {
         )
     }
 
+    /// The part of the viewport that is not covered.
+    public var visibleHeight: Double { viewport.height - occludedBottom }
+
     /// How far the content may be dragged on each axis. Zero on an axis that
     /// already fits, which is what stops a fitted desktop from being flicked
     /// out of view.
@@ -160,7 +171,16 @@ public struct ViewportTransform: Hashable, Sendable {
     }
 
     public func clampedPan(_ candidate: ViewportPoint) -> ViewportPoint {
-        Self.clampPan(candidate, limits: panLimits)
+        Self.clampPan(
+            candidate,
+            ranges: Self.panRanges(
+                desktopWidth: desktopWidth,
+                desktopHeight: desktopHeight,
+                viewport: viewport,
+                scale: scale,
+                occludedBottom: occludedBottom
+            )
+        )
     }
 
     private static func panLimits(
@@ -177,12 +197,36 @@ public struct ViewportTransform: Hashable, Sendable {
         )
     }
 
+    /// The overhang either way, and upwards also as far as it takes to bring
+    /// the desktop's bottom edge above whatever covers the viewport's.
+    private static func panRanges(
+        desktopWidth: Int,
+        desktopHeight: Int,
+        viewport: ViewportSize,
+        scale: Double,
+        occludedBottom: Double
+    ) -> (x: ClosedRange<Double>, y: ClosedRange<Double>) {
+        let limits = panLimits(
+            desktopWidth: desktopWidth,
+            desktopHeight: desktopHeight,
+            viewport: viewport,
+            scale: scale
+        )
+        let height = Double(desktopHeight) * scale
+        let centredY = (viewport.height - height) / 2
+        let lift = (viewport.height - occludedBottom) - height - centredY
+        return (
+            x: -limits.x...limits.x,
+            y: min(-limits.y, lift)...limits.y
+        )
+    }
+
     private static func clampPan(
         _ candidate: ViewportPoint,
-        limits: (x: Double, y: Double)
+        ranges: (x: ClosedRange<Double>, y: ClosedRange<Double>)
     ) -> ViewportPoint {
-        let x = candidate.x.isFinite ? min(max(candidate.x, -limits.x), limits.x) : 0
-        let y = candidate.y.isFinite ? min(max(candidate.y, -limits.y), limits.y) : 0
+        let x = candidate.x.isFinite ? min(max(candidate.x, ranges.x.lowerBound), ranges.x.upperBound) : 0
+        let y = candidate.y.isFinite ? min(max(candidate.y, ranges.y.lowerBound), ranges.y.upperBound) : 0
         return ViewportPoint(x: x, y: y)
     }
 
@@ -198,7 +242,8 @@ public struct ViewportTransform: Hashable, Sendable {
             viewport: viewport ?? self.viewport,
             scaleMode: scaleMode ?? self.scaleMode,
             zoom: zoom ?? self.zoom,
-            pan: pan ?? self.pan
+            pan: pan ?? self.pan,
+            occludedBottom: occludedBottom
         )
     }
 
@@ -211,7 +256,8 @@ public struct ViewportTransform: Hashable, Sendable {
             viewport: viewport,
             scaleMode: scaleMode,
             zoom: zoom,
-            pan: .zero
+            pan: .zero,
+            occludedBottom: occludedBottom
         )
     }
 
