@@ -26,6 +26,8 @@ struct SessionMenuSheet: View {
             String(localized: "なぞるとポインターが動きます。タップでクリック、2 本指タップで右クリック、2 本指でスクロール、押さえてから動かすとドラッグ。")
         case .viewport:
             String(localized: "タッチは Windows へ送りません。1 本指で表示を動かし、ピンチで拡大、ダブルタップで全体表示と 100% を切り替えます。")
+        case .touch:
+            String(localized: "指の操作をそのまま Windows のタッチとして送ります（ピンチやスワイプは Windows 側で動きます）。この画面での拡大はできません。")
         }
     }
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
@@ -45,6 +47,7 @@ struct SessionMenuSheet: View {
     @AppStorage(FloatingButtonsIdleStyle.storageKey) private var buttonsIdleStyle = FloatingButtonsIdleStyle.dim
     @AppStorage(KeyShortcutList.storageKey) private var shortcuts = KeyShortcutList.standard
     @AppStorage(ExternalDisplayMode.storageKey) private var externalMode = ExternalDisplayMode.desktop
+    @AppStorage(PencilInput.storageKey) private var sendsPencilAsPen = true
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -246,13 +249,16 @@ struct SessionMenuSheet: View {
                     Picker("外部ディスプレイ", selection: $externalMode) {
                         Text("この画面と同じ（ミラーリング）").tag(ExternalDisplayMode.mirror)
                         Text("デスクトップを表示").tag(ExternalDisplayMode.desktop)
+                        Text("デュアルモニター（この画面とつなげる）").tag(ExternalDisplayMode.extend)
                     }
                     .accessibilityIdentifier("session-external-display-mode")
                     Text(ExternalDisplayCoordinator.shared.screen == nil
                          ? String(localized: "モニターをつなぐと、そちらにデスクトップを表示し、この画面はキーボードとトラックパッドになります。")
                          : externalMode == .mirror
                             ? String(localized: "モニターにはこの画面がそのまま映ります。")
-                            : String(localized: "モニターにデスクトップを表示しています。この画面はキーボードとトラックパッドです。"))
+                            : externalMode == .extend
+                                ? String(localized: "この画面を左、モニターを右にした 2 画面のデスクトップです。ポインターはトラックパッドやマウスで画面をまたいで動かせます。")
+                                : String(localized: "モニターにデスクトップを表示しています。この画面はキーボードとトラックパッドです。"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     // The keyboard and menu buttons, after a few seconds alone.
@@ -282,11 +288,16 @@ struct SessionMenuSheet: View {
                         Text("タッチした場所を操作").tag(TouchPointerMode.direct)
                         Text("トラックパッドとして使う").tag(TouchPointerMode.trackpad)
                         Text("表示の移動だけ").tag(TouchPointerMode.viewport)
+                        Text("Windows のタッチとして送る").tag(TouchPointerMode.touch)
                     }
                     .accessibilityIdentifier("session-touch-mode-picker")
                     Text(touchModeHint)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    if UIDevice.current.userInterfaceIdiom == .pad {
+                        Toggle("Apple Pencil をペンとして送る", isOn: $sendsPencilAsPen)
+                            .accessibilityIdentifier("session-pencil-toggle")
+                    }
                     // Kept across sessions and launches, like the touch mode.
                     Toggle("キーボード表示中はポインターに合わせて画面を動かす", isOn: $followsPointerAboveKeyboard)
                         .accessibilityIdentifier("session-follow-pointer-toggle")

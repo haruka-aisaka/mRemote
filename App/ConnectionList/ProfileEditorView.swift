@@ -1,10 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import SessionCore
 
 struct ProfileEditorView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ProfileEditorModel
+    @State private var isPickingFolder = false
 
     var body: some View {
         NavigationStack {
@@ -106,6 +108,9 @@ struct ProfileEditorView: View {
                     }
                 }
 
+                gatewaySection
+                sharedFolderSection
+
                 Section("チャネル") {
                     InheritablePicker(
                         title: String(localized: "音声再生"),
@@ -138,13 +143,104 @@ struct ProfileEditorView: View {
                     Button("保存") {
                         guard let profile = model.makeProfile() else { return }
                         let password = model.password
-                        Task { await environment.save(profile, password: password) }
+                        let gatewayPassword = model.usesGateway && !model.gatewayUsesComputerCredentials
+                            ? model.gatewayPassword : nil
+                        Task {
+                            await environment.save(profile, password: password, gatewayPassword: gatewayPassword)
+                        }
                         dismiss()
                     }
                     .disabled(!model.isValid)
                     .accessibilityIdentifier("profile-save-button")
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var gatewaySection: some View {
+        Section {
+            Toggle("RD ゲートウェイを使う", isOn: $model.usesGateway)
+                .accessibilityIdentifier("profile-gateway-toggle")
+            if model.usesGateway {
+                TextField("ゲートウェイのホスト名", text: $model.gatewayHost)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("profile-gateway-host-field")
+                TextField("ポート", text: $model.gatewayPortText)
+                    .keyboardType(.numberPad)
+                Toggle("接続先と同じユーザーでサインイン", isOn: $model.gatewayUsesComputerCredentials)
+                if !model.gatewayUsesComputerCredentials {
+                    TextField("ゲートウェイのユーザー名", text: $model.gatewayUsername)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("ドメイン（任意）", text: $model.gatewayDomain)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("ゲートウェイのパスワード", text: $model.gatewayPassword)
+                }
+                Toggle("ローカルのアドレスにはゲートウェイを使わない", isOn: $model.gatewayBypassesLocal)
+            }
+        } header: {
+            Text("RD ゲートウェイ")
+        } footer: {
+            if model.usesGateway {
+                Text("HTTPS（つながらなければ RPC）でゲートウェイを経由します。ゲートウェイの証明書も、接続先と同じように確認します。")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sharedFolderSection: some View {
+        Section {
+            Picker("共有するフォルダ", selection: Binding(
+                get: { folderTag },
+                set: { tag in
+                    switch tag {
+                    case "app": model.sharedFolder = .appDocuments
+                    case "pick": isPickingFolder = true
+                    default: model.sharedFolder = .none
+                    }
+                }
+            )) {
+                Text("共有しない").tag("none")
+                Text("このアプリのフォルダ").tag("app")
+                if case let .picked(_, name) = model.sharedFolder {
+                    Text(name).tag("picked")
+                }
+                Text("フォルダを選ぶ…").tag("pick")
+            }
+            .accessibilityIdentifier("profile-shared-folder-picker")
+            if model.sharedFolder != .none {
+                TextField("ドライブ名", text: $model.driveName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+        } header: {
+            Text("フォルダの共有")
+        } footer: {
+            Text(model.sharedFolder == .appDocuments
+                 ? String(localized: "ファイル App の「このiPhone内 › mRemote」が、Windows のエクスプローラーにドライブとして見えます。")
+                 : String(localized: "選んだフォルダが、Windows のエクスプローラーにドライブとして見えます。接続中は Windows から読み書きできます。"))
+        }
+        .fileImporter(isPresented: $isPickingFolder, allowedContentTypes: [.folder]) { result in
+            guard case .success(let url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let bookmark = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+            else { return }
+            model.sharedFolder = .picked(bookmark: bookmark, name: url.lastPathComponent)
+            if model.driveName == "mRemote" || model.driveName.isEmpty {
+                model.driveName = SharedFolder.sanitizedDriveName(url.lastPathComponent)
+            }
+        }
+    }
+
+    private var folderTag: String {
+        switch model.sharedFolder {
+        case .none: return "none"
+        case .appDocuments: return "app"
+        case .picked: return "picked"
         }
     }
 

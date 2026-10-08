@@ -11,8 +11,17 @@ enum TouchPointerMode: String, CaseIterable {
     case trackpad
     /// Touch only pans and zooms the local view; nothing reaches the host.
     case viewport
+    /// Fingers reach Windows as touches - its own gestures, its own
+    /// keyboard - and the local view does not zoom.
+    case touch
 
     static let storageKey = "touch-pointer-mode"
+}
+
+/// Whether Apple Pencil reaches Windows as a pen, with pressure and tilt,
+/// rather than as a finger. Kept on the device.
+enum PencilInput {
+    static let storageKey = "pencil-as-pen"
 }
 
 /// Whether the desktop is lifted above the software keyboard so the pointer
@@ -36,10 +45,13 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     let laptopChannel: LaptopDeckChannel?
     let touchMode: TouchPointerMode
     var followsPointerAboveKeyboard = true
+    var sendsPencilAsPen = true
     /// Points to ask the server for instead of the surface's own size.
     let renderSizeOverride: CGSize?
     /// Fed with every frame and pointer move, for a monitor to draw.
     var mirror: DesktopMirror?
+    /// This screen's part of a desktop spread over a monitor as well.
+    var primaryRegion: DesktopSpan?
     /// False while the scene is inactive or the session is not connected. The
     /// view releases whatever it thinks is held when this goes false, which is
     /// what keeps a button from staying down on the server.
@@ -70,8 +82,10 @@ struct RemoteDesktopSurface: UIViewRepresentable {
         laptopChannel?.surface = view
         view.setTouchMode(touchMode)
         view.setFollowsPointerAboveKeyboard(followsPointerAboveKeyboard)
+        view.sendsPencilAsPen = sendsPencilAsPen
         view.setRenderSizeOverride(renderSizeOverride)
         view.mirror = mirror
+        view.setPrimaryRegion(primaryRegion?.primary)
         view.onRenderSizeChange = onRenderSizeChange
         view.onDesktopSizeChange = onDesktopSizeChange
         view.onInputDiagnostics = onInputDiagnostics

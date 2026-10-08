@@ -41,6 +41,9 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     private var pendingCertificate: RDPCertificateReview?
 
     private var native: RDPNativeSession?
+    /// A picked folder in use as a drive; its security scope is held open
+    /// until the attempt that shares it ends.
+    private var sharedFolderURL: URL?
     private var pumpTask: Task<Void, Never>?
     private var workerFinished: [CheckedContinuation<Void, Never>] = []
 
@@ -59,6 +62,8 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     /// can be sent yet; it is sent once the session is connected and the
     /// display channel is up, whichever comes last.
     private var desiredDesktopSize: (width: Int, height: Int)?
+    /// A second monitor to the right, when the desktop spans two screens.
+    private var desiredSecondary: (width: Int, height: Int)?
     /// The server needs the display channel's capabilities before it acts on
     /// a layout, and they arrive just after the channel opens.
     private static let displayChannelSettle = Duration.milliseconds(500)
@@ -252,7 +257,12 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     var desktopSize: (width: Int, height: Int) { currentDesktopSize }
 
     func requestDesktopSize(width: Int, height: Int) async {
-        desiredDesktopSize = (width, height)
+        await requestDesktopLayout(primary: (width, height), secondary: nil)
+    }
+
+    func requestDesktopLayout(primary: (width: Int, height: Int), secondary: (width: Int, height: Int)?) async {
+        desiredDesktopSize = primary
+        desiredSecondary = secondary
         resizeAttempts = 0
         sendDesiredDesktopSize()
     }
@@ -274,10 +284,17 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         // it silently and then disagree with us about the surface size.
         let clampedWidth = Self.clampDimension(width, roundToEven: true)
         let clampedHeight = Self.clampDimension(height, roundToEven: false)
+        let secondary = desiredSecondary.map {
+            (width: Self.clampDimension($0.width, roundToEven: true),
+             height: Self.clampDimension($0.height, roundToEven: false))
+        }
         // Measured against the frames, not against the last request: the
-        // request's echo says only that it was sent.
+        // request's echo says only that it was sent. Two monitors make one
+        // desktop as wide as both and as tall as the taller.
+        let expectedWidth = clampedWidth + (secondary?.width ?? 0)
+        let expectedHeight = max(clampedHeight, secondary?.height ?? 0)
         let actual = current
-        guard clampedWidth != actual.width || clampedHeight != actual.height
+        guard expectedWidth != actual.width || expectedHeight != actual.height
                 || displayScaleIsPending else {
             resizeAttempts = 0
             return
@@ -290,17 +307,18 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
 
         nextResizeRequestID &+= 1
         if nextResizeRequestID == 0 { nextResizeRequestID = 1 }
-        let accepted = native?.requestDisplayResize(
+        let accepted = native?.requestDisplayLayout(
             requestID: nextResizeRequestID,
-            width: UInt32(clampedWidth),
-            height: UInt32(clampedHeight),
+            primary: (UInt32(clampedWidth), UInt32(clampedHeight)),
+            secondary: secondary.map { (UInt32($0.width), UInt32($0.height)) },
             scale: displayScale
         ) ?? false
         // The scale cannot be read back from the frames, so it counts as
         // delivered once the backend has taken the layout.
         if accepted { displayScaleIsPending = false }
         logger.session(
-            "disp resize \(clampedWidth)x\(clampedHeight) scale=\(displayScale.desktopPercent)% "
+            "disp resize \(clampedWidth)x\(clampedHeight)"
+                + (secondary.map { " + \($0.width)x\($0.height)" } ?? "") + " scale=\(displayScale.desktopPercent)% "
                 + "accepted=\(accepted) attempt=\(resizeAttempts)"
         )
         Task { [weak self] in
@@ -404,7 +422,10 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     /// A channel the profile turned off is not loaded at all, rather than
     /// negotiated and then ignored.
     static func channelFlags(for configuration: EffectiveConnectionConfiguration) -> mr_rdp_channel_flags {
-        var flags: mr_rdp_channel_flags = 0
+        // Touch and pen are always offered: whether a finger is sent as a
+        // touch is the user's live choice, and the channel costs nothing
+        // until it is used.
+        var flags = mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_TOUCH)
         if configuration.audioPlayback {
             flags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_AUDIO)
         }
@@ -466,7 +487,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             }
         }
         logger.session("connecting g=\(machine.generation.rawValue)")
-        session.start(RDPNativeConnection(
+        var connection = RDPNativeConnection(
             host: configuration.endpoint.host,
             port: configuration.endpoint.port,
             username: credential.username,
@@ -478,9 +499,71 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             channelFlags: Self.channelFlags(for: configuration),
             displayScale: displayScale,
             securityPolicy: Self.securityPolicy(for: configuration.securityPolicy)
-        ))
+        )
+        connection.gateway = gatewayConnection()
+        if let folder = openSharedFolder() {
+            connection.drive = folder
+            connection.channelFlags |= mr_rdp_channel_flags(MR_RDP_CHANNEL_FLAG_DRIVE)
+        }
+        session.start(connection)
         // The connection carries it; nothing is owed until it changes.
         displayScaleIsPending = false
+    }
+
+    /// The gateway and how to sign in to it. A gateway account without a
+    /// stored password signs in as the computer's user instead, which is
+    /// what most gateways expect anyway.
+    private func gatewayConnection() -> RDPNativeConnection.Gateway? {
+        guard let gateway = configuration.gateway else { return nil }
+        var credential: (username: String, domain: String, password: SecureBytes)?
+        if !gateway.usesComputerCredentials {
+            if let username = gateway.account.username, !username.isEmpty,
+               let reference = gateway.account.credentialReference,
+               let password = try? credentials.password(for: reference), !password.isEmpty {
+                credential = (username, gateway.account.domain ?? "", SecureBytes(password))
+            } else {
+                logger.session("gateway has no stored password; using the computer's credentials")
+            }
+        }
+        return RDPNativeConnection.Gateway(
+            host: gateway.host,
+            port: gateway.port,
+            bypassesLocal: gateway.bypassesLocalAddresses,
+            credential: credential
+        )
+    }
+
+    /// The shared folder's path, kept open for as long as the session runs:
+    /// a picked folder is only reachable while its security scope is.
+    private func openSharedFolder() -> (path: String, name: String)? {
+        closeSharedFolder()
+        guard let folder = configuration.sharedFolder else { return nil }
+        let url: URL
+        switch folder.location {
+        case .appDocuments:
+            guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            else { return nil }
+            url = documents
+        case .bookmark(let data, _):
+            var stale = false
+            guard let resolved = try? URL(
+                resolvingBookmarkData: data,
+                options: [],
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale
+            ), resolved.startAccessingSecurityScopedResource() else {
+                logger.session("the shared folder could not be opened")
+                return nil
+            }
+            sharedFolderURL = resolved
+            url = resolved
+        }
+        return (url.path, SharedFolder.sanitizedDriveName(folder.driveName))
+    }
+
+    private func closeSharedFolder() {
+        sharedFolderURL?.stopAccessingSecurityScopedResource()
+        sharedFolderURL = nil
     }
 
     /// The credential this attempt runs with, or nil when the user has to be
@@ -629,6 +712,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     /// The worker has joined and the handle is gone, so this is the only place
     /// allowed to publish a terminal state.
     private func finishAttempt(cause: RDPTerminationCause) {
+        closeSharedFolder()
         failClipboardWaiters()
         remoteHasText = false
         native = nil

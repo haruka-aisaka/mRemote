@@ -107,10 +107,20 @@ final class AppEnvironment {
         globalSettings = await repository.globalSettings
     }
 
-    func save(_ profile: ConnectionProfile, password: String?) async {
+    func save(_ profile: ConnectionProfile, password: String?, gatewayPassword: String? = nil) async {
         guard let repository else { return }
         var profile = profile
         do {
+            // The gateway's own password, when it signs in apart from the
+            // computer; kept in the Keychain like the computer's.
+            if let gatewayPassword, !gatewayPassword.isEmpty,
+               case .rdp(var rdp) = profile.configuration, var gateway = rdp.gateway {
+                let reference = gateway.account.credentialReference ?? CredentialReference()
+                try credentials.store(password: gatewayPassword, for: reference)
+                gateway.account.credentialReference = reference
+                rdp.gateway = gateway
+                profile.configuration = .rdp(rdp)
+            }
             if let password, !password.isEmpty {
                 // A new password gets a fresh reference only when the profile
                 // does not already have one, so rotating a password does not
@@ -133,6 +143,10 @@ final class AppEnvironment {
             if let orphaned = try await repository.delete(id: profile.id) {
                 // Only deleted once no remaining profile references it.
                 try credentials.delete(orphaned)
+            }
+            // A gateway password belongs to its one profile.
+            if let reference = profile.configuration.rdp?.gateway?.account.credentialReference {
+                try? credentials.delete(reference)
             }
             await refresh()
         } catch {

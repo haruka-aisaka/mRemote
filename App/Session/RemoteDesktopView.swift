@@ -46,9 +46,12 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     // rect is (left, top, right, bottom) in normalised device coordinates, so
     // a desktop that is zoomed past the edges of the screen is clipped by the
     // rasteriser instead of needing a viewport the render target cannot hold.
+    // source is the part of the texture shown, in texture coordinates: all
+    // of it, or this screen's half of a desktop spread over two monitors.
     vertex RasterizerData desktopVertex(
         uint vertexID [[vertex_id]],
-        constant float4 &rect [[buffer(0)]]) {
+        constant float4 &rect [[buffer(0)]],
+        constant float4 &source [[buffer(1)]]) {
         const float2 corners[] = {
             float2(0.0, 0.0), float2(1.0, 0.0),
             float2(0.0, 1.0), float2(1.0, 1.0)
@@ -60,7 +63,9 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             mix(rect.y, rect.w, corner.y),
             0.0,
             1.0);
-        output.textureCoordinate = corner;
+        output.textureCoordinate = float2(
+            mix(source.x, source.z, corner.x),
+            mix(source.y, source.w, corner.y));
         return output;
     }
 
@@ -144,10 +149,33 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// and the trackpad's for the same reason those are kept apart.
     private var touchButtons: Set<PointerButton> = []
     private var viewportPan: UIPanGestureRecognizer?
+    private var pinchRecognizer: UIPinchGestureRecognizer?
+    /// Fingers down as Windows touches, by the contact number each was given.
+    private var touchContacts: [ObjectIdentifier: (id: UInt32, pixel: PixelPoint)] = [:]
+    /// The pencil while it is down as a pen.
+    private var penContact: (touch: ObjectIdentifier, pixel: PixelPoint)?
+    var sendsPencilAsPen = true
     /// The size, in points, to ask the server for instead of this view's own:
     /// the whole screen while the laptop deck takes part of it and the user
     /// would rather keep the resolution and draw it smaller.
     private var renderSizeOverride: CGSize?
+    /// This screen's part of a desktop that spans a monitor too: the top
+    /// left of the framebuffer, this wide and tall. Nil for all of it.
+    private var primaryRegion: (width: Int, height: Int)?
+
+    /// What this view shows and maps touches into: the framebuffer, or its
+    /// primary part. The pointer still moves over the whole desktop.
+    private var transformDesktopSize: (width: Int, height: Int) {
+        guard let primaryRegion else { return desktopSize }
+        return (min(primaryRegion.width, desktopSize.width), min(primaryRegion.height, desktopSize.height))
+    }
+
+    func setPrimaryRegion(_ region: (width: Int, height: Int)?) {
+        guard region?.width != primaryRegion?.width || region?.height != primaryRegion?.height else { return }
+        primaryRegion = region
+        updateTransform()
+        setNeedsDisplay()
+    }
     /// A second screen showing this desktop: it reads the texture this view
     /// uploads into and is told where the pointer is.
     var mirror: DesktopMirror? {
@@ -230,6 +258,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
         pinch.delegate = self
         addGestureRecognizer(pinch)
+        pinchRecognizer = pinch
 
         // Direct touches only: a trackpad drag is the remote pointer's, not
         // the viewport's.
@@ -447,8 +476,8 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             pan = .zero
         }
         viewportTransform = ViewportTransform(
-            desktopWidth: desktopSize.width,
-            desktopHeight: desktopSize.height,
+            desktopWidth: transformDesktopSize.width,
+            desktopHeight: transformDesktopSize.height,
             viewport: ViewportSize(width: bounds.width, height: bounds.height),
             scaleMode: scaleMode,
             zoom: zoom,
@@ -574,6 +603,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     func releaseHeldButtons() {
+        liftTouches()
         indirectButtons = []
         laptopButtons = []
         touchButtons = []
@@ -638,10 +668,14 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // it short of leaving the session.
         captureKeyboardIfPossible()
         guard handleIndirectPointer(touches, event: event, ending: false) else {
+            for touch in touches where touch.type == .pencil && sendsPencilAsPen {
+                pen(touch, phase: .down)
+            }
             for touch in touches where touch.type == .direct {
                 switch touchMode {
                 case .trackpad: directTrackpad.began(touch, in: self)
                 case .direct: directTouch.began(touch, in: self)
+                case .touch: remoteTouch(touch, phase: .down)
                 case .viewport: break
                 }
             }
@@ -653,9 +687,13 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard handleIndirectPointer(touches, event: event, ending: false) else {
             let direct: [UITouch] = touches.filter { $0.type == .direct }
+            for touch in touches where touch.type == .pencil && sendsPencilAsPen {
+                pen(touch, phase: .move)
+            }
             switch touchMode {
             case .trackpad: directTrackpad.moved(direct, in: self)
             case .direct: directTouch.moved(direct, in: self)
+            case .touch: direct.forEach { remoteTouch($0, phase: .move) }
             case .viewport: break
             }
             super.touchesMoved(touches, with: event)
@@ -739,15 +777,107 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         directTouch.setEnabled(mode == .direct && isInputEnabled)
         if mode != .trackpad { directTrackpad.reset() }
         if mode != .direct { directTouch.reset() }
+        // Windows takes the pinch itself when it is given the fingers.
+        pinchRecognizer?.isEnabled = mode != .touch
+        if mode != .touch { liftTouches() }
     }
 
     private func touchesFinished(_ touches: Set<UITouch>, cancelled: Bool) {
+        for touch in touches where touch.type == .pencil {
+            pen(touch, phase: .up)
+        }
         for touch in touches where touch.type == .direct {
             switch touchMode {
             case .trackpad: directTrackpad.ended(touch, cancelled: cancelled)
             case .direct: directTouch.ended(touch, in: self, cancelled: cancelled)
+            case .touch: remoteTouch(touch, phase: cancelled ? .cancel : .up)
             case .viewport: break
             }
+        }
+    }
+
+    // MARK: - Windows touch and pen
+
+    /// One finger as a Windows touch. Each finger keeps the lowest contact
+    /// number free when it went down, as a touch screen numbers them.
+    private func remoteTouch(_ touch: UITouch, phase: TouchInput.Phase) {
+        let key = ObjectIdentifier(touch)
+        let pixel = viewportTransform.remotePixel(fromLocal: viewportPoint(touch.location(in: self)))
+        switch phase {
+        case .down:
+            guard isInputEnabled, touchContacts[key] == nil else { return }
+            let used = Set(touchContacts.values.map(\.id))
+            guard let id = (0...UInt32(9)).first(where: { !used.contains($0) }) else { return }
+            touchContacts[key] = (id, pixel)
+            inputSink?.send(touch: TouchInput(contactID: id, phase: .down, point: pixel))
+        case .move:
+            guard isInputEnabled, let contact = touchContacts[key], contact.pixel != pixel else { return }
+            touchContacts[key] = (contact.id, pixel)
+            inputSink?.send(touch: TouchInput(contactID: contact.id, phase: .move, point: pixel))
+        case .up, .cancel:
+            guard let contact = touchContacts.removeValue(forKey: key) else { return }
+            // A lift is owed whatever happened to the gate since.
+            inputSink?.send(touch: TouchInput(contactID: contact.id, phase: phase, point: pixel))
+        }
+    }
+
+    /// Apple Pencil as a pen: pressure from force, tilt from altitude and
+    /// azimuth, rotation from roll where the pencil reports it.
+    private func pen(_ touch: UITouch, phase: PenInput.Phase) {
+        let key = ObjectIdentifier(touch)
+        let pixel = viewportTransform.remotePixel(fromLocal: viewportPoint(touch.location(in: self)))
+        let maximum = touch.maximumPossibleForce > 0 ? touch.maximumPossibleForce : 1
+        let pressure = Double(min(max(touch.force / maximum, 0), 1))
+        // Upright is altitude pi/2: no tilt. Leaning is split along the
+        // azimuth into the two axes Windows asks for.
+        let lean = Double.pi / 2 - Double(touch.altitudeAngle)
+        let azimuth = Double(touch.azimuthAngle(in: self))
+        let tiltX = Int((lean * cos(azimuth) * 180 / .pi).rounded())
+        let tiltY = Int((lean * sin(azimuth) * 180 / .pi).rounded())
+        let rotation: Int
+        if #available(iOS 17.5, *) {
+            rotation = Int((Double(touch.rollAngle) * 180 / .pi).rounded())
+        } else {
+            rotation = 0
+        }
+        func send(_ phase: PenInput.Phase) {
+            inputSink?.send(pen: PenInput(
+                phase: phase,
+                point: pixel,
+                pressure: phase == .up ? 0 : pressure,
+                tiltX: tiltX,
+                tiltY: tiltY,
+                rotation: rotation
+            ))
+        }
+        switch phase {
+        case .down:
+            guard isInputEnabled, penContact == nil else { return }
+            penContact = (key, pixel)
+            send(.down)
+        case .move:
+            guard isInputEnabled, penContact?.touch == key else { return }
+            penContact = (key, pixel)
+            send(.move)
+        case .up:
+            guard penContact?.touch == key else { return }
+            penContact = nil
+            send(.up)
+        case .hover:
+            guard isInputEnabled, penContact == nil else { return }
+            send(.hover)
+        }
+    }
+
+    /// Every finger and the pen lifted, for a closing gate or a mode change.
+    private func liftTouches() {
+        for contact in touchContacts.values {
+            inputSink?.send(touch: TouchInput(contactID: contact.id, phase: .cancel, point: contact.pixel))
+        }
+        touchContacts.removeAll()
+        if let pen = penContact {
+            inputSink?.send(pen: PenInput(phase: .up, point: pen.pixel))
+            penContact = nil
         }
     }
 
@@ -1223,8 +1353,14 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         }
 
         var rect = normalisedContentRect()
+        var source = SIMD4<Float>(
+            0, 0,
+            Float(min(Double(transformDesktopSize.width) / Double(max(desktopTexture.width, 1)), 1)),
+            Float(min(Double(transformDesktopSize.height) / Double(max(desktopTexture.height, 1)), 1))
+        )
         encoder.setRenderPipelineState(pipeline)
         encoder.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
+        encoder.setVertexBytes(&source, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
         encoder.setFragmentTexture(desktopTexture, index: 0)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()

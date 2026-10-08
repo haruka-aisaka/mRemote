@@ -156,6 +156,16 @@
         }
       }
     },
+    "Apple Pencil をペンとして送る": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send Apple Pencil as a Pen"
+          }
+        }
+      }
+    },
     "Caps キー": {
       "localizations": {
         "en": {
@@ -219,6 +229,16 @@
         }
       }
     },
+    "HTTPS（つながらなければ RPC）でゲートウェイを経由します。ゲートウェイの証明書も、接続先と同じように確認します。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connects through the gateway over HTTPS, or RPC if that fails. The gateway's certificate is checked the same way as the computer's."
+          }
+        }
+      }
+    },
     "NLA 必須": {
       "localizations": {
         "en": {
@@ -235,6 +255,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "OK"
+          }
+        }
+      }
+    },
+    "RD ゲートウェイ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RD Gateway"
+          }
+        }
+      }
+    },
+    "RD ゲートウェイを使う": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use an RD Gateway"
           }
         }
       }
@@ -281,6 +321,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "In Windows Settings > Time & language > Language & region, open Language options for Japanese. Under Microsoft IME > Keyboard options > Key and touch customization, turn on key assignment and set the Muhenkan key to IME-Off and the Henkan key to IME-On. It takes effect after you sign in again."
+          }
+        }
+      }
+    },
+    "Windows のタッチとして送る": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send as Windows Touch"
           }
         }
       }
@@ -443,6 +493,16 @@
         }
       }
     },
+    "このアプリのフォルダ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This App's Folder"
+          }
+        }
+      }
+    },
     "このサーバーは接続中の解像度変更に対応していません。接続先の設定で指定すると、次の接続から反映されます。": {
       "localizations": {
         "en": {
@@ -539,6 +599,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Same as This Screen (Mirroring)"
+          }
+        }
+      }
+    },
+    "この画面を左、モニターを右にした 2 画面のデスクトップです。ポインターはトラックパッドやマウスで画面をまたいで動かせます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One desktop over two screens: this screen on the left, the monitor on the right. Move the pointer across them with a trackpad or mouse."
           }
         }
       }
@@ -903,6 +973,36 @@
         }
       }
     },
+    "ゲートウェイのパスワード": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway Password"
+          }
+        }
+      }
+    },
+    "ゲートウェイのホスト名": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway Host Name"
+          }
+        }
+      }
+    },
+    "ゲートウェイのユーザー名": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway User Name"
+          }
+        }
+      }
+    },
     "コマンド": {
       "localizations": {
         "en": {
@@ -1163,6 +1263,16 @@
         }
       }
     },
+    "デュアルモニター（この画面とつなげる）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dual Monitor (Extend This Screen)"
+          }
+        }
+      }
+    },
     "トラックパッド": {
       "localizations": {
         "en": {
@@ -1209,6 +1319,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Domain (optional)"
+          }
+        }
+      }
+    },
+    "ドライブ名": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drive Name"
           }
         }
       }
@@ -1273,12 +1393,42 @@
         }
       }
     },
+    "ファイル App の「このiPhone内 › mRemote」が、Windows のエクスプローラーにドライブとして見えます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "\"On My iPhone › mRemote\" in the Files app appears as a drive in Windows File Explorer."
+          }
+        }
+      }
+    },
     "ファイルまたはリンクの内容を入れました。確認して保存してください。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Filled in from the file or link. Check it, then save."
+          }
+        }
+      }
+    },
+    "フォルダの共有": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder Sharing"
+          }
+        }
+      }
+    },
+    "フォルダを選ぶ…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a Folder…"
           }
         }
       }
@@ -1543,6 +1693,16 @@
         }
       }
     },
+    "ローカルのアドレスにはゲートウェイを使わない": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bypass the Gateway for Local Addresses"
+          }
+        }
+      }
+    },
     "一括解放": {
       "localizations": {
         "en": {
@@ -1769,6 +1929,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Use Default"
+          }
+        }
+      }
+    },
+    "共有しない": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Don't Share"
+          }
+        }
+      }
+    },
+    "共有するフォルダ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shared Folder"
           }
         }
       }
@@ -2403,6 +2583,16 @@
         }
       }
     },
+    "指の操作をそのまま Windows のタッチとして送ります（ピンチやスワイプは Windows 側で動きます）。この画面での拡大はできません。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sends your fingers to Windows as touches (pinches and swipes work on the Windows side). The view on this screen cannot be zoomed."
+          }
+        }
+      }
+    },
     "接続": {
       "localizations": {
         "en": {
@@ -2489,6 +2679,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "No Computers"
+          }
+        }
+      }
+    },
+    "接続先と同じユーザーでサインイン": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign In as the Computer's User"
           }
         }
       }
@@ -3349,6 +3549,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Natural"
+          }
+        }
+      }
+    },
+    "選んだフォルダが、Windows のエクスプローラーにドライブとして見えます。接続中は Windows から読み書きできます。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The chosen folder appears as a drive in Windows File Explorer, readable and writable while connected."
           }
         }
       }

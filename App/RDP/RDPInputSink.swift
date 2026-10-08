@@ -124,6 +124,55 @@ final class RDPInputSink: DesktopInputSink, @unchecked Sendable {
         target.sendUnicode(codeUnit)
     }
 
+    func send(touch: TouchInput) {
+        lock.lock()
+        guard isAccepting, let target = native else {
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        var event = mr_rdp_touch_event()
+        mr_rdp_touch_event_init(&event)
+        event.contact_id = min(touch.contactID, UInt32(MR_RDP_MAX_TOUCH_CONTACT_ID))
+        event.x = UInt32(max(touch.point.x, 0))
+        event.y = UInt32(max(touch.point.y, 0))
+        switch touch.phase {
+        case .down: event.action = mr_rdp_touch_action(MR_RDP_TOUCH_DOWN)
+        case .move: event.action = mr_rdp_touch_action(MR_RDP_TOUCH_MOVE)
+        case .up: event.action = mr_rdp_touch_action(MR_RDP_TOUCH_UP)
+        case .cancel: event.action = mr_rdp_touch_action(MR_RDP_TOUCH_CANCEL)
+        }
+        target.sendTouch(&event)
+    }
+
+    func send(pen: PenInput) {
+        lock.lock()
+        guard isAccepting, let target = native else {
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        var event = mr_rdp_pen_event()
+        mr_rdp_pen_event_init(&event)
+        event.x = UInt32(max(pen.point.x, 0))
+        event.y = UInt32(max(pen.point.y, 0))
+        event.pressure = UInt32((min(max(pen.pressure, 0), 1) * Double(MR_RDP_MAX_PEN_PRESSURE)).rounded())
+        event.tilt_x = Int16(min(max(pen.tiltX, -90), 90))
+        event.tilt_y = Int16(min(max(pen.tiltY, -90), 90))
+        event.rotation = UInt16(((pen.rotation % 360) + 360) % 360)
+        switch pen.phase {
+        case .hover: event.action = mr_rdp_pen_action(MR_RDP_PEN_HOVER)
+        case .down: event.action = mr_rdp_pen_action(MR_RDP_PEN_DOWN)
+        case .move: event.action = mr_rdp_pen_action(MR_RDP_PEN_MOVE)
+        case .up: event.action = mr_rdp_pen_action(MR_RDP_PEN_UP)
+        }
+        var flags = mr_rdp_pen_flags(0)
+        if pen.isBarrelPressed { flags |= mr_rdp_pen_flags(MR_RDP_PEN_FLAG_BARREL) }
+        if pen.isEraser { flags |= mr_rdp_pen_flags(MR_RDP_PEN_FLAG_ERASER) }
+        event.flags = flags
+        target.sendPen(&event)
+    }
+
     /// The bridge caps each axis and splits a larger delta across PDUs, but it
     /// rejects an out-of-range value outright, so the clamp happens here too.
     private static func clampWheel(_ value: Int32) -> Int32 {

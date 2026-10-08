@@ -40,12 +40,19 @@ struct SessionWorkspaceView: View {
     @AppStorage(KeyShortcutList.storageKey) private var shortcuts = KeyShortcutList.standard
     @AppStorage(DeckShortcutStrip.storageKey) private var showsDeckShortcuts = true
     @AppStorage(ExternalDisplayMode.storageKey) private var externalMode = ExternalDisplayMode.desktop
+    @AppStorage(PencilInput.storageKey) private var sendsPencilAsPen = true
     private let externalDisplay = ExternalDisplayCoordinator.shared
 
     /// A monitor shows the desktop, and this screen is all keyboard and
     /// trackpad.
     private var externalTakesDesktop: Bool {
-        externalDisplay.screen != nil && externalMode != .mirror
+        externalDisplay.screen != nil && externalMode == .desktop
+    }
+
+    /// A monitor carries the right-hand part of one desktop spread over both
+    /// screens.
+    private var externalExtends: Bool {
+        externalDisplay.screen != nil && externalMode == .extend
     }
 
     var body: some View {
@@ -259,13 +266,25 @@ struct SessionWorkspaceView: View {
             }
             #endif
         }
-        .onChange(of: externalTakesDesktop, initial: true) { _, takes in
-            handOverToExternalDisplay(takes)
+        .onChange(of: externalMode, initial: true) { _, _ in
+            updateExternalDisplay()
         }
         .onChange(of: externalDisplay.pixelSize?.width) { _, _ in
-            handOverToExternalDisplay(externalTakesDesktop)
+            updateExternalDisplay()
         }
-        .onDisappear { handOverToExternalDisplay(false) }
+        .onChange(of: externalDisplay.screen != nil) { _, _ in
+            updateExternalDisplay()
+        }
+        .onChange(of: model.extendedLayout) { _, layout in
+            model.desktopMirror.sourceRect = layout?.secondaryRect
+        }
+        .onDisappear {
+            if externalDisplay.mirror === model.desktopMirror {
+                externalDisplay.mirror = nil
+            }
+            model.setExternalDesktopSize(nil)
+            model.setExtendedDisplaySize(nil)
+        }
         .animation(.easeInOut(duration: 0.25), value: showsDeck)
         .onChange(of: showsDeck, initial: true) { _, shows in
             // The deck is the keyboard now; the system one would only cover it.
@@ -292,18 +311,19 @@ struct SessionWorkspaceView: View {
         .accessibilityIdentifier("external-display-bar")
     }
 
-    /// The monitor gets this session's desktop at its own size, or gives it
-    /// back.
-    private func handOverToExternalDisplay(_ takes: Bool) {
-        if takes {
+    /// The monitor gets this session's desktop at its own size, the right
+    /// half of a desktop spread over both screens, or nothing.
+    private func updateExternalDisplay() {
+        let takes = externalTakesDesktop
+        let extends = externalExtends
+        if takes || extends {
             externalDisplay.mirror = model.desktopMirror
-            model.setExternalDesktopSize(externalDisplay.pixelSize)
-        } else {
-            if externalDisplay.mirror === model.desktopMirror {
-                externalDisplay.mirror = nil
-            }
-            model.setExternalDesktopSize(nil)
+        } else if externalDisplay.mirror === model.desktopMirror {
+            externalDisplay.mirror = nil
         }
+        model.desktopMirror.sourceRect = extends ? model.extendedLayout?.secondaryRect : nil
+        model.setExternalDesktopSize(takes ? externalDisplay.pixelSize : nil)
+        model.setExtendedDisplaySize(extends ? externalDisplay.pixelSize : nil)
     }
 
     /// An iPad, or a foldable: a screen with room for a panel over the
@@ -351,8 +371,10 @@ struct SessionWorkspaceView: View {
                 laptopChannel: laptopChannel,
                 touchMode: touchMode,
                 followsPointerAboveKeyboard: followsPointerAboveKeyboard,
+                sendsPencilAsPen: sendsPencilAsPen,
                 renderSizeOverride: renderSizeOverride,
                 mirror: model.desktopMirror,
+                primaryRegion: model.extendedLayout,
                 // Input is gated on both halves of docs/architecture.md
                 // section 10: the session must be able to deliver it, and the
                 // scene must be the one the user is looking at.

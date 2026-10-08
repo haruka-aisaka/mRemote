@@ -70,6 +70,11 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// A monitor's size in pixels while the desktop is on it, followed
     /// instead of this screen's.
     private var externalRenderSize: (width: Int, height: Int)?
+    private var extendedSecondarySize: (width: Int, height: Int)?
+    private var lastRequestedSecondary: (width: Int, height: Int)?
+    /// Where this screen's part of a desktop spread over two monitors ends
+    /// and the monitor's begins; nil with one monitor.
+    private(set) var extendedLayout: DesktopSpan?
     /// What a monitor draws this session's desktop from.
     @ObservationIgnored let desktopMirror = DesktopMirror()
     private var lastRequestedDesktopSize: (width: Int, height: Int)?
@@ -453,18 +458,40 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         requestDesktopLayout()
     }
 
+    /// A monitor that extends the desktop: its size in pixels, as a second
+    /// monitor to the right of this screen.
+    func setExtendedDisplaySize(_ size: (width: Int, height: Int)?) {
+        guard size?.width != extendedSecondarySize?.width
+                || size?.height != extendedSecondarySize?.height else { return }
+        extendedSecondarySize = size
+        requestDesktopLayout()
+    }
+
     private func requestDesktopLayout() {
-        guard let (width, height) = runtime.resolution.desktopSize(fitting: externalRenderSize ?? renderSize) else { return }
+        guard var (width, height) = runtime.resolution.desktopSize(fitting: externalRenderSize ?? renderSize) else { return }
+        let secondary = externalRenderSize == nil ? extendedSecondarySize : nil
+        if secondary != nil {
+            // The bridge takes even widths only; the split must fall where
+            // the session will put it.
+            width -= width % 2
+            width = min(max(width, 200), 8_192)
+            height = min(max(height, 200), 8_192)
+        }
+        let layout = secondary.map { DesktopSpan(primary: (width, height), secondary: $0) }
+        if layout != extendedLayout { extendedLayout = layout }
         guard lastRequestedDesktopSize?.width != width
-                || lastRequestedDesktopSize?.height != height else { return }
+                || lastRequestedDesktopSize?.height != height
+                || lastRequestedSecondary?.width != secondary?.width
+                || lastRequestedSecondary?.height != secondary?.height else { return }
         lastRequestedDesktopSize = (width, height)
+        lastRequestedSecondary = secondary
 
         resizeTask?.cancel()
         guard let desktop else { return }
         resizeTask = Task { [weak self] in
             try? await Task.sleep(for: Self.resizeDebounce)
             guard !Task.isCancelled else { return }
-            await desktop.requestDesktopSize(width: width, height: height)
+            await desktop.requestDesktopLayout(primary: (width, height), secondary: secondary)
             await self?.refresh()
         }
     }
@@ -618,5 +645,26 @@ enum LaptopDeckPreference: String, CaseIterable {
         case .always: return true
         case .never: return false
         }
+    }
+}
+
+/// One desktop over two monitors: this screen on the left, a monitor on the
+/// right, top-aligned.
+struct DesktopSpan: Equatable {
+    var primary: (width: Int, height: Int)
+    var secondary: (width: Int, height: Int)
+
+    init(primary: (width: Int, height: Int), secondary: (width: Int, height: Int)) {
+        self.primary = primary
+        self.secondary = secondary
+    }
+
+    static func == (lhs: DesktopSpan, rhs: DesktopSpan) -> Bool {
+        lhs.primary == rhs.primary && lhs.secondary == rhs.secondary
+    }
+
+    /// The monitor's part of the desktop, in pixels.
+    var secondaryRect: CGRect {
+        CGRect(x: primary.width, y: 0, width: secondary.width, height: secondary.height)
     }
 }

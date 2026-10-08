@@ -60,9 +60,21 @@ struct RDPNativeConnection: Sendable {
     let desktopWidth: UInt32
     let desktopHeight: UInt32
     let keyboardProfile: mr_rdp_keyboard_profile
-    let channelFlags: mr_rdp_channel_flags
+    var channelFlags: mr_rdp_channel_flags
     let displayScale: RemoteDisplayScale
     let securityPolicy: mr_rdp_security_policy
+    var gateway: Gateway?
+    /// A folder the computer sees as a drive; channelFlags carries
+    /// MR_RDP_CHANNEL_FLAG_DRIVE with it.
+    var drive: (path: String, name: String)?
+
+    struct Gateway: Sendable {
+        let host: String
+        let port: UInt16
+        let bypassesLocal: Bool
+        /// Nil to sign in with the computer's credentials.
+        let credential: (username: String, domain: String, password: SecureBytes)?
+    }
 }
 
 /// One already-classified event from the native session, delivered in order.
@@ -242,6 +254,30 @@ final class RDPNativeSession: @unchecked Sendable {
         context.sendUnicode(codeUnit)
     }
 
+    func sendTouch(_ event: inout mr_rdp_touch_event) {
+        context.sendTouch(&event)
+    }
+
+    func sendPen(_ event: inout mr_rdp_pen_event) {
+        context.sendPen(&event)
+    }
+
+    /// A second monitor to the right of the first, or none.
+    func requestDisplayLayout(
+        requestID: UInt64,
+        primary: (width: UInt32, height: UInt32),
+        secondary: (width: UInt32, height: UInt32)?,
+        scale: RemoteDisplayScale
+    ) -> Bool {
+        context.requestDisplayResize(
+            requestID: requestID,
+            width: primary.width,
+            height: primary.height,
+            secondary: secondary,
+            scale: scale
+        )
+    }
+
     func offerClipboardText(offerID: UInt64, utf16le: Data) -> RDPBridgeStatus {
         context.offerClipboardText(offerID: offerID, utf16le: utf16le)
     }
@@ -281,28 +317,62 @@ final class RDPNativeSession: @unchecked Sendable {
         config.desktop_scale_factor = UInt32(connection.displayScale.desktopPercent)
         config.device_scale_factor = UInt32(connection.displayScale.devicePercent)
         config.security_policy = connection.securityPolicy
+        // Plain strings are copied into C memory for the one create call;
+        // the bridge deep-copies them. Passwords stay in SecureBytes.
+        var owned: [UnsafeMutablePointer<CChar>] = []
+        defer { owned.forEach { free($0) } }
+        func cString(_ text: String) -> UnsafeMutablePointer<CChar> {
+            let copy = strdup(text)!
+            owned.append(copy)
+            return copy
+        }
+
+        config.hostname = UnsafePointer(cString(connection.host))
+        config.username = UnsafePointer(cString(connection.username))
         config.username_length = connection.username.utf8.count
-        config.domain_length = connection.domain.utf8.count
+        if !connection.domain.isEmpty {
+            config.domain = UnsafePointer(cString(connection.domain))
+            config.domain_length = connection.domain.utf8.count
+        }
+        if let drive = connection.drive {
+            config.drive_path = UnsafePointer(cString(drive.path))
+            config.drive_path_length = drive.path.utf8.count
+            config.drive_name = UnsafePointer(cString(drive.name))
+            config.drive_name_length = drive.name.utf8.count
+        }
+        var gatewayPassword: SecureBytes?
+        if let gateway = connection.gateway {
+            config.gateway_hostname = UnsafePointer(cString(gateway.host))
+            config.gateway_port = gateway.port
+            var flags = mr_rdp_gateway_flags(0)
+            if gateway.bypassesLocal { flags |= mr_rdp_gateway_flags(MR_RDP_GATEWAY_FLAG_BYPASS_LOCAL) }
+            if let credential = gateway.credential {
+                config.gateway_username = UnsafePointer(cString(credential.username))
+                config.gateway_username_length = credential.username.utf8.count
+                if !credential.domain.isEmpty {
+                    config.gateway_domain = UnsafePointer(cString(credential.domain))
+                    config.gateway_domain_length = credential.domain.utf8.count
+                }
+                gatewayPassword = credential.password
+            } else {
+                flags |= mr_rdp_gateway_flags(MR_RDP_GATEWAY_FLAG_SAME_CREDENTIALS)
+            }
+            config.gateway_flags = flags
+        }
+        defer { gatewayPassword?.clear() }
 
         let opaque = Unmanaged.passUnretained(context).toOpaque()
         var session: OpaquePointer?
-        let status = connection.host.withCString { host in
-            connection.username.withCString { username in
-                connection.password.withUnsafeSpan { password, passwordLength in
-                    config.hostname = host
-                    config.username = username
-                    config.password = password
-                    config.password_length = passwordLength
-                    guard !connection.domain.isEmpty else {
-                        config.domain = nil
-                        config.domain_length = 0
-                        return mr_rdp_session_create(&config, &callbacks, opaque, &session)
-                    }
-                    return connection.domain.withCString { domain in
-                        config.domain = domain
-                        return mr_rdp_session_create(&config, &callbacks, opaque, &session)
-                    }
-                }
+        let status = connection.password.withUnsafeSpan { password, passwordLength in
+            config.password = password
+            config.password_length = passwordLength
+            guard let gatewayPassword else {
+                return mr_rdp_session_create(&config, &callbacks, opaque, &session)
+            }
+            return gatewayPassword.withUnsafeSpan { gatewaySpan, gatewayLength in
+                config.gateway_password = gatewaySpan
+                config.gateway_password_length = gatewayLength
+                return mr_rdp_session_create(&config, &callbacks, opaque, &session)
             }
         }
         return (status, session)
@@ -432,10 +502,19 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
         _ = calls.sendKey(&event)
     }
 
+    func sendTouch(_ event: inout mr_rdp_touch_event) {
+        _ = calls.sendTouch(&event)
+    }
+
+    func sendPen(_ event: inout mr_rdp_pen_event) {
+        _ = calls.sendPen(&event)
+    }
+
     func requestDisplayResize(
         requestID: UInt64,
         width: UInt32,
         height: UInt32,
+        secondary: (width: UInt32, height: UInt32)? = nil,
         scale: RemoteDisplayScale
     ) -> Bool {
         var request = mr_rdp_display_resize_request()
@@ -443,6 +522,8 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
         request.request_id = requestID
         request.width = width
         request.height = height
+        request.secondary_width = secondary?.width ?? 0
+        request.secondary_height = secondary?.height ?? 0
         request.desktop_scale_factor = UInt32(scale.desktopPercent)
         request.device_scale_factor = UInt32(scale.devicePercent)
         return calls.requestDisplayResize(&request) == mr_rdp_status(MR_RDP_STATUS_OK)
@@ -527,10 +608,14 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
         logger.certificate(evaluation.evidenceDescription)
 
         let leafSHA256 = evaluation.certificateFingerprints.leafSHA256
+        // A gateway's certificate is its own: trusted, pinned and shown under
+        // the gateway's name, never under the computer's.
+        let host = snapshot.isGateway ? snapshot.hostname : endpoint.host
+        let port = snapshot.isGateway ? snapshot.port : endpoint.port
         let pin: CertificatePinState
         switch (try? trust.decision(
-            host: endpoint.host,
-            port: endpoint.port,
+            host: host,
+            port: port,
             leafSHA256: leafSHA256
         )) ?? .noRecord {
         case .noRecord: pin = .none
@@ -561,8 +646,8 @@ final class RDPNativeCallbackContext: @unchecked Sendable {
             let summary = CertificateSummaryParser.summary(fromLeafDER: snapshot.chainDER[0])
             let challenge = CertificateChallenge(
                 generation: SessionGeneration(snapshot.generation),
-                host: endpoint.host,
-                port: endpoint.port,
+                host: host,
+                port: port,
                 leafSHA256: leafSHA256,
                 chainSHA256: evaluation.certificateFingerprints.chainSHA256
                     .joined(separator: ","),
@@ -612,6 +697,8 @@ struct RDPCertificateSnapshot: @unchecked Sendable {
     let hostname: String
     let port: UInt16
     let chainDER: [Data]
+    /// The RD Gateway's certificate rather than the computer's.
+    let isGateway: Bool
 
     init?(copying pointer: UnsafePointer<mr_rdp_certificate_challenge>) {
         let native = pointer.pointee
@@ -655,6 +742,7 @@ struct RDPCertificateSnapshot: @unchecked Sendable {
         self.hostname = hostname
         port = native.port
         chainDER = chain
+        isGateway = native.role == mr_rdp_certificate_role(MR_RDP_CERTIFICATE_ROLE_GATEWAY)
     }
 }
 

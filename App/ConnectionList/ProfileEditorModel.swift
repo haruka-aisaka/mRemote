@@ -32,6 +32,25 @@ final class ProfileEditorModel: Identifiable {
     var scrollDirection: Inheritable<ScrollDirection>
     var resolutionPolicy: Inheritable<ResolutionPolicy>
 
+    // RD Gateway.
+    var usesGateway = false
+    var gatewayHost = ""
+    var gatewayPortText = String(RDPGatewayConfiguration.defaultPort)
+    var gatewayUsesComputerCredentials = true
+    var gatewayUsername = ""
+    var gatewayDomain = ""
+    var gatewayPassword = ""
+    var gatewayBypassesLocal = false
+
+    // The folder shared as a drive.
+    enum SharedFolderChoice: Hashable {
+        case none
+        case appDocuments
+        case picked(bookmark: Data, name: String)
+    }
+    var sharedFolder: SharedFolderChoice = .none
+    var driveName = "mRemote"
+
     private let existing: ConnectionProfile?
     /// What a new profile is built on: an import's settings beyond the form.
     private let base: RDPConfiguration?
@@ -80,6 +99,22 @@ final class ProfileEditorModel: Identifiable {
             clipboardPolicy = rdp.clipboardPolicy
             scrollDirection = rdp.scrollDirection
             resolutionPolicy = rdp.resolutionPolicy
+            if let gateway = rdp.gateway {
+                usesGateway = true
+                gatewayHost = gateway.host
+                gatewayPortText = String(gateway.port)
+                gatewayUsesComputerCredentials = gateway.usesComputerCredentials
+                gatewayUsername = gateway.account.username ?? ""
+                gatewayDomain = gateway.account.domain ?? ""
+                gatewayBypassesLocal = gateway.bypassesLocalAddresses
+            }
+            if let folder = rdp.sharedFolder {
+                switch folder.location {
+                case .appDocuments: sharedFolder = .appDocuments
+                case let .bookmark(data, name): sharedFolder = .picked(bookmark: data, name: name)
+                }
+                driveName = folder.driveName
+            }
         }
         self.password = password ?? ""
     }
@@ -100,7 +135,19 @@ final class ProfileEditorModel: Identifiable {
 
     var trimmedHost: String { host.trimmingCharacters(in: .whitespaces) }
 
-    var isValid: Bool { !trimmedHost.isEmpty && port != nil }
+    var gatewayPort: UInt16? {
+        guard let value = UInt16(gatewayPortText.trimmingCharacters(in: .whitespaces)), value > 0 else {
+            return nil
+        }
+        return value
+    }
+
+    var trimmedGatewayHost: String { gatewayHost.trimmingCharacters(in: .whitespaces) }
+
+    var isValid: Bool {
+        !trimmedHost.isEmpty && port != nil
+            && (!usesGateway || (!trimmedGatewayHost.isEmpty && gatewayPort != nil))
+    }
 
     /// The Eisu/Kana promise only holds for the Japanese layout, so the form
     /// says where it does not rather than silently mapping the keys anyway.
@@ -151,6 +198,29 @@ final class ProfileEditorModel: Identifiable {
         configuration.scrollDirection = scrollDirection
         configuration.resolutionPolicy = resolutionPolicy
         configuration.securityPolicy = securityPolicy
+        if usesGateway, let gatewayPort {
+            var gateway = configuration.gateway ?? RDPGatewayConfiguration(host: trimmedGatewayHost)
+            gateway.host = trimmedGatewayHost
+            gateway.port = gatewayPort
+            gateway.usesComputerCredentials = gatewayUsesComputerCredentials
+            gateway.account.username = gatewayUsername.isEmpty ? nil : gatewayUsername
+            gateway.account.domain = gatewayDomain.isEmpty ? nil : gatewayDomain
+            gateway.bypassesLocalAddresses = gatewayBypassesLocal
+            configuration.gateway = gateway
+        } else {
+            configuration.gateway = nil
+        }
+        switch sharedFolder {
+        case .none:
+            configuration.sharedFolder = nil
+        case .appDocuments:
+            configuration.sharedFolder = SharedFolder(location: .appDocuments, driveName: driveName)
+        case let .picked(bookmark, name):
+            configuration.sharedFolder = SharedFolder(
+                location: .bookmark(bookmark, displayName: name),
+                driveName: driveName
+            )
+        }
         var profile = existing ?? ConnectionProfile(
             displayName: resolvedDisplayName,
             endpoint: RemoteEndpoint(host: trimmedHost, port: port),

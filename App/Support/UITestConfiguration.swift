@@ -29,6 +29,7 @@ enum UITestConfiguration {
         KeyShortcutList.storageKey,
         DeckShortcutStrip.storageKey,
         ExternalDisplayMode.storageKey,
+        PencilInput.storageKey,
         FoldResolutionPolicy.storageKey,
         DesktopSafeAreaPolicy.storageKey,
         DeckLayout.portraitFractionKey,
