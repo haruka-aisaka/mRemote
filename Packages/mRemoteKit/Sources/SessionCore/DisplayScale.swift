@@ -74,4 +74,8 @@ public enum FoldResolutionPolicy: String, Hashable, Sendable, CaseIterable {
     /// Keep asking for the whole screen and draw it smaller, so folding and
     /// unfolding never makes Windows rearrange its windows.
     case keepAndScale
+    /// Always ask for the size of the part left above the deck, deck or no
+    /// deck: the desktop keeps that shape, and without the deck it is drawn
+    /// larger rather than rearranged.
+    case lockToDeck
 }

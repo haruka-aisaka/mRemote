@@ -1080,6 +1080,16 @@
         }
       }
     },
+    "フローティング": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Floating"
+          }
+        }
+      }
+    },
     "ヘルプ": {
       "localizations": {
         "en": {
@@ -1306,6 +1316,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Up"
+          }
+        }
+      }
+    },
+    "上のバーで移動、バー右端のつまみで大きさを変えられます。折りたたみ端末を折り曲げているときはヒンジの下に固定します。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag the bar on top to move it and the grip at its right end to resize it. On a half-folded foldable it stays below the hinge."
+          }
+        }
+      }
+    },
+    "上端のつまみを上下にドラッグすると高さを変えられます。折りたたみ端末を折り曲げているときはヒンジの位置に固定します。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag the grip on its top edge up or down to change its height. On a half-folded foldable it stays at the hinge."
           }
         }
       }
@@ -1920,6 +1950,56 @@
         }
       }
     },
+    "手元キーボードの位置": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC keyboard position"
+          }
+        }
+      }
+    },
+    "手元キーボードの大きさ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC keyboard size"
+          }
+        }
+      }
+    },
+    "手元キーボードの高さ": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PC keyboard height"
+          }
+        }
+      }
+    },
+    "手元キーボードを移動": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move the PC keyboard"
+          }
+        }
+      }
+    },
+    "手元キーボードを隠しても、表示中と同じ解像度のまま大きく表示します。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hiding the PC keyboard keeps the same resolution and shows the desktop larger."
+          }
+        }
+      }
+    },
     "手元キーボードを隠す": {
       "localizations": {
         "en": {
@@ -2340,6 +2420,16 @@
         }
       }
     },
+    "画面の下": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom of the screen"
+          }
+        }
+      }
+    },
     "画面の端まで使う": {
       "localizations": {
         "en": {
@@ -2586,6 +2676,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Only Moves the View"
+          }
+        }
+      }
+    },
+    "表示中の大きさで固定": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep the size it has with the keyboard"
           }
         }
       }

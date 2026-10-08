@@ -37,7 +37,12 @@ struct SessionMenuSheet: View {
     @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
     @AppStorage(DesktopSafeAreaPolicy.storageKey)
     private var safeAreaPolicy = DesktopSafeAreaPolicy.avoid
+    @AppStorage(LaptopDeckPlacement.storageKey) private var deckPlacement = LaptopDeckPlacement.docked
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
+
+    private var canFloatDeck: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
+    }
 
     var body: some View {
         NavigationStack {
@@ -167,8 +172,14 @@ struct SessionMenuSheet: View {
                     Picker("手元キーボード表示中の解像度", selection: $foldPolicy) {
                         Text("画面に合わせて変える").tag(FoldResolutionPolicy.resizeToFit)
                         Text("変えずに縮小表示").tag(FoldResolutionPolicy.keepAndScale)
+                        Text("表示中の大きさで固定").tag(FoldResolutionPolicy.lockToDeck)
                     }
                     .accessibilityIdentifier("session-fold-resolution-picker")
+                    if foldPolicy == .lockToDeck {
+                        Text("手元キーボードを隠しても、表示中と同じ解像度のまま大きく表示します。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                     // For this session; the connection's own setting is the
                     // one it starts from next time.
                     Picker("解像度", selection: Binding(
@@ -236,6 +247,19 @@ struct SessionMenuSheet: View {
                         Text("表示しない").tag(LaptopDeckPreference.never)
                     }
                     .accessibilityIdentifier("session-laptop-deck-picker")
+                    if canFloatDeck {
+                        Picker("手元キーボードの位置", selection: $deckPlacement) {
+                            Text("画面の下").tag(LaptopDeckPlacement.docked)
+                            Text("フローティング").tag(LaptopDeckPlacement.floating)
+                        }
+                        .disabled(deckPreference == .never)
+                        .accessibilityIdentifier("session-laptop-deck-placement")
+                    }
+                    Text(canFloatDeck && deckPlacement == .floating
+                         ? String(localized: "上のバーで移動、バー右端のつまみで大きさを変えられます。折りたたみ端末を折り曲げているときはヒンジの下に固定します。")
+                         : String(localized: "上端のつまみを上下にドラッグすると高さを変えられます。折りたたみ端末を折り曲げているときはヒンジの位置に固定します。"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     // Kept across sessions and launches: how the deck is laid
                     // out is a matter of the user's hands, not of the host.
                     Picker("手元側の配置", selection: $deckArrangement) {

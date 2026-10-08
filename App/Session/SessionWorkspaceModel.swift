@@ -33,6 +33,9 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// The floating menu is open. Input is gated while it is, so a key held
     /// when it opened is released rather than left down behind the sheet.
     var isMenuPresented = false
+    /// Set by the workspace, which reads the hinge: the menu offers a
+    /// floating deck only where there is room for one.
+    var deviceHasHinge = false
     /// Non-nil while an automatic reconnect is waiting or running: the
     /// attempt number out of `reconnectSchedule.maximumAttempts`.
     private(set) var reconnectAttempt: Int?

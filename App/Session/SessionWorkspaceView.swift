@@ -27,6 +27,10 @@ struct SessionWorkspaceView: View {
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
     @AppStorage(LaptopKeyboardPlatform.storageKey) private var deckPlatform = LaptopKeyboardPlatform.windows
     @AppStorage(LaptopDeckArrangement.trackpadButtonsStorageKey) private var showsTrackpadButtons = true
+    @AppStorage(LaptopDeckPlacement.storageKey) private var deckPlacement = LaptopDeckPlacement.docked
+    @AppStorage("laptop-deck-height-portrait") private var deckFractionPortrait = 0.5
+    @AppStorage("laptop-deck-height-landscape") private var deckFractionLandscape = 0.5
+    @AppStorage(FloatingDeckFrame.storageKey) private var floatingDeckFrame = FloatingDeckFrame.standard
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
 
     var body: some View {
@@ -62,6 +66,9 @@ struct SessionWorkspaceView: View {
         }
         .onChange(of: scalePreference.resolved(screenScale: screenScale), initial: true) { _, scale in
             model.setDisplayScale(scale)
+        }
+        .onChange(of: hingePosture, initial: true) { _, posture in
+            model.deviceHasHinge = posture != .unavailable
         }
         .onChange(of: model.clipboardMessage) { _, message in
             guard let message else { return }
@@ -123,59 +130,79 @@ struct SessionWorkspaceView: View {
         }
     }
 
-    /// The whole screen, or - with the laptop deck - the upper half for the
-    /// desktop and the lower half for the deck. The hinge is in the middle,
-    /// so that is where the split is.
+    /// The whole screen, or - with the laptop deck - the part above it. At a
+    /// foldable's hinge the deck takes the lower half; elsewhere it is docked
+    /// along the bottom at the height the user dragged it to, or floats over
+    /// the desktop on a screen with room for that.
     ///
     /// The desktop keeps its place in the hierarchy either way: the deck is
     /// added after it rather than the two being swapped between layouts,
     /// which would rebuild the surface and drop its texture.
     @ViewBuilder
     private func split(in size: CGSize, safeArea: EdgeInsets) -> some View {
-        let showsDeck = deckPreference.showsDeck(
-            posture: hingePosture,
-            isPortrait: size.height > size.width
+        let isPortrait = size.height > size.width
+        let showsDeck = deckPreference.showsDeck(posture: hingePosture, isPortrait: isPortrait)
+        let hingeAcross = hingePosture == .partiallyOpen && isPortrait
+        let fraction = isPortrait ? deckFractionPortrait : deckFractionLandscape
+        let docked: DeckLayout = hingeAcross ? .atHinge : .docked(fraction: fraction)
+        let deck: DeckLayout = !showsDeck ? .hidden
+            : hingeAcross ? .atHinge
+            : deckPlacement == .floating && canFloatDeck ? .floating
+            : docked
+        let layout = WorkspaceLayout(
+            size: size,
+            safeArea: safeAreaPolicy == .avoid ? safeArea : EdgeInsets(),
+            deck: deck,
+            foldPolicy: foldPolicy,
+            lockedDeck: docked
         )
-        VStack(spacing: 0) {
-            ZStack {
-                desktop(
-                    // The keyboard-only deck has no pad of its own, so the
-                    // desktop is its trackpad whatever touch mode is chosen.
-                    touchMode: showsDeck && !deckArrangement.hasTrackpad ? .trackpad : touchMode,
-                    // Keeping the resolution means asking for the whole screen
-                    // while only part of it is the desktop.
-                    renderSizeOverride: showsDeck && foldPolicy == .keepAndScale
-                        ? usableSize(of: size, safeArea: safeArea) : nil
-                )
-                // Inset by what the system reports for this device and
-                // rotation, so the surface - and the size it asks the server
-                // for - stays clear of the island, the corners and the home
-                // indicator. With the deck up the bottom edge is the deck's.
-                .padding(desktopInsets(safeArea: safeArea, showsDeck: showsDeck))
-                if !model.showsDesktop {
-                    status
+        ZStack {
+            VStack(spacing: 0) {
+                ZStack {
+                    desktop(
+                        // The keyboard-only deck has no pad of its own, so the
+                        // desktop is its trackpad whatever touch mode is chosen.
+                        touchMode: showsDeck && !deckArrangement.hasTrackpad ? .trackpad : touchMode,
+                        renderSizeOverride: layout.renderSizeOverride
+                    )
+                    // Inset by what the system reports for this device and
+                    // rotation, so the surface - and the size it asks the
+                    // server for - stays clear of the island, the corners and
+                    // the home indicator.
+                    .padding(layout.desktopInsets)
+                    if !model.showsDesktop {
+                        status
+                    }
+                    endBanner
+                    floatingMenu
+                    toast
                 }
-                endBanner
-                floatingMenu
-                toast
+                .frame(height: layout.desktopFrameHeight)
+                .clipped()
+                if layout.deckHeight > 0 {
+                    VStack(spacing: 0) {
+                        if case .docked = deck {
+                            DeckResizeHandle(
+                                fraction: isPortrait ? $deckFractionPortrait : $deckFractionLandscape,
+                                screenHeight: size.height
+                            )
+                        }
+                        laptopDeck
+                    }
+                    .frame(height: layout.deckHeight)
+                    // Placed where it ends up rather than slid in: the desktop
+                    // above resizes as the deck arrives, and the resize request
+                    // that follows cut a slide short, leaving the deck parked
+                    // below the screen with its keys out of reach.
+                    .transition(.identity)
+                }
             }
-            .frame(height: showsDeck ? (size.height / 2).rounded() : size.height)
-            .clipped()
-            if showsDeck {
-                LaptopDeck(
-                    layout: model.configuration.keyboardLayout,
-                    arrangement: deckArrangement,
-                    channel: laptopChannel,
-                    isInputEnabled: model.acceptsInput && scenePhase == .active,
-                    capsLockRole: capsLockRole,
-                    showsTrackpadButtons: showsTrackpadButtons,
-                    platform: deckPlatform
-                )
-                // Placed where it ends up rather than slid in: the desktop
-                // above resizes as the deck arrives, and the resize request
-                // that follows cut a slide short, leaving the deck parked
-                // below the screen with its keys out of reach.
-                .transition(.identity)
+            if deck == .floating {
+                FloatingDeckPanel(frame: $floatingDeckFrame) {
+                    laptopDeck
+                }
+                .padding(layout.safeArea)
+                .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: showsDeck)
@@ -183,6 +210,24 @@ struct SessionWorkspaceView: View {
             // The deck is the keyboard now; the system one would only cover it.
             if shows { model.softwareKeyboard.hide() }
         }
+    }
+
+    /// An iPad, or a foldable: a screen with room for a panel over the
+    /// desktop. A phone keeps the deck docked.
+    private var canFloatDeck: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad || hingePosture != .unavailable
+    }
+
+    private var laptopDeck: some View {
+        LaptopDeck(
+            layout: model.configuration.keyboardLayout,
+            arrangement: deckArrangement,
+            channel: laptopChannel,
+            isInputEnabled: model.acceptsInput && scenePhase == .active,
+            capsLockRole: capsLockRole,
+            showsTrackpadButtons: showsTrackpadButtons,
+            platform: deckPlatform
+        )
     }
 
     @ViewBuilder
@@ -223,25 +268,6 @@ struct SessionWorkspaceView: View {
             .ignoresSafeArea(edges: safeAreaPolicy == .fullScreen ? .all : [])
             .opacity(model.showsDesktop ? 1 : 0)
         }
-    }
-
-    private func desktopInsets(safeArea: EdgeInsets, showsDeck: Bool) -> EdgeInsets {
-        guard safeAreaPolicy == .avoid else { return EdgeInsets() }
-        return EdgeInsets(
-            top: safeArea.top,
-            leading: safeArea.leading,
-            bottom: showsDeck ? 0 : safeArea.bottom,
-            trailing: safeArea.trailing
-        )
-    }
-
-    /// The whole screen as the desktop would fill it without the deck.
-    private func usableSize(of size: CGSize, safeArea: EdgeInsets) -> CGSize {
-        guard safeAreaPolicy == .avoid else { return size }
-        return CGSize(
-            width: size.width - safeArea.leading - safeArea.trailing,
-            height: size.height - safeArea.top - safeArea.bottom
-        )
     }
 
     private var status: some View {
