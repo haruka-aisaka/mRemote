@@ -327,3 +327,14 @@ Mac Catalyst では `pressesBegan` に届かないキーが 2 種類ある（202
 
 左ボタン、移動、スクロールは iPad と同じ indirect pointer 経路で届く。右ボタンと中ボタンは UIKit がタッチとして渡さない（副ボタンはコンテキストメニュー要求になる）ので、同じ AppKit monitor で `rightMouseDown/Up`、`otherMouseDown/Up` を取り、セッション面が hover で追っている位置で押下/解放を送る。ポインタがセッション面の外にあるクリックは Mac に任せる。
 
+
+## 13. Mac サーバー（macos-rdp-server, MACRDPX）
+
+接続先の種類を「macOS（macos-rdp-server）」にした接続は、静的仮想チャンネル `MACRDPX`（Mac RDP eXtensions、`external/macrdpx`）を要求する（ブリッジ ABI 6、`MR_RDP_CHANNEL_FLAG_MACRDPX`）。サーバーが HELLO に応じるまでは通常の RDP 入力のまま。応じた後は合意した機能の入力だけをチャンネルで送り、同じ入力を二重には送らない。サーバーがチャンネルを知らなければ何も起きない（Windows/標準接続ではチャンネル自体を要求しない）。
+
+- キー: Mac 版は AppKit の monitor が取ったキーを、仮想キーコードと `NSEvent.modifierFlags`（左右の device bit 込み）のまま `KEY` で送る。調停・アプリ側リピート・scan code 変換は通らず、AppKit のオートリピートを `REPEAT` 付きで送る。⌘ は ⌘、Fn（`kVK_Function`）と Caps Lock も flags-changed として届く。Mac に残すショートカット（⌘Q、⌘H、⌘M、⌘\`、⌃⌘F）は 12.1 と同じ。セッション面がキーボードを得たとき `MODIFIERS` で修飾状態を合わせ、失ったとき `MODIFIERS(0)` でサーバー側の押下をすべて離す。iPad は HID usage を同じ位置の Mac キー（`mrx_keycode_for_hid_usage`）にし、修飾状態は `mrx_modifier_tracker` で作る。
+- キーボード種別: 接続時に `KEYBOARD_INFO` で送る（Mac は `LMGetKbdType`、iPad はプロファイルの配列: 日本語→JIS、US→ANSI）。
+- ポインタ: 移動・ボタンもキーと同じチャンネル・同じ順序付きキューで送る（`POINTER`）。修飾フラグと、クライアントで数えたクリック回数（0.5 秒・6 px 以内の同じボタン）を付ける。
+- スクロール: Mac 版は AppKit の scrollWheel monitor から `scrollingDelta`、`hasPreciseScrollingDeltas`、phase、momentumPhase をそのまま `SCROLL` で送り、UIKit の pan には渡さない（ポインタがセッション面の上にあるときだけ）。iPad の pan/ホイールは RDP の回転量を行単位の `SCROLL` に直す。ブリッジのキューは同じ phase の継続イベントを加算してまとめる。
+- 画質: プロファイルの「画質」（自動/高/標準/低 = 60fps 20Mbps / 30fps 8Mbps / 15fps 1.5Mbps）を `STREAM_CONFIG` で求める。自動は `NWPathMonitor` の expensive/constrained（モバイル回線、Low Data Mode）で低、それ以外で高。セッションメニューで変えられ、サーバーの `STREAM_STATUS`（fps、bit rate、Retina か）と `INPUT_SOURCE`（英字か入力モードか）を表示する。
+- 確認（2026-10-08、tart の macOS 26 VM 2 台、Mac 版 mRemote → macos-rdp-server）: ⌃C、⌘K（Terminal の画面消去）、位置どおりの文字、かな→日本語入力（「かか」と候補表示）、トラックパッド相当の pixel スクロール（phase と慣性付き）、画質の切り替え（60fps 20Mbps → 15fps 1.5Mbps）、Retina（2048x1298 px を 1024x649 pt の HiDPI 仮想ディスプレイで）。同じサーバーに「Windows / 標準」の接続で入ると MACRDPX は使われず、scan code 経路（⌘ は Windows キー扱い）で届く。

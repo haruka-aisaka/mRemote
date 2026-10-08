@@ -23,11 +23,14 @@ Phase 0 用の opaque-handle C ABI、host 上で FreeRDP なしに実行でき�
 - ABI 4 のドライブ共有は `MR_RDP_CHANNEL_FLAG_DRIVE` のときだけ、絶対パス1つを固定の名前で共有する。
 - ABI 4 のタッチ（contact 0–255）とペンはキーと同じ bounded queue を通り、DOWN は対応する UP/CANCEL の空きを予約する。MOVE/HOVER は直前の同種だけをまとめる。`MR_RDP_CHANNEL_FLAG_TOUCH` なしの session では `UNSUPPORTED`。
 
+- ABI 6 の MACRDPX（`external/macrdpx`）は `MR_RDP_CHANNEL_FLAG_MACRDPX` と非 0 の `macrdpx_caps` が揃うときだけ静的チャンネルを要求し、接続時に client HELLO を送る。サーバーからは HELLO・STREAM_STATUS・INPUT_SOURCE だけを `on_macrdpx` に渡し（交渉済み caps 付き、文字列は callback 中だけ有効）、`mr_rdp_session_send_macrdpx` は client→server の型だけを mrx_encode で検証してキーと同じ有界・順序付きキューへ入れる。Mac のキー/ボタンの down は対応する up の空きを予約し、移動と同じ phase の継続スクロールはまとめる。サーバーの HELLO が来るまで、またはチャンネルが開かなければ送信は捨てる。
+
 raw C pointer 自体は stale call を防げません。所有側（Swift の `NativeSessionCallGate`）は全 API 呼び出しと destroy 開始を外部で直列化し、呼び出し開始から内部の in-flight 登録までを destroy と競合させてはいけません。登録済みの run/callback/send は drain 対象です。
 
 ## ローカル検証
 
 ```sh
+git submodule update --init   # external/macrdpx
 cmake -S bridge -B /tmp/mremote-bridge-build -DBUILD_TESTING=ON
 cmake --build /tmp/mremote-bridge-build
 ctest --test-dir /tmp/mremote-bridge-build --output-on-failure

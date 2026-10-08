@@ -9,6 +9,8 @@ The Phase 0 native binary contains code from the following projects:
   the public domain with permissive fallback terms if that dedication is ineffective.
 - WinPR's HashTable implementation, based on a public-domain implementation by Keith Pomakis;
   WinPR's changes remain Apache-2.0.
+- macrdpx (Mac RDP eXtensions, `external/macrdpx`), Copyright (c) 2026 mikuta0407, licensed under
+  the MIT license. Compiled into the bridge.
 - Unicode CLDR `windowsZones.xml` data represented by WinPR's generated `WindowsZones.c`,
   Copyright Unicode, Inc., licensed under Unicode-DFS-2016.
 
@@ -19,6 +21,7 @@ The distributed license/notice texts are:
 - [`licenses/Solar-Designer-MD4-MD5.txt`](licenses/Solar-Designer-MD4-MD5.txt)
 - [`licenses/Keith-Pomakis-HashTable-public-domain.txt`](licenses/Keith-Pomakis-HashTable-public-domain.txt)
 - [`licenses/Unicode-DFS-2016.txt`](licenses/Unicode-DFS-2016.txt)
+- [`licenses/macrdpx-MIT.txt`](licenses/macrdpx-MIT.txt)
 
 Exact upstream project licenses and the separately licensed bundled source files are verified by
 the SHA-256 values in `config/dependencies/freerdp.lock` before a binary is built.

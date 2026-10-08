@@ -63,7 +63,21 @@ out. Text and images on the clipboard follow the user both ways without the
 session menu. It has been checked against the Windows host from a macOS 26 VM; see
 [`docs/input-design.md`](docs/input-design.md) section 12.
 
+A connection can also be marked as reaching a Mac running
+[macos-rdp-server](https://github.com/mikuta0407/macos-rdp-server). It then
+offers the Mac RDP eXtensions ([macrdpx](https://github.com/mikuta0407/macrdpx),
+the `external/macrdpx` submodule): once the server agrees, keys go as Mac keys
+with their exact modifiers (⌘ stays ⌘, Fn, left/right), the pointer and the
+trackpad's pixel scrolling with momentum go natively, and the stream quality
+(frame rate and bit rate) is chosen per connection - automatically lower on
+cellular - and changeable from the session menu. A Retina client gets a HiDPI
+desktop sized to its window. Any other server stays plain RDP; see
+[`docs/input-design.md`](docs/input-design.md) section 13.
+
 ## Build and test
+
+Clone with `--recurse-submodules` (or run `git submodule update --init`):
+the bridge compiles `external/macrdpx`.
 
 The app target links the generated `artifacts/FreeRDP.xcframework` and
 `artifacts/mRemoteRDPBridge.xcframework`, which are ignored by git and have to
