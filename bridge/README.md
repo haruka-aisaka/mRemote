@@ -16,9 +16,12 @@ Phase 0 用の opaque-handle C ABI、host 上で FreeRDP なしに実行でき�
 - generation `0` は予約値として create 時に拒否する。
 - BGRA frame の bytes と dirty rectangles は callback return までだけ有効。Swift は同期的に copy し、generation/surface generation/frame ID、stride、byte length、矩形範囲を検証してから非同期処理へ渡す。
 - wheelは各軸を1 eventあたり `+/-32767` に制限し、queue内の合算も同じ範囲で飽和させる。workerは最大64 input commandごとにevent loopへ戻り、channel/deadline処理を飢餓させない。
-- `cliprdr`、`rdpsnd`、`drdynvc`、`disp`、`rdpgfx` の接続/切断は固定 enum と session 内単調 sequence だけで通知し、backend の channel 名/pointer を ABI 外へ出さない。
+- `cliprdr`、`rdpsnd`、`drdynvc`、`disp`、`rdpgfx`、`rdpei`、`rdpdr` の接続/切断は固定 enum と session 内単調 sequence だけで通知し、backend の channel 名/pointer を ABI 外へ出さない。
 - Phase 0 clipboard probe は最大 64 KiB、NUL 終端 UTF-16LE の `CF_UNICODETEXT` 1件に限定する。embedded NUL/不正 surrogate を拒否し、callback/export へは probe ID、stage、byte count、SHA-256、status だけを渡す。
-- DISP probe は200–8192 pxの単一primary landscape monitorに限定し、FreeRDPが記録値を丸めないよう偶数widthだけを受理する。
+- DISP は200–8192 pxの primary monitor 1台と、ABI 4 からはその右に上端をそろえた2台目（100%、幅の合計 16384 px まで）に限定し、FreeRDPが記録値を丸めないよう偶数widthだけを受理する。
+- ABI 4 の RD Gateway は設定したホスト/ポートの証明書だけを `MR_RDP_CERTIFICATE_ROLE_GATEWAY` として同じ challenge 経路で問い合わせる。redirect 先の証明書は従来どおり受理しない。ゲートウェイのパスワードもコンピューターのものと同じく create 中に copy し、全 cleanup 経路で消去する。
+- ABI 4 のドライブ共有は `MR_RDP_CHANNEL_FLAG_DRIVE` のときだけ、絶対パス1つを固定の名前で共有する。
+- ABI 4 のタッチ（contact 0–255）とペンはキーと同じ bounded queue を通り、DOWN は対応する UP/CANCEL の空きを予約する。MOVE/HOVER は直前の同種だけをまとめる。`MR_RDP_CHANNEL_FLAG_TOUCH` なしの session では `UNSUPPORTED`。
 
 raw C pointer 自体は stale call を防げません。所有側（Swift の `NativeSessionCallGate`）は全 API 呼び出しと destroy 開始を外部で直列化し、呼び出し開始から内部の in-flight 登録までを destroy と競合させてはいけません。登録済みの run/callback/send は drain 対象です。
 

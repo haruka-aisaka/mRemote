@@ -44,6 +44,8 @@ required_symbols=(
   drdynvc_VirtualChannelEntryEx
   disp_DVCPluginEntry
   rdpgfx_DVCPluginEntry
+  rdpei_DVCPluginEntry
+  drive_DeviceServiceEntry
   ios_freerdp_rdpsnd_client_subsystem_entry
   fake_freerdp_rdpsnd_client_subsystem_entry
 )
@@ -119,6 +121,8 @@ for index in 0 1; do
     'extern void drdynvc_VirtualChannelEntryEx(void);' \
     'extern void disp_DVCPluginEntry(void);' \
     'extern void rdpgfx_DVCPluginEntry(void);' \
+    'extern void rdpei_DVCPluginEntry(void);' \
+    'extern void drive_DeviceServiceEntry(void);' \
     'extern void ios_freerdp_rdpsnd_client_subsystem_entry(void);' \
     'extern void fake_freerdp_rdpsnd_client_subsystem_entry(void);' \
     'typedef void (*entry_point)(void);' \
@@ -127,6 +131,7 @@ for index in 0 1; do
     '  rdpsnd_DVCPluginEntry, rdpdr_VirtualChannelEntryEx,' \
     '  drdynvc_VirtualChannelEntryEx,' \
     '  disp_DVCPluginEntry, rdpgfx_DVCPluginEntry,' \
+    '  rdpei_DVCPluginEntry, drive_DeviceServiceEntry,' \
     '  ios_freerdp_rdpsnd_client_subsystem_entry,' \
     '  fake_freerdp_rdpsnd_client_subsystem_entry' \
     '};' \
@@ -159,6 +164,6 @@ host_path_match="$(LC_ALL=C grep -R -a -E -l \
 
 printf 'verified: %s\n' "$XCFRAMEWORK_PATH"
 printf 'slices: ios-arm64, ios-arm64-simulator\n'
-printf 'static add-ins: cliprdr, rdpsnd, rdpdr, drdynvc, disp, rdpgfx\n'
+printf 'static add-ins: cliprdr, rdpsnd, rdpdr, drdynvc, disp, rdpgfx, rdpei, drive\n'
 printf 'link smoke: FreeRDP/OpenSSL/static add-ins + Foundation/AudioToolbox\n'
 printf 'audio subsystems: ios (PCM-only) + upstream fake; integration must select sys:ios\n'

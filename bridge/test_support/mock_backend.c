@@ -49,6 +49,11 @@ typedef struct mr_rdp_mock_backend {
     mr_rdp_mock_clipboard_offer_observer on_offer_clipboard_text;
     mr_rdp_mock_scale_observer on_scale_config;
     mr_rdp_mock_security_observer on_security_policy;
+    mr_rdp_mock_touch_observer on_send_touch;
+    mr_rdp_mock_pen_observer on_send_pen;
+    mr_rdp_mock_connection_observer on_connection_config;
+    mr_rdp_der_blob *gateway_certificate_chain;
+    size_t gateway_certificate_chain_count;
     const mr_rdp_cursor_event *cursor_event;
     const mr_rdp_audio_packet *audio_packet;
     const uint8_t *remote_clipboard_utf16le;
@@ -130,6 +135,24 @@ static void mr_mock_owned_config_destroy(mr_rdp_owned_config *config)
         mr_mock_secure_zero(config->password, config->password_length + 1u);
         free(config->password);
     }
+    {
+        char *spans[] = {
+            config->gateway_hostname, config->gateway_username, config->gateway_domain,
+            config->gateway_password, config->drive_path, config->drive_name
+        };
+        size_t lengths[] = {
+            config->gateway_hostname_length, config->gateway_username_length,
+            config->gateway_domain_length, config->gateway_password_length,
+            config->drive_path_length, config->drive_name_length
+        };
+        size_t index;
+        for (index = 0u; index < sizeof(spans) / sizeof(spans[0]); ++index) {
+            if (spans[index] != NULL) {
+                mr_mock_secure_zero(spans[index], lengths[index] + 1u);
+                free(spans[index]);
+            }
+        }
+    }
     memset(config, 0, sizeof(*config));
 }
 
@@ -165,6 +188,12 @@ static mr_rdp_status mr_mock_owned_config_copy(
     destination->username = NULL;
     destination->domain = NULL;
     destination->password = NULL;
+    destination->gateway_hostname = NULL;
+    destination->gateway_username = NULL;
+    destination->gateway_domain = NULL;
+    destination->gateway_password = NULL;
+    destination->drive_path = NULL;
+    destination->drive_name = NULL;
     status = mr_mock_copy_config_span(
         source->hostname, source->hostname_length, &destination->hostname);
     if (status == MR_RDP_STATUS_OK) {
@@ -178,6 +207,28 @@ static mr_rdp_status mr_mock_owned_config_copy(
     if (status == MR_RDP_STATUS_OK) {
         status = mr_mock_copy_config_span(
             source->password, source->password_length, &destination->password);
+    }
+    {
+        const char *sources[] = {
+            source->gateway_hostname, source->gateway_username, source->gateway_domain,
+            source->gateway_password, source->drive_path, source->drive_name
+        };
+        const size_t lengths[] = {
+            source->gateway_hostname_length, source->gateway_username_length,
+            source->gateway_domain_length, source->gateway_password_length,
+            source->drive_path_length, source->drive_name_length
+        };
+        char **targets[] = {
+            &destination->gateway_hostname, &destination->gateway_username,
+            &destination->gateway_domain, &destination->gateway_password,
+            &destination->drive_path, &destination->drive_name
+        };
+        size_t index;
+        for (index = 0u; status == MR_RDP_STATUS_OK && index < 6u; ++index) {
+            if (sources[index] != NULL) {
+                status = mr_mock_copy_config_span(sources[index], lengths[index], targets[index]);
+            }
+        }
     }
     if (status != MR_RDP_STATUS_OK) {
         mr_mock_owned_config_destroy(destination);
@@ -320,6 +371,19 @@ static mr_rdp_status mr_mock_run(mr_rdp_backend *base)
         backend->on_security_policy(
             backend->observer_context, backend->config.security_policy);
     }
+    if (backend->on_connection_config != NULL) {
+        mr_rdp_mock_connection_config view;
+        memset(&view, 0, sizeof(view));
+        view.gateway_hostname = backend->config.gateway_hostname;
+        view.gateway_port = backend->config.gateway_port;
+        view.gateway_flags = backend->config.gateway_flags;
+        view.gateway_username = backend->config.gateway_username;
+        view.gateway_domain = backend->config.gateway_domain;
+        view.gateway_password = backend->config.gateway_password;
+        view.drive_path = backend->config.drive_path;
+        view.drive_name = backend->config.drive_name;
+        backend->on_connection_config(backend->observer_context, &view);
+    }
     if (backend->on_config != NULL) {
         backend->on_config(
             backend->observer_context,
@@ -358,9 +422,22 @@ static mr_rdp_status mr_mock_run(mr_rdp_backend *base)
     }
     (void)pthread_mutex_unlock(&backend->mutex);
 
+    /* A gateway's certificate comes first: the tunnel is up before the
+     * computer is reached through it. */
+    if (backend->gateway_certificate_chain_count != 0u) {
+        status = backend->host.present_certificate(
+            backend->host.context,
+            MR_RDP_CERTIFICATE_ROLE_GATEWAY,
+            backend->gateway_certificate_chain,
+            backend->gateway_certificate_chain_count);
+        if (status != MR_RDP_STATUS_OK) {
+            return status;
+        }
+    }
     if (backend->certificate_chain_count != 0u) {
         status = backend->host.present_certificate(
             backend->host.context,
+            MR_RDP_CERTIFICATE_ROLE_SERVER,
             backend->certificate_chain,
             backend->certificate_chain_count);
         if (status != MR_RDP_STATUS_OK) {
@@ -615,6 +692,50 @@ static mr_rdp_status mr_mock_send_unicode(
     return MR_RDP_STATUS_OK;
 }
 
+static mr_rdp_status mr_mock_send_touch(
+    mr_rdp_backend *base,
+    const mr_rdp_touch_event *event)
+{
+    mr_rdp_mock_backend *backend = (mr_rdp_mock_backend *)base;
+    mr_rdp_mock_touch_observer observer;
+    void *observer_context;
+    int stopped;
+    (void)pthread_mutex_lock(&backend->mutex);
+    stopped = backend->stop_requested;
+    observer = backend->on_send_touch;
+    observer_context = backend->observer_context;
+    (void)pthread_mutex_unlock(&backend->mutex);
+    if (stopped) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    if (observer != NULL) {
+        observer(observer_context, event);
+    }
+    return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_mock_send_pen(
+    mr_rdp_backend *base,
+    const mr_rdp_pen_event *event)
+{
+    mr_rdp_mock_backend *backend = (mr_rdp_mock_backend *)base;
+    mr_rdp_mock_pen_observer observer;
+    void *observer_context;
+    int stopped;
+    (void)pthread_mutex_lock(&backend->mutex);
+    stopped = backend->stop_requested;
+    observer = backend->on_send_pen;
+    observer_context = backend->observer_context;
+    (void)pthread_mutex_unlock(&backend->mutex);
+    if (stopped) {
+        return MR_RDP_ERROR_STOPPED;
+    }
+    if (observer != NULL) {
+        observer(observer_context, event);
+    }
+    return MR_RDP_STATUS_OK;
+}
+
 static void mr_mock_set_audio_focused(mr_rdp_backend *base, int focused)
 {
     mr_rdp_mock_backend *backend = (mr_rdp_mock_backend *)base;
@@ -676,6 +797,7 @@ static void mr_mock_destroy(mr_rdp_backend *base)
     mr_mock_discard_commands_locked(backend);
     (void)pthread_mutex_unlock(&backend->mutex);
     free(backend->certificate_chain);
+    free(backend->gateway_certificate_chain);
     free(backend->channel_transitions);
     mr_mock_owned_config_destroy(&backend->config);
     (void)pthread_cond_destroy(&backend->condition);
@@ -695,6 +817,8 @@ static const mr_rdp_backend_vtable mr_mock_vtable = {
     .set_audio_focused = mr_mock_set_audio_focused,
     .offer_clipboard_text = mr_mock_offer_clipboard_text,
     .request_clipboard_text = mr_mock_request_clipboard_text,
+    .send_touch = mr_mock_send_touch,
+    .send_pen = mr_mock_send_pen,
     .destroy = mr_mock_destroy
 };
 
@@ -717,6 +841,9 @@ static mr_rdp_status mr_mock_backend_create(
         script == NULL || out_backend == NULL ||
         script->struct_size < sizeof(*script) ||
         script->certificate_chain_count > MR_RDP_MAX_CERTIFICATE_CHAIN + 1u ||
+        script->gateway_certificate_chain_count > MR_RDP_MAX_CERTIFICATE_CHAIN + 1u ||
+        ((script->gateway_certificate_chain == NULL) !=
+         (script->gateway_certificate_chain_count == 0u)) ||
         script->channel_transition_count > MR_RDP_MOCK_MAX_CHANNEL_TRANSITIONS ||
         ((script->channel_transitions == NULL) !=
          (script->channel_transition_count == 0u))) {
@@ -728,7 +855,7 @@ static mr_rdp_status mr_mock_backend_create(
             const mr_rdp_mock_channel_transition *transition =
                 &script->channel_transitions[index];
             if (transition->channel < MR_RDP_CHANNEL_CLIPRDR ||
-                transition->channel > MR_RDP_CHANNEL_RDPGFX ||
+                transition->channel > MR_RDP_CHANNEL_RDPDR ||
                 transition->transition > MR_RDP_CHANNEL_CONNECTED ||
                 transition->reserved[0] != 0u || transition->reserved[1] != 0u ||
                 transition->reserved[2] != 0u || transition->reserved[3] != 0u ||
@@ -792,6 +919,23 @@ static mr_rdp_status mr_mock_backend_create(
         memcpy(backend->channel_transitions, script->channel_transitions,
                script->channel_transition_count * sizeof(*backend->channel_transitions));
     }
+    if (script->gateway_certificate_chain_count != 0u) {
+        backend->gateway_certificate_chain = (mr_rdp_der_blob *)calloc(
+            script->gateway_certificate_chain_count, sizeof(*backend->gateway_certificate_chain));
+        if (backend->gateway_certificate_chain == NULL) {
+            free(backend->channel_transitions);
+            free(backend->certificate_chain);
+            mr_mock_owned_config_destroy(&backend->config);
+            (void)pthread_cond_destroy(&backend->condition);
+            (void)pthread_mutex_destroy(&backend->mutex);
+            free(backend);
+            return MR_RDP_ERROR_OUT_OF_MEMORY;
+        }
+        memcpy(backend->gateway_certificate_chain, script->gateway_certificate_chain,
+               script->gateway_certificate_chain_count *
+                   sizeof(*backend->gateway_certificate_chain));
+        backend->gateway_certificate_chain_count = script->gateway_certificate_chain_count;
+    }
     backend->base.vtable = &mr_mock_vtable;
     backend->host = *host;
     backend->certificate_chain_count = script->certificate_chain_count;
@@ -809,6 +953,9 @@ static mr_rdp_status mr_mock_backend_create(
     backend->on_offer_clipboard_text = script->on_offer_clipboard_text;
     backend->on_scale_config = script->on_scale_config;
     backend->on_security_policy = script->on_security_policy;
+    backend->on_send_touch = script->on_send_touch;
+    backend->on_send_pen = script->on_send_pen;
+    backend->on_connection_config = script->on_connection_config;
     backend->cursor_event = script->cursor_event;
     backend->audio_packet = script->audio_packet;
     backend->remote_clipboard_utf16le = script->remote_clipboard_utf16le;

@@ -14,6 +14,8 @@
 #include <freerdp/client/disp.h>
 #include <freerdp/channels/disp.h>
 #include <freerdp/channels/drdynvc.h>
+#include <freerdp/channels/rdpdr.h>
+#include <freerdp/channels/rdpei.h>
 #include <freerdp/channels/rdpgfx.h>
 #include <freerdp/channels/rdpsnd.h>
 #include <freerdp/codec/color.h>
@@ -33,6 +35,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ABI 4 needs touch/pen and the drive service compiled into FreeRDP. */
+#if !defined(CHANNEL_RDPEI_CLIENT) || !defined(CHANNEL_DRIVE_CLIENT)
+#error "FreeRDP must be built with CHANNEL_RDPEI and CHANNEL_DRIVE"
+#endif
+
 #define MR_FREERDP_PROTOCOL_RDP 0x00000000u
 #define MR_FREERDP_PROTOCOL_SSL 0x00000001u
 #define MR_FREERDP_PROTOCOL_HYBRID 0x00000002u
@@ -43,6 +50,8 @@ static mr_rdp_transport_security mr_freerdp_transport_security(uint32_t selected
 #define MR_FREERDP_COMMAND_BATCH_LIMIT 64u
 #define MR_FREERDP_RDPSND_SUBSYSTEM "mremote"
 #define MR_FREERDP_MAX_AUDIO_SINKS 2u
+/* The one pen this adapter registers with RDPEI. */
+#define MR_FREERDP_PEN_DEVICE_ID 1
 
 typedef struct mr_freerdp_backend mr_freerdp_backend;
 
@@ -72,6 +81,10 @@ struct mr_freerdp_backend {
     HANDLE command_event;
     char *expected_hostname;
     uint16_t expected_port;
+    /* ABI 4. NULL without a gateway. */
+    char *expected_gateway_hostname;
+    uint16_t expected_gateway_port;
+    int pen_registered;
     uint64_t generation;
 
     mr_input_command_queue command_queue;
@@ -661,6 +674,10 @@ static int mr_freerdp_channel_kind_from_name(
     } else if (strcmp(name, RDPGFX_DVC_CHANNEL_NAME) == 0 ||
                strcmp(name, RDPGFX_CHANNEL_NAME) == 0) {
         *out_kind = MR_RDP_CHANNEL_RDPGFX;
+    } else if (strcmp(name, RDPEI_DVC_CHANNEL_NAME) == 0) {
+        *out_kind = MR_RDP_CHANNEL_RDPEI;
+    } else if (strcmp(name, RDPDR_SVC_CHANNEL_NAME) == 0) {
+        *out_kind = MR_RDP_CHANNEL_RDPDR;
     } else {
         return 0;
     }
@@ -702,6 +719,8 @@ static void mr_freerdp_on_channel_connected(
         }
     } else if (strcmp(event->name, DISP_DVC_CHANNEL_NAME) == 0) {
         backend->disp = (DispClientContext *)event->pInterface;
+    } else if (strcmp(event->name, RDPEI_DVC_CHANNEL_NAME) == 0) {
+        backend->pen_registered = 0;
     }
     (void)pthread_mutex_unlock(&backend->mutex);
     if (mr_freerdp_channel_kind_from_name(event->name, &kind)) {
@@ -777,6 +796,7 @@ static void mr_freerdp_clear_password(rdpSettings *settings)
          * allocation with memset(strlen) before freeing it. The bridge rejects
          * embedded NUL bytes, so this covers the complete credential span. */
         (void)freerdp_settings_set_string(settings, FreeRDP_Password, NULL);
+        (void)freerdp_settings_set_string(settings, FreeRDP_GatewayPassword, NULL);
     }
 }
 
@@ -792,21 +812,37 @@ static int mr_freerdp_verify_x509_certificate(
     mr_rdp_der_blob chain[MR_RDP_MAX_CERTIFICATE_CHAIN];
     size_t chain_count = 0u;
     mr_rdp_status status;
-
+    mr_rdp_certificate_role role;
     if (backend == NULL) {
         return -1;
     }
-    if ((flags & (VERIFY_CERT_FLAG_GATEWAY | VERIFY_CERT_FLAG_REDIRECT)) != 0u ||
-        hostname == NULL || strcmp(hostname, backend->expected_hostname) != 0 ||
-        port != backend->expected_port) {
+    /* Only the two endpoints this session was configured with: the gateway
+     * under its own name and port, and the computer. A redirect to anything
+     * else is not followed. */
+    if ((flags & VERIFY_CERT_FLAG_REDIRECT) != 0u || hostname == NULL) {
         mr_freerdp_record_status(backend, MR_RDP_ERROR_UNSUPPORTED);
         return -1;
+    }
+    if ((flags & VERIFY_CERT_FLAG_GATEWAY) != 0u) {
+        if (backend->expected_gateway_hostname == NULL ||
+            strcmp(hostname, backend->expected_gateway_hostname) != 0 ||
+            port != backend->expected_gateway_port) {
+            mr_freerdp_record_status(backend, MR_RDP_ERROR_UNSUPPORTED);
+            return -1;
+        }
+        role = MR_RDP_CERTIFICATE_ROLE_GATEWAY;
+    } else if (strcmp(hostname, backend->expected_hostname) != 0 ||
+               port != backend->expected_port) {
+        mr_freerdp_record_status(backend, MR_RDP_ERROR_UNSUPPORTED);
+        return -1;
+    } else {
+        role = MR_RDP_CERTIFICATE_ROLE_SERVER;
     }
     status = mr_rdp_certificate_chain_from_pem(
         pem, pem_length, chain, &chain_count);
     if (status == MR_RDP_STATUS_OK) {
         status = backend->host.present_certificate(
-            backend->host.context, chain, chain_count);
+            backend->host.context, role, chain, chain_count);
     }
     mr_rdp_certificate_chain_free(chain, chain_count);
     if (status == MR_RDP_STATUS_OK) {
@@ -1369,6 +1405,9 @@ static BOOL mr_freerdp_pre_connect(freerdp *instance)
         (backend->channel_flags & MR_RDP_CHANNEL_FLAG_AUDIO) != 0u) ? TRUE : FALSE;
     const BOOL clipboard = (backend != NULL &&
         (backend->channel_flags & MR_RDP_CHANNEL_FLAG_CLIPBOARD) != 0u) ? TRUE : FALSE;
+    /* ABI 4. MultiTouchInput makes the loader add rdpei. */
+    const BOOL touch = (backend != NULL &&
+        (backend->channel_flags & MR_RDP_CHANNEL_FLAG_TOUCH) != 0u) ? TRUE : FALSE;
 
     if (backend == NULL || instance->context == NULL ||
         instance->context->settings == NULL || mr_freerdp_is_stopped(backend)) {
@@ -1394,6 +1433,7 @@ static BOOL mr_freerdp_pre_connect(freerdp *instance)
         !freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, clipboard) ||
         !freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, TRUE) ||
         !freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate, TRUE) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_MultiTouchInput, touch) ||
         (audio &&
          (!freerdp_client_add_static_channel(
               settings, sizeof(rdpsnd) / sizeof(rdpsnd[0]), rdpsnd) ||
@@ -1664,6 +1704,85 @@ static BOOL mr_freerdp_send_pointer_command(
         input, PTR_FLAGS_HWHEEL, event->wheel_x, x, y);
 }
 
+/* Before RDPEI connects - a logon screen - FreeRDP turns a touch into the
+ * left button itself, so this never needs to know. */
+static BOOL mr_freerdp_send_touch_command(
+    mr_freerdp_backend *backend,
+    const mr_rdp_touch_event *event)
+{
+    UINT32 flags;
+    if (backend->context == NULL) {
+        return FALSE;
+    }
+    switch (event->action) {
+        case MR_RDP_TOUCH_DOWN:
+            flags = FREERDP_TOUCH_DOWN;
+            break;
+        case MR_RDP_TOUCH_MOVE:
+            flags = FREERDP_TOUCH_MOTION;
+            break;
+        case MR_RDP_TOUCH_UP:
+            flags = FREERDP_TOUCH_UP;
+            break;
+        case MR_RDP_TOUCH_CANCEL:
+            flags = FREERDP_TOUCH_CANCEL;
+            break;
+        default:
+            return FALSE;
+    }
+    return freerdp_client_handle_touch(
+        (rdpClientContext *)backend->context, flags, (INT32)event->contact_id, 0u,
+        (INT32)event->x, (INT32)event->y);
+}
+
+static BOOL mr_freerdp_send_pen_command(
+    mr_freerdp_backend *backend,
+    const mr_rdp_pen_event *event)
+{
+    rdpClientContext *client = (rdpClientContext *)backend->context;
+    UINT32 flags = FREERDP_PEN_HAS_PRESSURE | FREERDP_PEN_HAS_ROTATION |
+        FREERDP_PEN_HAS_TILTX | FREERDP_PEN_HAS_TILTY;
+    if (client == NULL) {
+        return FALSE;
+    }
+    /* A pen only works through RDPEI; without it the event is dropped
+     * rather than failing the session. */
+    if (client->rdpei == NULL) {
+        return TRUE;
+    }
+    if (!backend->pen_registered) {
+        if (!freerdp_client_handle_pen(
+                client, FREERDP_PEN_REGISTER | FREERDP_PEN_HAS_PRESSURE,
+                MR_FREERDP_PEN_DEVICE_ID, (double)MR_RDP_MAX_PEN_PRESSURE)) {
+            return FALSE;
+        }
+        backend->pen_registered = 1;
+    }
+    switch (event->action) {
+        case MR_RDP_PEN_DOWN:
+            flags |= FREERDP_PEN_PRESS;
+            break;
+        case MR_RDP_PEN_UP:
+            flags |= FREERDP_PEN_RELEASE;
+            break;
+        default:
+            flags |= FREERDP_PEN_MOTION;
+            break;
+    }
+    if ((event->flags & MR_RDP_PEN_FLAG_BARREL) != 0u) {
+        flags |= FREERDP_PEN_BARREL_PRESSED;
+    }
+    if ((event->flags & MR_RDP_PEN_FLAG_ERASER) != 0u) {
+        flags |= FREERDP_PEN_ERASER_PRESSED;
+    }
+    return freerdp_client_handle_pen(
+        client, flags, MR_FREERDP_PEN_DEVICE_ID,
+        (INT32)event->x, (INT32)event->y,
+        /* Hovering has no pressure. */
+        event->action == MR_RDP_PEN_HOVER ? 0.0 : (double)event->pressure,
+        (unsigned)event->rotation, (int)event->tilt_x, (int)event->tilt_y);
+}
+
 static mr_rdp_status mr_freerdp_process_control_command(
     mr_freerdp_backend *backend,
     int *out_processed)
@@ -1754,11 +1873,13 @@ static mr_rdp_status mr_freerdp_process_control_command(
     }
 
     if (process_resize) {
-        DISPLAY_CONTROL_MONITOR_LAYOUT layout;
-        memset(&layout, 0, sizeof(layout));
-        layout.Flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
-        layout.Width = resize_request.width;
-        layout.Height = resize_request.height;
+        DISPLAY_CONTROL_MONITOR_LAYOUT layouts[2];
+        DISPLAY_CONTROL_MONITOR_LAYOUT *layout = &layouts[0];
+        const UINT32 monitor_count = resize_request.secondary_width != 0u ? 2u : 1u;
+        memset(layouts, 0, sizeof(layouts));
+        layout->Flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
+        layout->Width = resize_request.width;
+        layout->Height = resize_request.height;
         if (backend->context != NULL && backend->context->settings != NULL) {
             rdpSettings *settings = backend->context->settings;
             /* ABI 3: a request's own factors replace the session's, here and
@@ -1775,16 +1896,27 @@ static mr_rdp_status mr_freerdp_process_control_command(
                     settings, FreeRDP_DeviceScaleFactor,
                     resize_request.device_scale_factor);
             }
-            layout.Orientation = freerdp_settings_get_uint16(
+            layout->Orientation = freerdp_settings_get_uint16(
                 settings, FreeRDP_DesktopOrientation);
-            layout.DesktopScaleFactor = freerdp_settings_get_uint32(
+            layout->DesktopScaleFactor = freerdp_settings_get_uint32(
                 settings, FreeRDP_DesktopScaleFactor);
-            layout.DeviceScaleFactor = freerdp_settings_get_uint32(
+            layout->DeviceScaleFactor = freerdp_settings_get_uint32(
                 settings, FreeRDP_DeviceScaleFactor);
+        }
+        if (monitor_count == 2u) {
+            /* ABI 4: the second monitor to the right, top-aligned, drawn at
+             * 100%: a monitor is not a phone held close. */
+            layouts[1].Left = (INT32)resize_request.width;
+            layouts[1].Top = 0;
+            layouts[1].Width = resize_request.secondary_width;
+            layouts[1].Height = resize_request.secondary_height;
+            layouts[1].Orientation = ORIENTATION_LANDSCAPE;
+            layouts[1].DesktopScaleFactor = 100u;
+            layouts[1].DeviceScaleFactor = 100u;
         }
         channel_status = disp == NULL || disp->SendMonitorLayout == NULL
             ? CHANNEL_RC_NOT_CONNECTED
-            : disp->SendMonitorLayout(disp, 1u, &layout);
+            : disp->SendMonitorLayout(disp, monitor_count, layouts);
         operation_status = channel_status == CHANNEL_RC_OK
             ? MR_RDP_STATUS_OK
             : MR_RDP_ERROR_BACKEND;
@@ -2037,6 +2169,10 @@ static mr_rdp_status mr_freerdp_drain_commands(mr_freerdp_backend *backend)
             sent = mr_freerdp_send_key_command(backend, &command.value.key);
         } else if (command.kind == MR_INPUT_COMMAND_POINTER) {
             sent = mr_freerdp_send_pointer_command(backend, &command.value.pointer);
+        } else if (command.kind == MR_INPUT_COMMAND_TOUCH) {
+            sent = mr_freerdp_send_touch_command(backend, &command.value.touch);
+        } else if (command.kind == MR_INPUT_COMMAND_PEN) {
+            sent = mr_freerdp_send_pen_command(backend, &command.value.pen);
         } else if (command.kind == MR_INPUT_COMMAND_UNICODE) {
             sent = backend->context != NULL && backend->context->input != NULL &&
                 freerdp_input_send_unicode_keyboard_event(
@@ -2206,6 +2342,30 @@ static mr_rdp_status mr_freerdp_send_pointer(
     memset(&command, 0, sizeof(command));
     command.kind = MR_INPUT_COMMAND_POINTER;
     command.value.pointer = *event;
+    return mr_freerdp_enqueue_command(backend, &command);
+}
+
+static mr_rdp_status mr_freerdp_send_touch(
+    mr_rdp_backend *base,
+    const mr_rdp_touch_event *event)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    mr_input_command command;
+    memset(&command, 0, sizeof(command));
+    command.kind = MR_INPUT_COMMAND_TOUCH;
+    command.value.touch = *event;
+    return mr_freerdp_enqueue_command(backend, &command);
+}
+
+static mr_rdp_status mr_freerdp_send_pen(
+    mr_rdp_backend *base,
+    const mr_rdp_pen_event *event)
+{
+    mr_freerdp_backend *backend = (mr_freerdp_backend *)base;
+    mr_input_command command;
+    memset(&command, 0, sizeof(command));
+    command.kind = MR_INPUT_COMMAND_PEN;
+    command.value.pen = *event;
     return mr_freerdp_enqueue_command(backend, &command);
 }
 
@@ -2454,6 +2614,7 @@ static void mr_freerdp_destroy(mr_rdp_backend *base)
         (void)pthread_mutex_destroy(&backend->mutex);
     }
     free(backend->expected_hostname);
+    free(backend->expected_gateway_hostname);
     SecureZeroMemory(backend, sizeof(*backend));
     free(backend);
 }
@@ -2469,6 +2630,8 @@ static const mr_rdp_backend_vtable mr_freerdp_vtable = {
     .set_audio_focused = mr_freerdp_set_audio_focused,
     .offer_clipboard_text = mr_freerdp_offer_clipboard_text,
     .request_clipboard_text = mr_freerdp_request_clipboard_text,
+    .send_touch = mr_freerdp_send_touch,
+    .send_pen = mr_freerdp_send_pen,
     .destroy = mr_freerdp_destroy
 };
 
@@ -2543,6 +2706,43 @@ static BOOL mr_freerdp_configure_keyboard(
     }
 }
 
+/* ABI 4: HTTPS first with RPC as the fallback, as Microsoft's clients do.
+ * Credentials are either the computer's or the gateway's own. */
+static BOOL mr_freerdp_configure_gateway(
+    rdpSettings *settings,
+    const mr_rdp_owned_config *config)
+{
+    const BOOL same = (config->gateway_flags & MR_RDP_GATEWAY_FLAG_SAME_CREDENTIALS) != 0u;
+    if (!freerdp_settings_set_bool(settings, FreeRDP_GatewayEnabled, TRUE) ||
+        !freerdp_set_gateway_usage_method(settings, TSC_PROXY_MODE_DIRECT) ||
+        !freerdp_settings_set_string_len(
+            settings, FreeRDP_GatewayHostname,
+            config->gateway_hostname, config->gateway_hostname_length) ||
+        !freerdp_settings_set_uint32(settings, FreeRDP_GatewayPort, config->gateway_port) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_GatewayHttpTransport, TRUE) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_GatewayRpcTransport, TRUE) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_GatewayUdpTransport, FALSE) ||
+        !freerdp_settings_set_bool(
+            settings, FreeRDP_GatewayBypassLocal,
+            (config->gateway_flags & MR_RDP_GATEWAY_FLAG_BYPASS_LOCAL) != 0u) ||
+        !freerdp_settings_set_bool(settings, FreeRDP_GatewayUseSameCredentials, same)) {
+        return FALSE;
+    }
+    if (same) {
+        return TRUE;
+    }
+    return freerdp_settings_set_string_len(
+               settings, FreeRDP_GatewayUsername,
+               config->gateway_username, config->gateway_username_length) &&
+        freerdp_settings_set_string_len(
+            settings, FreeRDP_GatewayPassword,
+            config->gateway_password, config->gateway_password_length) &&
+        (config->gateway_domain == NULL ||
+         freerdp_settings_set_string_len(
+             settings, FreeRDP_GatewayDomain,
+             config->gateway_domain, config->gateway_domain_length));
+}
+
 static mr_rdp_status mr_freerdp_configure_settings(
     mr_freerdp_backend *backend,
     const mr_rdp_owned_config *config)
@@ -2604,6 +2804,18 @@ static mr_rdp_status mr_freerdp_configure_settings(
         !freerdp_settings_set_bool(settings, FreeRDP_GfxCodecAV1, FALSE)) {
         return MR_RDP_ERROR_BACKEND;
     }
+    if (config->gateway_hostname != NULL &&
+        !mr_freerdp_configure_gateway(settings, config)) {
+        return MR_RDP_ERROR_BACKEND;
+    }
+    /* ABI 4: one folder, as a drive under the name given. rdpdr loads the
+     * drive service from the static table. */
+    if (config->drive_path != NULL) {
+        const char *drive[] = { "drive", config->drive_name, config->drive_path };
+        if (!freerdp_client_add_device_channel(settings, 3u, drive)) {
+            return MR_RDP_ERROR_BACKEND;
+        }
+    }
     return MR_RDP_STATUS_OK;
 }
 
@@ -2659,6 +2871,14 @@ mr_rdp_status mr_rdp_backend_create_default(
     if (backend->expected_hostname == NULL) {
         status = MR_RDP_ERROR_OUT_OF_MEMORY;
         goto fail;
+    }
+    if (config->gateway_hostname != NULL) {
+        backend->expected_gateway_hostname = strdup(config->gateway_hostname);
+        if (backend->expected_gateway_hostname == NULL) {
+            status = MR_RDP_ERROR_OUT_OF_MEMORY;
+            goto fail;
+        }
+        backend->expected_gateway_port = config->gateway_port;
     }
 
     memset(&entry_points, 0, sizeof(entry_points));

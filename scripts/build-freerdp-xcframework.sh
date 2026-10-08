@@ -138,7 +138,7 @@ print_plan() {
     "OpenSSL runtime config=$RUNTIME_OPENSSLDIR" \
     "slice=device:arm64 (PLATFORM=OS64)" \
     "slice=simulator:arm64 (PLATFORM=SIMULATORARM64)" \
-    "static channels=cliprdr,rdpsnd,rdpdr,drdynvc,disp,rdpgfx" \
+    "static channels=cliprdr,rdpsnd,rdpdr,drdynvc,disp,rdpgfx,rdpei,drive" \
     "audio subsystems=upstream ios + fake (adapter must select sys:ios; iOS path is PCM-only)" \
     "disabled codecs=FFmpeg,OpenH264,Opus,JPEG,WebP" \
     "source=$FREERDP_SOURCE_DIR" \
@@ -439,11 +439,11 @@ build_openssl_slice() {
 }
 
 disabled_channels=(
-  AINPUT AUDIN DRIVE ECHO ENCOMSP GEOMETRY GFXREDIR LOCATION PARALLEL PRINTER
-  RAIL RDP2TCP RDPEAR RDPECAM RDPEI RDPEMSC RDPEWA REMDESK SERIAL
+  AINPUT AUDIN ECHO ENCOMSP GEOMETRY GFXREDIR LOCATION PARALLEL PRINTER
+  RAIL RDP2TCP RDPEAR RDPECAM RDPEMSC RDPEWA REMDESK SERIAL
   SMARTCARD SSHAGENT TELEMETRY TSMF URBDRC VIDEO
 )
-required_channels=(CLIPRDR RDPSND RDPDR DRDYNVC DISP RDPGFX)
+required_channels=(CLIPRDR RDPSND RDPDR DRDYNVC DISP RDPGFX RDPEI DRIVE)
 
 cache_value() {
   local cache="$1"

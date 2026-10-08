@@ -14,10 +14,11 @@ build override.
 | Keith Pomakis HashTable | FreeRDP commit snapshot | basis of WinPR's hash table | public-domain statement; WinPR changes are Apache-2.0 |
 | Unicode CLDR windowsZones data | generated table with `typeVersion: 2021a`, pinned by the FreeRDP commit | IANA/Windows timezone mapping | Unicode-DFS-2016 |
 
-The Phase 0 profile enables `cliprdr`, `rdpsnd`, `drdynvc`, `disp`, and `rdpgfx` client add-ins,
-plus the core `rdpdr` client add-in required by FreeRDP's common loader when `rdpsnd` is active.
-They are compiled into the client archive. Device service backends remain disabled, so enabling the
-core `rdpdr` transport does not enable drive, printer, smart-card, serial, or parallel redirection.
+The profile enables `cliprdr`, `rdpsnd`, `drdynvc`, `disp`, `rdpgfx` and `rdpei` (touch and pen)
+client add-ins, plus the core `rdpdr` client add-in required by FreeRDP's common loader when `rdpsnd`
+is active. They are compiled into the client archive. Of the device service backends only `drive` is
+enabled, for the one folder a profile chooses to share; printer, smart-card, serial, and parallel
+redirection remain disabled.
 The build does not package a `.dylib`, `.so`, bundle, runtime plugin, LLVM LTO object, or embedded
 bitcode. FFmpeg, OpenH264, Opus, JPEG/WebP/PNG helpers, server binaries, camera/microphone
 redirection, RemoteApp, and RD Gateway-specific extras are disabled.

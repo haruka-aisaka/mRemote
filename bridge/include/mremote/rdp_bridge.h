@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define MR_RDP_BRIDGE_ABI_VERSION 3u
+#define MR_RDP_BRIDGE_ABI_VERSION 4u
 #define MR_RDP_DEFAULT_PORT 3389u
 #define MR_RDP_DEFAULT_CERTIFICATE_TIMEOUT_MS 30000u
 #define MR_RDP_MAX_CERTIFICATE_CHAIN 16u
@@ -34,6 +34,14 @@ extern "C" {
 #define MR_RDP_MAX_CURSOR_DIMENSION 384u
 #define MR_RDP_MAX_CLIPBOARD_TEXT_UTF16LE_BYTES (4u * 1024u * 1024u)
 #define MR_RDP_CLIPBOARD_REQUEST_TIMEOUT_MS 10000u
+/* ABI 4. */
+#define MR_RDP_DEFAULT_GATEWAY_PORT 443u
+#define MR_RDP_MAX_DRIVE_PATH_BYTES 4096u
+#define MR_RDP_MAX_DRIVE_NAME_BYTES 64u
+/* Both monitors side by side, as one desktop. */
+#define MR_RDP_MAX_VIRTUAL_DESKTOP_WIDTH 16384u
+#define MR_RDP_MAX_TOUCH_CONTACT_ID 255u
+#define MR_RDP_MAX_PEN_PRESSURE 1024u
 
 typedef struct mr_rdp_session mr_rdp_session;
 typedef int32_t mr_rdp_status;
@@ -91,7 +99,21 @@ enum {
 typedef uint32_t mr_rdp_channel_flags;
 enum {
     MR_RDP_CHANNEL_FLAG_AUDIO = 1u << 0,
-    MR_RDP_CHANNEL_FLAG_CLIPBOARD = 1u << 1
+    MR_RDP_CHANNEL_FLAG_CLIPBOARD = 1u << 1,
+    /* ABI 4. One local folder shared as a drive (drive_path/drive_name). */
+    MR_RDP_CHANNEL_FLAG_DRIVE = 1u << 2,
+    /* ABI 4. Touch and pen input (RDPEI). */
+    MR_RDP_CHANNEL_FLAG_TOUCH = 1u << 3
+};
+
+/* ABI 4. */
+typedef uint16_t mr_rdp_gateway_flags;
+enum {
+    /* The gateway takes the computer's credentials; gateway_username,
+     * gateway_domain and gateway_password must then be absent. */
+    MR_RDP_GATEWAY_FLAG_SAME_CREDENTIALS = 1u << 0,
+    /* Hosts on the local network are reached without the gateway. */
+    MR_RDP_GATEWAY_FLAG_BYPASS_LOCAL = 1u << 1
 };
 
 typedef struct mr_rdp_config {
@@ -117,7 +139,36 @@ typedef struct mr_rdp_config {
     uint32_t device_scale_factor;
     mr_rdp_security_policy security_policy;
     uint32_t reserved_abi3;
+    /* ABI 4. */
+    const char *gateway_hostname;
+    uint16_t gateway_port;
+    mr_rdp_gateway_flags gateway_flags;
+    uint32_t reserved_abi4;
+    const char *gateway_username;
+    size_t gateway_username_length;
+    const char *gateway_domain;
+    size_t gateway_domain_length;
+    const char *gateway_password;
+    size_t gateway_password_length;
+    const char *drive_path;
+    size_t drive_path_length;
+    const char *drive_name;
+    size_t drive_name_length;
 } mr_rdp_config;
+
+/* ABI 4: gateway_hostname is NULL for a direct connection; otherwise a
+ * NUL-terminated name of at most 253 bytes, reached on gateway_port (zero
+ * selects 443) over HTTPS or RPC. Unless SAME_CREDENTIALS is set, the
+ * gateway username and password are non-empty spans with the same rules as
+ * the computer's, and the domain is absent only as NULL/0; with it they must
+ * all be NULL/0. gateway_flags without a hostname, and unknown flags, are
+ * rejected. reserved_abi4 must be zero.
+ *
+ * drive_path and drive_name are present exactly when channel_flags has
+ * MR_RDP_CHANNEL_FLAG_DRIVE: an absolute path of at most
+ * MR_RDP_MAX_DRIVE_PATH_BYTES, and a name of 1...MR_RDP_MAX_DRIVE_NAME_BYTES
+ * printable ASCII bytes other than '\\', '/', ':', '*', '?', '"', '<', '>',
+ * '|' and ';', which is what the server shows the drive as. */
 
 /* desktop_scale_factor and device_scale_factor are ABI 3: how large the
  * server should draw, sent with the core data at connect and with every
@@ -140,6 +191,13 @@ typedef struct mr_rdp_der_blob {
     size_t length;
 } mr_rdp_der_blob;
 
+/* ABI 4. Whose certificate a challenge is about. */
+typedef uint32_t mr_rdp_certificate_role;
+enum {
+    MR_RDP_CERTIFICATE_ROLE_SERVER = 0,
+    MR_RDP_CERTIFICATE_ROLE_GATEWAY = 1
+};
+
 typedef struct mr_rdp_certificate_challenge {
     uint32_t struct_size;
     uint32_t reserved;
@@ -149,7 +207,9 @@ typedef struct mr_rdp_certificate_challenge {
     size_t hostname_length;
     uint16_t port;
     uint16_t reserved2;
-    uint32_t reserved3;
+    /* ABI 4; reserved3 before it. For the gateway, hostname and port are
+     * the gateway's. */
+    mr_rdp_certificate_role role;
     const mr_rdp_der_blob *chain;
     size_t chain_count;
 } mr_rdp_certificate_challenge;
@@ -222,7 +282,10 @@ enum {
     MR_RDP_CHANNEL_RDPSND = 2,
     MR_RDP_CHANNEL_DRDYNVC = 3,
     MR_RDP_CHANNEL_DISP = 4,
-    MR_RDP_CHANNEL_RDPGFX = 5
+    MR_RDP_CHANNEL_RDPGFX = 5,
+    /* ABI 4. */
+    MR_RDP_CHANNEL_RDPEI = 6,
+    MR_RDP_CHANNEL_RDPDR = 7
 };
 
 typedef uint8_t mr_rdp_channel_transition;
@@ -285,6 +348,11 @@ typedef struct mr_rdp_display_resize_request {
      * the same ranges as mr_rdp_config. */
     uint32_t desktop_scale_factor;
     uint32_t device_scale_factor;
+    /* ABI 4. A second monitor to the right of the primary, top-aligned;
+     * zero for none. The same limits as width/height, and the two widths
+     * together at most MR_RDP_MAX_VIRTUAL_DESKTOP_WIDTH. */
+    uint32_t secondary_width;
+    uint32_t secondary_height;
 } mr_rdp_display_resize_request;
 
 typedef struct mr_rdp_display_resize_event {
@@ -295,6 +363,9 @@ typedef struct mr_rdp_display_resize_event {
     uint64_t request_id;
     uint32_t width;
     uint32_t height;
+    /* ABI 4. */
+    uint32_t secondary_width;
+    uint32_t secondary_height;
 } mr_rdp_display_resize_event;
 
 typedef uint8_t mr_rdp_cursor_kind;
@@ -496,6 +567,57 @@ typedef struct mr_rdp_unicode_event {
     uint16_t reserved;
 } mr_rdp_unicode_event;
 
+/* ABI 4. One finger on the remote touch screen (RDPEI). A DOWN obliges an
+ * UP or CANCEL for the same contact; MOVE is coalesced per contact. x/y are
+ * remote desktop pixels, contact_id 0...MR_RDP_MAX_TOUCH_CONTACT_ID. Before
+ * RDPEI connects - at a logon screen, for instance - FreeRDP turns touches
+ * into the left mouse button. */
+typedef uint8_t mr_rdp_touch_action;
+enum {
+    MR_RDP_TOUCH_DOWN = 0,
+    MR_RDP_TOUCH_MOVE = 1,
+    MR_RDP_TOUCH_UP = 2,
+    MR_RDP_TOUCH_CANCEL = 3
+};
+
+typedef struct mr_rdp_touch_event {
+    uint32_t struct_size;
+    uint32_t contact_id;
+    uint32_t x;
+    uint32_t y;
+    mr_rdp_touch_action action;
+    uint8_t reserved[3];
+} mr_rdp_touch_event;
+
+/* ABI 4. The one pen (RDPEI). DOWN obliges an UP; HOVER and MOVE are
+ * coalesced. pressure is 0...MR_RDP_MAX_PEN_PRESSURE, tilt -90...90 degrees,
+ * rotation 0...359 degrees. */
+typedef uint8_t mr_rdp_pen_action;
+enum {
+    MR_RDP_PEN_HOVER = 0,
+    MR_RDP_PEN_DOWN = 1,
+    MR_RDP_PEN_MOVE = 2,
+    MR_RDP_PEN_UP = 3
+};
+
+typedef uint8_t mr_rdp_pen_flags;
+enum {
+    MR_RDP_PEN_FLAG_BARREL = 1u << 0,
+    MR_RDP_PEN_FLAG_ERASER = 1u << 1
+};
+
+typedef struct mr_rdp_pen_event {
+    uint32_t struct_size;
+    uint32_t x;
+    uint32_t y;
+    uint32_t pressure;
+    int16_t tilt_x;
+    int16_t tilt_y;
+    uint16_t rotation;
+    mr_rdp_pen_action action;
+    mr_rdp_pen_flags flags;
+} mr_rdp_pen_event;
+
 typedef struct mr_rdp_clipboard_offer {
     uint32_t struct_size;
     uint32_t reserved;
@@ -529,6 +651,8 @@ void mr_rdp_clipboard_probe_init(mr_rdp_clipboard_probe *probe);
 void mr_rdp_display_resize_request_init(mr_rdp_display_resize_request *request);
 void mr_rdp_unicode_event_init(mr_rdp_unicode_event *event);
 void mr_rdp_clipboard_offer_init(mr_rdp_clipboard_offer *offer);
+void mr_rdp_touch_event_init(mr_rdp_touch_event *event);
+void mr_rdp_pen_event_init(mr_rdp_pen_event *event);
 
 /*
  * Copies config, hostname, credentials, and the callback table before
@@ -594,8 +718,9 @@ mr_rdp_status mr_rdp_session_start_clipboard_probe(
     mr_rdp_session *session,
     const mr_rdp_clipboard_probe *probe);
 
-/* Queues one primary, landscape DISP monitor-layout request. Width must be
- * even so FreeRDP 3.31.1 cannot silently round the recorded dimension. */
+/* Queues one DISP monitor-layout request: a primary monitor and, from ABI
+ * 4, optionally a second to its right. Widths must be even so FreeRDP
+ * 3.31.1 cannot silently round the recorded dimension. */
 mr_rdp_status mr_rdp_session_request_display_resize(
     mr_rdp_session *session,
     const mr_rdp_display_resize_request *request);
@@ -605,6 +730,16 @@ mr_rdp_status mr_rdp_session_request_display_resize(
 mr_rdp_status mr_rdp_session_send_unicode(
     mr_rdp_session *session,
     const mr_rdp_unicode_event *event);
+
+/* ABI 4. Through the same bounded, ordered queue as keys. Refused with
+ * MR_RDP_ERROR_UNSUPPORTED when the session was created without
+ * MR_RDP_CHANNEL_FLAG_TOUCH. */
+mr_rdp_status mr_rdp_session_send_touch(
+    mr_rdp_session *session,
+    const mr_rdp_touch_event *event);
+mr_rdp_status mr_rdp_session_send_pen(
+    mr_rdp_session *session,
+    const mr_rdp_pen_event *event);
 
 /* Whether this session's PCM reaches on_audio. Thread-safe, callable in any
  * state, and remembered across the channel connecting later. Unfocused audio

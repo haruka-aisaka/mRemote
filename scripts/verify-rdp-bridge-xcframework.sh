@@ -67,6 +67,8 @@ required_linked_addins=(
   drdynvc_VirtualChannelEntryEx
   disp_DVCPluginEntry
   rdpgfx_DVCPluginEntry
+  rdpei_DVCPluginEntry
+  drive_DeviceServiceEntry
   ios_freerdp_rdpsnd_client_subsystem_entry
 )
 

@@ -55,6 +55,29 @@ typedef void (*mr_rdp_mock_clipboard_offer_observer)(
     const uint8_t *utf16le_bytes,
     size_t utf16le_byte_count);
 
+/* ABI 4. */
+typedef void (*mr_rdp_mock_touch_observer)(
+    void *context,
+    const mr_rdp_touch_event *event);
+typedef void (*mr_rdp_mock_pen_observer)(
+    void *context,
+    const mr_rdp_pen_event *event);
+/* The backend's copy of what it was created with, at run: gateway and
+ * drive. Passwords are already cleared from the session's own copy. */
+typedef struct mr_rdp_mock_connection_config {
+    const char *gateway_hostname;
+    uint16_t gateway_port;
+    mr_rdp_gateway_flags gateway_flags;
+    const char *gateway_username;
+    const char *gateway_domain;
+    const char *gateway_password;
+    const char *drive_path;
+    const char *drive_name;
+} mr_rdp_mock_connection_config;
+typedef void (*mr_rdp_mock_connection_observer)(
+    void *context,
+    const mr_rdp_mock_connection_config *config);
+
 typedef struct mr_rdp_mock_channel_transition {
     mr_rdp_channel_kind channel;
     mr_rdp_channel_transition transition;
@@ -93,6 +116,13 @@ typedef struct mr_rdp_mock_script {
     mr_rdp_mock_scale_observer on_scale_config;
     /* ABI 3. Called at run with the session's security policy. */
     mr_rdp_mock_security_observer on_security_policy;
+    /* ABI 4. */
+    mr_rdp_mock_touch_observer on_send_touch;
+    mr_rdp_mock_pen_observer on_send_pen;
+    mr_rdp_mock_connection_observer on_connection_config;
+    /* Presented with the gateway role before the server's chain. */
+    const mr_rdp_der_blob *gateway_certificate_chain;
+    size_t gateway_certificate_chain_count;
 } mr_rdp_mock_script;
 
 void mr_rdp_mock_script_init(mr_rdp_mock_script *script);

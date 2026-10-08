@@ -13,7 +13,12 @@ enum {
     MR_INPUT_COMMAND_KEY = 1,
     MR_INPUT_COMMAND_POINTER = 2,
     /* A self-contained down/up pair: it creates no release obligation. */
-    MR_INPUT_COMMAND_UNICODE = 3
+    MR_INPUT_COMMAND_UNICODE = 3,
+    /* ABI 4. A DOWN obliges an UP/CANCEL for its contact; MOVEs coalesce per
+     * contact. */
+    MR_INPUT_COMMAND_TOUCH = 4,
+    /* ABI 4. A DOWN obliges an UP; HOVER and MOVE coalesce. */
+    MR_INPUT_COMMAND_PEN = 5
 };
 
 typedef struct mr_input_command {
@@ -22,13 +27,17 @@ typedef struct mr_input_command {
         mr_rdp_key_event key;
         mr_rdp_pointer_event pointer;
         mr_rdp_unicode_event unicode;
+        mr_rdp_touch_event touch;
+        mr_rdp_pen_event pen;
     } value;
 } mr_input_command;
 
 typedef uint8_t mr_input_release_kind;
 enum {
     MR_INPUT_RELEASE_KEY = 1,
-    MR_INPUT_RELEASE_BUTTON = 2
+    MR_INPUT_RELEASE_BUTTON = 2,
+    MR_INPUT_RELEASE_TOUCH = 3,
+    MR_INPUT_RELEASE_PEN = 4
 };
 
 typedef struct mr_input_release_reservation {
@@ -37,6 +46,7 @@ typedef struct mr_input_release_reservation {
     uint8_t extended;
     uint8_t extended1;
     mr_rdp_pointer_button button;
+    uint32_t contact_id;
 } mr_input_release_reservation;
 
 typedef struct mr_input_command_queue {

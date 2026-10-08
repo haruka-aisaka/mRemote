@@ -36,6 +36,21 @@ typedef struct mr_rdp_owned_config {
     uint32_t desktop_scale_factor;
     uint32_t device_scale_factor;
     mr_rdp_security_policy security_policy;
+    /* ABI 4. hostname NULL for no gateway. */
+    char *gateway_hostname;
+    size_t gateway_hostname_length;
+    uint16_t gateway_port;
+    mr_rdp_gateway_flags gateway_flags;
+    char *gateway_username;
+    size_t gateway_username_length;
+    char *gateway_domain;
+    size_t gateway_domain_length;
+    char *gateway_password;
+    size_t gateway_password_length;
+    char *drive_path;
+    size_t drive_path_length;
+    char *drive_name;
+    size_t drive_name_length;
 } mr_rdp_owned_config;
 
 typedef struct mr_rdp_backend_clipboard_offer {
@@ -46,8 +61,11 @@ typedef struct mr_rdp_backend_clipboard_offer {
 
 typedef struct mr_rdp_backend_host {
     void *context;
+    /* ABI 4: role says whether the chain is the gateway's; its hostname and
+     * port are then the configured gateway's. */
     mr_rdp_status (*present_certificate)(
         void *context,
+        mr_rdp_certificate_role role,
         const mr_rdp_der_blob *chain,
         size_t chain_count);
     mr_rdp_status (*connected)(void *context, mr_rdp_transport_security transport);
@@ -117,6 +135,13 @@ typedef struct mr_rdp_backend_vtable {
     mr_rdp_status (*request_clipboard_text)(
         mr_rdp_backend *backend,
         uint64_t request_id);
+    /* ABI 4. */
+    mr_rdp_status (*send_touch)(
+        mr_rdp_backend *backend,
+        const mr_rdp_touch_event *event);
+    mr_rdp_status (*send_pen)(
+        mr_rdp_backend *backend,
+        const mr_rdp_pen_event *event);
     void (*destroy)(mr_rdp_backend *backend);
 } mr_rdp_backend_vtable;
 

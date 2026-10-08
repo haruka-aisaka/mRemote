@@ -499,6 +499,99 @@ static int test_unicode_tap_owes_nothing_and_drops_when_full(void)
     return 1;
 }
 
+static mr_input_command touch_command(uint32_t contact, mr_rdp_touch_action action, uint32_t x)
+{
+    mr_input_command command;
+    memset(&command, 0, sizeof(command));
+    command.kind = MR_INPUT_COMMAND_TOUCH;
+    mr_rdp_touch_event_init(&command.value.touch);
+    command.value.touch.contact_id = contact;
+    command.value.touch.action = action;
+    command.value.touch.x = x;
+    return command;
+}
+
+static mr_input_command pen_command(mr_rdp_pen_action action, uint32_t x)
+{
+    mr_input_command command;
+    memset(&command, 0, sizeof(command));
+    command.kind = MR_INPUT_COMMAND_PEN;
+    mr_rdp_pen_event_init(&command.value.pen);
+    command.value.pen.action = action;
+    command.value.pen.x = x;
+    return command;
+}
+
+static int test_touch_contacts_owe_their_release(void)
+{
+    mr_input_command_queue queue;
+    mr_input_command out;
+    mr_input_command first_down = touch_command(1u, MR_RDP_TOUCH_DOWN, 0u);
+    mr_input_command second_down = touch_command(2u, MR_RDP_TOUCH_DOWN, 0u);
+    mr_input_command first_move = touch_command(1u, MR_RDP_TOUCH_MOVE, 10u);
+    mr_input_command first_later = touch_command(1u, MR_RDP_TOUCH_MOVE, 20u);
+    mr_input_command second_move = touch_command(2u, MR_RDP_TOUCH_MOVE, 30u);
+    mr_input_command first_up = touch_command(1u, MR_RDP_TOUCH_UP, 20u);
+    mr_input_command second_cancel = touch_command(2u, MR_RDP_TOUCH_CANCEL, 30u);
+    CHECK(mr_input_command_queue_init(&queue, 8u));
+    CHECK(mr_input_command_queue_enqueue(&queue, &first_down) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &second_down) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_reserved_count(&queue) == 2u);
+    CHECK(mr_input_command_queue_enqueue(&queue, &first_move) == MR_INPUT_ENQUEUE_QUEUED);
+    /* Only a move of the same contact right before it is replaced. */
+    CHECK(mr_input_command_queue_enqueue(&queue, &first_later) == MR_INPUT_ENQUEUE_COALESCED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &second_move) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &first_up) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &second_cancel) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_reserved_count(&queue) == 0u);
+    CHECK(mr_input_command_queue_count(&queue) == 6u);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.touch.contact_id == 1u);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.touch.contact_id == 2u);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.touch.x == 20u);
+    return 1;
+}
+
+static int test_a_full_queue_keeps_room_for_a_lift(void)
+{
+    mr_input_command_queue queue;
+    mr_input_command down = touch_command(4u, MR_RDP_TOUCH_DOWN, 0u);
+    mr_input_command move = touch_command(4u, MR_RDP_TOUCH_MOVE, 1u);
+    mr_input_command other = touch_command(5u, MR_RDP_TOUCH_MOVE, 1u);
+    mr_input_command up = touch_command(4u, MR_RDP_TOUCH_UP, 1u);
+    CHECK(mr_input_command_queue_init(&queue, 3u));
+    CHECK(mr_input_command_queue_enqueue(&queue, &down) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &move) == MR_INPUT_ENQUEUE_QUEUED);
+    /* The last slot is the lift's: another contact's move is dropped. */
+    CHECK(mr_input_command_queue_enqueue(&queue, &other) == MR_INPUT_ENQUEUE_DROPPED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &up) == MR_INPUT_ENQUEUE_QUEUED);
+    return 1;
+}
+
+static int test_pen_hover_and_moves_coalesce(void)
+{
+    mr_input_command_queue queue;
+    mr_input_command out;
+    mr_input_command hover = pen_command(MR_RDP_PEN_HOVER, 1u);
+    mr_input_command hover_later = pen_command(MR_RDP_PEN_HOVER, 2u);
+    mr_input_command down = pen_command(MR_RDP_PEN_DOWN, 2u);
+    mr_input_command move = pen_command(MR_RDP_PEN_MOVE, 3u);
+    mr_input_command move_later = pen_command(MR_RDP_PEN_MOVE, 4u);
+    mr_input_command up = pen_command(MR_RDP_PEN_UP, 4u);
+    CHECK(mr_input_command_queue_init(&queue, 8u));
+    CHECK(mr_input_command_queue_enqueue(&queue, &hover) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &hover_later) == MR_INPUT_ENQUEUE_COALESCED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &down) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_reserved_count(&queue) == 1u);
+    CHECK(mr_input_command_queue_enqueue(&queue, &move) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &move_later) == MR_INPUT_ENQUEUE_COALESCED);
+    CHECK(mr_input_command_queue_enqueue(&queue, &up) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_reserved_count(&queue) == 0u);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.pen.x == 2u);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.pen.action == MR_RDP_PEN_DOWN);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.pen.x == 4u);
+    return 1;
+}
+
 int main(void)
 {
     const test_case tests[] = {
@@ -519,7 +612,10 @@ int main(void)
         { "reset", test_reset_discards_commands_and_reservations },
         { "multiple reservations", test_multiple_release_reservations },
         { "non-transition drop", test_non_transition_drops_only_without_coalescing_route },
-        { "unicode tap", test_unicode_tap_owes_nothing_and_drops_when_full }
+        { "unicode tap", test_unicode_tap_owes_nothing_and_drops_when_full },
+        { "touch release", test_touch_contacts_owe_their_release },
+        { "touch lift slot", test_a_full_queue_keeps_room_for_a_lift },
+        { "pen coalescing", test_pen_hover_and_moves_coalesce }
     };
     size_t index;
     for (index = 0u; index < sizeof(tests) / sizeof(tests[0]); ++index) {

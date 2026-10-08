@@ -78,6 +78,17 @@ static int mr_input_command_is_down(
         out_reservation->button = command->value.pointer.button;
         return 1;
     }
+    if (command->kind == MR_INPUT_COMMAND_TOUCH &&
+        command->value.touch.action == MR_RDP_TOUCH_DOWN) {
+        out_reservation->kind = MR_INPUT_RELEASE_TOUCH;
+        out_reservation->contact_id = command->value.touch.contact_id;
+        return 1;
+    }
+    if (command->kind == MR_INPUT_COMMAND_PEN &&
+        command->value.pen.action == MR_RDP_PEN_DOWN) {
+        out_reservation->kind = MR_INPUT_RELEASE_PEN;
+        return 1;
+    }
     return 0;
 }
 
@@ -103,6 +114,18 @@ static int mr_input_command_is_up(
         out_reservation->button = command->value.pointer.button;
         return 1;
     }
+    if (command->kind == MR_INPUT_COMMAND_TOUCH &&
+        (command->value.touch.action == MR_RDP_TOUCH_UP ||
+         command->value.touch.action == MR_RDP_TOUCH_CANCEL)) {
+        out_reservation->kind = MR_INPUT_RELEASE_TOUCH;
+        out_reservation->contact_id = command->value.touch.contact_id;
+        return 1;
+    }
+    if (command->kind == MR_INPUT_COMMAND_PEN &&
+        command->value.pen.action == MR_RDP_PEN_UP) {
+        out_reservation->kind = MR_INPUT_RELEASE_PEN;
+        return 1;
+    }
     return 0;
 }
 
@@ -117,6 +140,12 @@ static int mr_input_release_equal(
         return left->key_code == right->key_code &&
             left->extended == right->extended &&
             left->extended1 == right->extended1;
+    }
+    if (left->kind == MR_INPUT_RELEASE_TOUCH) {
+        return left->contact_id == right->contact_id;
+    }
+    if (left->kind == MR_INPUT_RELEASE_PEN) {
+        return 1;
     }
     return left->button == right->button;
 }
@@ -224,6 +253,35 @@ mr_input_enqueue_result mr_input_command_queue_enqueue(
         }
         mr_input_queue_append(queue, command);
         return MR_INPUT_ENQUEUE_QUEUED;
+    }
+    if (command->kind == MR_INPUT_COMMAND_TOUCH || command->kind == MR_INPUT_COMMAND_PEN) {
+        /* A move for the same contact - or the pen's hover or move - replaces
+         * the one right before it; nothing else is ever reordered. */
+        if (queue->count > 0u) {
+            mr_input_command *tail = &queue->commands[
+                mr_input_queue_index(queue, queue->count - 1u)];
+            if (command->kind == MR_INPUT_COMMAND_TOUCH &&
+                tail->kind == MR_INPUT_COMMAND_TOUCH &&
+                tail->value.touch.action == MR_RDP_TOUCH_MOVE &&
+                command->value.touch.action == MR_RDP_TOUCH_MOVE &&
+                tail->value.touch.contact_id == command->value.touch.contact_id) {
+                *tail = *command;
+                return MR_INPUT_ENQUEUE_COALESCED;
+            }
+            if (command->kind == MR_INPUT_COMMAND_PEN &&
+                tail->kind == MR_INPUT_COMMAND_PEN &&
+                tail->value.pen.action == command->value.pen.action &&
+                (command->value.pen.action == MR_RDP_PEN_HOVER ||
+                 command->value.pen.action == MR_RDP_PEN_MOVE)) {
+                *tail = *command;
+                return MR_INPUT_ENQUEUE_COALESCED;
+            }
+        }
+        if (mr_input_queue_free(queue) > 0u) {
+            mr_input_queue_append(queue, command);
+            return MR_INPUT_ENQUEUE_QUEUED;
+        }
+        return MR_INPUT_ENQUEUE_DROPPED;
     }
     if (command->kind != MR_INPUT_COMMAND_POINTER) {
         return MR_INPUT_ENQUEUE_INVALID;

@@ -132,7 +132,7 @@ static int test_config_scale_defaults_and_validation(void)
 {
     mr_rdp_config config;
     initialize_config(&config, 1u);
-    REQUIRE(config.abi_version == 3u);
+    REQUIRE(config.abi_version == MR_RDP_BRIDGE_ABI_VERSION && MR_RDP_BRIDGE_ABI_VERSION >= 3u);
     REQUIRE(config.desktop_scale_factor == 100u);
     REQUIRE(config.device_scale_factor == 100u);
 

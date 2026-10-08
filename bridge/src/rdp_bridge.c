@@ -244,17 +244,23 @@ mr_rdp_status mr_rdp_sha256(
     return MR_RDP_STATUS_OK;
 }
 
+static void mr_secure_free(char **value, size_t *length)
+{
+    if (*value != NULL) {
+        mr_secure_zero(*value, *length + 1u);
+        free(*value);
+        *value = NULL;
+    }
+    *length = 0u;
+}
+
 static void mr_owned_config_clear_password(mr_rdp_owned_config *config)
 {
     if (config == NULL) {
         return;
     }
-    if (config->password != NULL) {
-        mr_secure_zero(config->password, config->password_length + 1u);
-        free(config->password);
-        config->password = NULL;
-    }
-    config->password_length = 0u;
+    mr_secure_free(&config->password, &config->password_length);
+    mr_secure_free(&config->gateway_password, &config->gateway_password_length);
 }
 
 static void mr_owned_config_destroy(mr_rdp_owned_config *config)
@@ -271,6 +277,11 @@ static void mr_owned_config_destroy(mr_rdp_owned_config *config)
         mr_secure_zero(config->domain, config->domain_length + 1u);
         free(config->domain);
     }
+    mr_secure_free(&config->gateway_username, &config->gateway_username_length);
+    mr_secure_free(&config->gateway_domain, &config->gateway_domain_length);
+    free(config->gateway_hostname);
+    free(config->drive_path);
+    free(config->drive_name);
     free(config->hostname);
     memset(config, 0, sizeof(*config));
 }
@@ -419,6 +430,7 @@ static void mr_emit_error(mr_rdp_session *session, mr_rdp_status status, int32_t
 
 static mr_rdp_status mr_bridge_present_certificate(
     void *context,
+    mr_rdp_certificate_role role,
     const mr_rdp_der_blob *chain,
     size_t chain_count)
 {
@@ -432,6 +444,10 @@ static mr_rdp_status mr_bridge_present_certificate(
     int wait_status = 0;
     int invoke_callback;
 
+    if (role != MR_RDP_CERTIFICATE_ROLE_SERVER &&
+        (role != MR_RDP_CERTIFICATE_ROLE_GATEWAY || session->config.gateway_hostname == NULL)) {
+        return MR_RDP_ERROR_INVALID_DATA;
+    }
     status = mr_certificate_snapshot_create(chain, chain_count, &snapshot);
     if (status != MR_RDP_STATUS_OK) {
         return status;
@@ -471,9 +487,16 @@ static mr_rdp_status mr_bridge_present_certificate(
         challenge.struct_size = (uint32_t)sizeof(challenge);
         challenge.generation = session->config.generation;
         challenge.challenge_id = challenge_id;
-        challenge.hostname = session->config.hostname;
-        challenge.hostname_length = session->config.hostname_length;
-        challenge.port = session->config.port;
+        challenge.role = role;
+        if (role == MR_RDP_CERTIFICATE_ROLE_GATEWAY) {
+            challenge.hostname = session->config.gateway_hostname;
+            challenge.hostname_length = session->config.gateway_hostname_length;
+            challenge.port = session->config.gateway_port;
+        } else {
+            challenge.hostname = session->config.hostname;
+            challenge.hostname_length = session->config.hostname_length;
+            challenge.port = session->config.port;
+        }
         challenge.chain = snapshot.chain;
         challenge.chain_count = snapshot.chain_count;
         callback(session->callback_context, &challenge);
@@ -657,7 +680,7 @@ static mr_rdp_status mr_bridge_channel_event(
     mr_rdp_channel_event event;
     mr_rdp_status status;
     uint64_t sequence;
-    if (channel < MR_RDP_CHANNEL_CLIPRDR || channel > MR_RDP_CHANNEL_RDPGFX ||
+    if (channel < MR_RDP_CHANNEL_CLIPRDR || channel > MR_RDP_CHANNEL_RDPDR ||
         transition > MR_RDP_CHANNEL_CONNECTED) {
         return MR_RDP_ERROR_INVALID_DATA;
     }
@@ -750,6 +773,17 @@ static mr_rdp_status mr_validate_display_resize_request(
          !mr_valid_device_scale_factor(request->device_scale_factor))) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
+    if (request->secondary_width == 0u && request->secondary_height == 0u) {
+        return MR_RDP_STATUS_OK;
+    }
+    if (request->secondary_width < MR_RDP_MIN_DESKTOP_DIMENSION ||
+        request->secondary_width > MR_RDP_MAX_DESKTOP_DIMENSION ||
+        (request->secondary_width & 1u) != 0u ||
+        request->secondary_height < MR_RDP_MIN_DESKTOP_DIMENSION ||
+        request->secondary_height > MR_RDP_MAX_DESKTOP_DIMENSION ||
+        request->width + request->secondary_width > MR_RDP_MAX_VIRTUAL_DESKTOP_WIDTH) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
     return MR_RDP_STATUS_OK;
 }
 
@@ -785,6 +819,8 @@ static mr_rdp_status mr_bridge_display_resize_event(
     event.request_id = request->request_id;
     event.width = request->width;
     event.height = request->height;
+    event.secondary_width = request->secondary_width;
+    event.secondary_height = request->secondary_height;
     callback(session->callback_context, &event);
     return MR_RDP_STATUS_OK;
 }
@@ -1072,6 +1108,24 @@ void mr_rdp_unicode_event_init(mr_rdp_unicode_event *event)
     event->struct_size = (uint32_t)sizeof(*event);
 }
 
+void mr_rdp_touch_event_init(mr_rdp_touch_event *event)
+{
+    if (event == NULL) {
+        return;
+    }
+    memset(event, 0, sizeof(*event));
+    event->struct_size = (uint32_t)sizeof(*event);
+}
+
+void mr_rdp_pen_event_init(mr_rdp_pen_event *event)
+{
+    if (event == NULL) {
+        return;
+    }
+    memset(event, 0, sizeof(*event));
+    event->struct_size = (uint32_t)sizeof(*event);
+}
+
 void mr_rdp_clipboard_offer_init(mr_rdp_clipboard_offer *offer)
 {
     if (offer == NULL) {
@@ -1079,6 +1133,80 @@ void mr_rdp_clipboard_offer_init(mr_rdp_clipboard_offer *offer)
     }
     memset(offer, 0, sizeof(*offer));
     offer->struct_size = (uint32_t)sizeof(*offer);
+}
+
+/* A span that is either absent (NULL/0, when allowed) or 1...maximum bytes
+ * with no embedded NUL. */
+static int mr_valid_span(const char *bytes, size_t length, size_t maximum, int optional)
+{
+    if (bytes == NULL || length == 0u) {
+        return optional && bytes == NULL && length == 0u;
+    }
+    return length <= maximum && memchr(bytes, '\0', length) == NULL;
+}
+
+static mr_rdp_status mr_validate_gateway(const mr_rdp_config *config)
+{
+    const int same = (config->gateway_flags & MR_RDP_GATEWAY_FLAG_SAME_CREDENTIALS) != 0u;
+    size_t hostname_length;
+    if (config->reserved_abi4 != 0u ||
+        (config->gateway_flags &
+         ~(mr_rdp_gateway_flags)(MR_RDP_GATEWAY_FLAG_SAME_CREDENTIALS |
+                                 MR_RDP_GATEWAY_FLAG_BYPASS_LOCAL)) != 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if (config->gateway_hostname == NULL) {
+        return config->gateway_flags == 0u && config->gateway_port == 0u &&
+                config->gateway_username == NULL && config->gateway_username_length == 0u &&
+                config->gateway_domain == NULL && config->gateway_domain_length == 0u &&
+                config->gateway_password == NULL && config->gateway_password_length == 0u
+            ? MR_RDP_STATUS_OK
+            : MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    hostname_length = mr_bounded_string_length(config->gateway_hostname, 253u);
+    if (hostname_length == 0u || hostname_length > 253u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if (same) {
+        return config->gateway_username == NULL && config->gateway_username_length == 0u &&
+                config->gateway_domain == NULL && config->gateway_domain_length == 0u &&
+                config->gateway_password == NULL && config->gateway_password_length == 0u
+            ? MR_RDP_STATUS_OK
+            : MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    return mr_valid_span(config->gateway_username, config->gateway_username_length,
+                         MR_RDP_MAX_USERNAME_BYTES, 0) &&
+            mr_valid_span(config->gateway_domain, config->gateway_domain_length,
+                          MR_RDP_MAX_DOMAIN_BYTES, 1) &&
+            mr_valid_span(config->gateway_password, config->gateway_password_length,
+                          MR_RDP_MAX_PASSWORD_BYTES, 0)
+        ? MR_RDP_STATUS_OK
+        : MR_RDP_ERROR_INVALID_ARGUMENT;
+}
+
+static mr_rdp_status mr_validate_drive(const mr_rdp_config *config)
+{
+    size_t index;
+    if ((config->channel_flags & MR_RDP_CHANNEL_FLAG_DRIVE) == 0u) {
+        return config->drive_path == NULL && config->drive_path_length == 0u &&
+                config->drive_name == NULL && config->drive_name_length == 0u
+            ? MR_RDP_STATUS_OK
+            : MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if (!mr_valid_span(config->drive_path, config->drive_path_length,
+                       MR_RDP_MAX_DRIVE_PATH_BYTES, 0) ||
+        config->drive_path[0] != '/' ||
+        !mr_valid_span(config->drive_name, config->drive_name_length,
+                       MR_RDP_MAX_DRIVE_NAME_BYTES, 0)) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    for (index = 0u; index < config->drive_name_length; ++index) {
+        const char c = config->drive_name[index];
+        if (c < 0x20 || c > 0x7e || strchr("\\/:*?\"<>|;", c) != NULL) {
+            return MR_RDP_ERROR_INVALID_ARGUMENT;
+        }
+    }
+    return MR_RDP_STATUS_OK;
 }
 
 static mr_rdp_status mr_validate_config(const mr_rdp_config *config, size_t *out_hostname_length)
@@ -1103,7 +1231,13 @@ static mr_rdp_status mr_validate_config(const mr_rdp_config *config, size_t *out
         config->keyboard_profile > MR_RDP_KEYBOARD_AUTOMATIC ||
         (config->channel_flags &
          ~(mr_rdp_channel_flags)(MR_RDP_CHANNEL_FLAG_AUDIO |
-                                 MR_RDP_CHANNEL_FLAG_CLIPBOARD)) != 0u) {
+                                 MR_RDP_CHANNEL_FLAG_CLIPBOARD |
+                                 MR_RDP_CHANNEL_FLAG_DRIVE |
+                                 MR_RDP_CHANNEL_FLAG_TOUCH)) != 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if (mr_validate_gateway(config) != MR_RDP_STATUS_OK ||
+        mr_validate_drive(config) != MR_RDP_STATUS_OK) {
         return MR_RDP_ERROR_INVALID_ARGUMENT;
     }
     if (!mr_valid_desktop_scale_factor(config->desktop_scale_factor) ||
@@ -1234,6 +1368,61 @@ mr_rdp_status mr_rdp_session_create_internal(
     if (status != MR_RDP_STATUS_OK) {
         goto fail;
     }
+    if (config->gateway_hostname != NULL) {
+        session->config.gateway_hostname_length =
+            mr_bounded_string_length(config->gateway_hostname, 253u);
+        status = mr_copy_string_span(
+            config->gateway_hostname, session->config.gateway_hostname_length,
+            &session->config.gateway_hostname);
+        if (status != MR_RDP_STATUS_OK) {
+            goto fail;
+        }
+        session->config.gateway_port = config->gateway_port == 0u
+            ? (uint16_t)MR_RDP_DEFAULT_GATEWAY_PORT
+            : config->gateway_port;
+        session->config.gateway_flags = config->gateway_flags;
+        if (config->gateway_username != NULL) {
+            session->config.gateway_username_length = config->gateway_username_length;
+            status = mr_copy_string_span(
+                config->gateway_username, config->gateway_username_length,
+                &session->config.gateway_username);
+            if (status != MR_RDP_STATUS_OK) {
+                goto fail;
+            }
+        }
+        if (config->gateway_domain != NULL) {
+            session->config.gateway_domain_length = config->gateway_domain_length;
+            status = mr_copy_string_span(
+                config->gateway_domain, config->gateway_domain_length,
+                &session->config.gateway_domain);
+            if (status != MR_RDP_STATUS_OK) {
+                goto fail;
+            }
+        }
+        if (config->gateway_password != NULL) {
+            session->config.gateway_password_length = config->gateway_password_length;
+            status = mr_copy_string_span(
+                config->gateway_password, config->gateway_password_length,
+                &session->config.gateway_password);
+            if (status != MR_RDP_STATUS_OK) {
+                goto fail;
+            }
+        }
+    }
+    if (config->drive_path != NULL) {
+        session->config.drive_path_length = config->drive_path_length;
+        status = mr_copy_string_span(
+            config->drive_path, config->drive_path_length, &session->config.drive_path);
+        if (status != MR_RDP_STATUS_OK) {
+            goto fail;
+        }
+        session->config.drive_name_length = config->drive_name_length;
+        status = mr_copy_string_span(
+            config->drive_name, config->drive_name_length, &session->config.drive_name);
+        if (status != MR_RDP_STATUS_OK) {
+            goto fail;
+        }
+    }
     session->callback_context = context;
     session->state = MR_RDP_SESSION_CREATED;
 
@@ -1274,6 +1463,8 @@ mr_rdp_status mr_rdp_session_create_internal(
         session->backend->vtable->set_audio_focused == NULL ||
         session->backend->vtable->offer_clipboard_text == NULL ||
         session->backend->vtable->request_clipboard_text == NULL ||
+        session->backend->vtable->send_touch == NULL ||
+        session->backend->vtable->send_pen == NULL ||
         session->backend->vtable->destroy == NULL) {
         if (status == MR_RDP_STATUS_OK) {
             status = MR_RDP_ERROR_BACKEND;
@@ -1687,6 +1878,77 @@ mr_rdp_status mr_rdp_session_send_unicode(
         return status;
     }
     status = backend->vtable->send_unicode(backend, event);
+    mr_api_call_finished(session);
+    return status;
+}
+
+static mr_rdp_status mr_validate_touch_event(const mr_rdp_touch_event *event)
+{
+    if (event == NULL || event->struct_size < sizeof(*event) ||
+        event->contact_id > MR_RDP_MAX_TOUCH_CONTACT_ID ||
+        event->x > MR_RDP_MAX_VIRTUAL_DESKTOP_WIDTH ||
+        event->y > MR_RDP_MAX_DESKTOP_DIMENSION ||
+        event->action > MR_RDP_TOUCH_CANCEL ||
+        event->reserved[0] != 0u || event->reserved[1] != 0u || event->reserved[2] != 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    return MR_RDP_STATUS_OK;
+}
+
+static mr_rdp_status mr_validate_pen_event(const mr_rdp_pen_event *event)
+{
+    if (event == NULL || event->struct_size < sizeof(*event) ||
+        event->x > MR_RDP_MAX_VIRTUAL_DESKTOP_WIDTH ||
+        event->y > MR_RDP_MAX_DESKTOP_DIMENSION ||
+        event->pressure > MR_RDP_MAX_PEN_PRESSURE ||
+        event->tilt_x < -90 || event->tilt_x > 90 ||
+        event->tilt_y < -90 || event->tilt_y > 90 ||
+        event->rotation > 359u ||
+        event->action > MR_RDP_PEN_UP ||
+        (event->flags & ~(mr_rdp_pen_flags)(MR_RDP_PEN_FLAG_BARREL | MR_RDP_PEN_FLAG_ERASER)) != 0u) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    return MR_RDP_STATUS_OK;
+}
+
+mr_rdp_status mr_rdp_session_send_touch(
+    mr_rdp_session *session,
+    const mr_rdp_touch_event *event)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_status status;
+    if (session == NULL || mr_validate_touch_event(event) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if ((session->config.channel_flags & MR_RDP_CHANNEL_FLAG_TOUCH) == 0u) {
+        return MR_RDP_ERROR_UNSUPPORTED;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    status = backend->vtable->send_touch(backend, event);
+    mr_api_call_finished(session);
+    return status;
+}
+
+mr_rdp_status mr_rdp_session_send_pen(
+    mr_rdp_session *session,
+    const mr_rdp_pen_event *event)
+{
+    mr_rdp_backend *backend = NULL;
+    mr_rdp_status status;
+    if (session == NULL || mr_validate_pen_event(event) != MR_RDP_STATUS_OK) {
+        return MR_RDP_ERROR_INVALID_ARGUMENT;
+    }
+    if ((session->config.channel_flags & MR_RDP_CHANNEL_FLAG_TOUCH) == 0u) {
+        return MR_RDP_ERROR_UNSUPPORTED;
+    }
+    status = mr_api_call_begin(session, 1, &backend);
+    if (status != MR_RDP_STATUS_OK) {
+        return status;
+    }
+    status = backend->vtable->send_pen(backend, event);
     mr_api_call_finished(session);
     return status;
 }
