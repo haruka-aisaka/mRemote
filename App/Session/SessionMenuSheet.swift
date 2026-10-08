@@ -518,7 +518,11 @@ extension SessionMenuSheet {
         } header: {
             Text("クリップボード")
         } footer: {
-            if model.remoteHasText || model.remoteHasImage || model.remoteHasFiles {
+            if Platform.isMac {
+                // The Mac mirrors text and images by itself; the buttons
+                // above remain for files and for pasting by hand.
+                Text("Mac とリモートのクリップボードは自動で同期します（テキストと画像）。ファイルはここから送受信します")
+            } else if model.remoteHasText || model.remoteHasImage || model.remoteHasFiles {
                 Text(model.remoteHasFiles ? String(localized: "リモートにファイルがあります")
                      : model.remoteHasImage ? String(localized: "リモートに画像があります")
                      : String(localized: "リモートにテキストがあります"))

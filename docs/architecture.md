@@ -296,13 +296,21 @@ Phase 5 で session 別 SPSC ring と focused-session policy を接続するに�
 
 `bidirectional` は許可方向であって自動監視を意味しない。このユーザー操作中心の設計は、iOS のペースト許可 UI を不必要に誘発せず、別アプリのクリップボードを常時監視しないためでもある。
 
+Mac（Mac Catalyst）だけは例外で、許可された方向について透過的に同期する（`ClipboardMirror`、2026-10-08 にユーザー要望で追加）。
+
+- ローカル→リモート: セッションがキーボードを持っている（focused かつ接続中）間、0.5 秒ごとに `UIPasteboard.changeCount` だけを見る。値が変わったときに限り内容を一度読み、テキスト（なければ画像）を announce する。paste chord は送らず、Windows 側で普通に貼り付ける。別アプリでコピーしてから戻ってきた場合も、前面に戻った時点で拾う。
+- リモート→ローカル: remote format list が来たら、テキスト（なければ画像）を取得して pasteboard に書く。ファイルは従来どおりメニューから明示的に保存する。
+- 反射防止: 自分で書いた pasteboard の change count は処理済みとして扱い、送り返さない。両側が同じテキストを持っている間は、同じテキストを再度 offer/write しない。
+- macOS 26 の VM では、この読み取りでペースト許可の確認は出なかった。
+- `ClipboardPolicy.disabled` なら監視自体を始めない。送信のみ/受信のみはその方向だけ同期する。
+
 ## 10. アプリライフサイクル
 
 | イベント | 動作 |
 |---|---|
 | RDP surface の focus 喪失 | 押下中キー/ボタンを解放し、入力送信を gate する |
 | セッション切替 | 旧セッションの入力を解放、音声 mute、新セッションを focus |
-| scene inactive | 全セッションの入力を解放、機密画面を app switcher 用 cover で隠す |
+| scene inactive | 全セッションの入力を解放、機密画面を app switcher 用 cover で隠す。Mac では別アプリの後ろにあるウインドウも画面に見えているので、inactive では何もしない（cover も出さない）。最小化・隠したときの background だけを扱う |
 | background | presentation/audio を停止し、OS に任せる。無期限 socket 維持は保証しない |
 | foreground | protected data/Keychain と network path が利用可能になってから socket/session の生存を検査し、切断なら再接続 UI/設定済み policy を適用。同一 generation の再接続を一つにまとめる |
 | memory warning | 非表示 texture/snapshot、診断履歴を優先的に破棄 |

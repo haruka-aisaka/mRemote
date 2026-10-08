@@ -60,7 +60,8 @@ public enum KeyboardLayoutPreference: String, Hashable, Sendable, Codable, CaseI
 public enum ClipboardPolicy: String, Hashable, Sendable, Codable, CaseIterable {
     case disabled
     /// Permission to transfer in both directions on an explicit user action.
-    /// It does not mean the pasteboard is monitored.
+    /// It does not mean the pasteboard is monitored - except on the Mac,
+    /// where the app mirrors the permitted directions by itself.
     case bidirectional
     case sendOnly
     case receiveOnly

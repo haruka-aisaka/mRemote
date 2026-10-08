@@ -107,8 +107,19 @@ struct ConnectionListView: View {
             case .editor(let model):
                 ProfileEditorView(model: model)
                     .presentationDetents([.large])
+                    .macSheetSize()
             case .settings:
                 SettingsView()
+                    .macSheetSize()
+            }
+        }
+        // The Mac's menu bar: 設定… (⌘,) and 新しい接続先… (⌘N).
+        .onChange(of: environment.listRequest, initial: true) { _, request in
+            guard let request else { return }
+            environment.listRequest = nil
+            switch request {
+            case .settings: route = .settings
+            case .newConnection: route = .editor(ProfileEditorModel(mode: .create))
             }
         }
     }
@@ -255,11 +266,15 @@ struct ConnectionListView: View {
             }
         }
         .contextMenu {
-            Button("新しいセッションで接続") {
-                Task { await environment.connect(to: profile) }
+            // On the Mac every connection is already a window of its own, so
+            // neither of these is offered there.
+            if !Platform.isMac {
+                Button("新しいセッションで接続") {
+                    Task { await environment.connect(to: profile) }
+                }
+                .accessibilityIdentifier("connect-new-session")
             }
-            .accessibilityIdentifier("connect-new-session")
-            if UIApplication.shared.supportsMultipleScenes {
+            if UIApplication.shared.supportsMultipleScenes, !Platform.isMac {
                 Button("新しいウィンドウで接続") {
                     openWindow(value: profile.id.rawValue)
                 }

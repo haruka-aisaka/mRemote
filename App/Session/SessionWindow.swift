@@ -26,6 +26,10 @@ struct SessionWindowRoot: View {
                 ProgressView()
             }
         }
+        .macWindow(
+            title: model?.displayName,
+            minimumSize: CGSize(width: 640, height: 400)
+        )
         .task { await attach() }
         // The window in front is the one that types.
         .onChange(of: scenePhase) { _, phase in
@@ -46,14 +50,32 @@ struct SessionWindowRoot: View {
         }
     }
 
+    /// The Mac has the list in a window of its own, so a session window with
+    /// nothing to show simply closes.
+    private func showMissing() {
+        if Platform.isMac {
+            dismissWindow()
+        } else {
+            isMissing = true
+        }
+    }
+
     private func attach() async {
         guard model == nil else { return }
-        for _ in 0..<100 where environment.repository == nil {
+        for _ in 0..<300 where environment.repository == nil {
             try? await Task.sleep(for: .milliseconds(30))
         }
         guard let profileID,
               let profile = environment.profiles.first(where: { $0.id.rawValue == profileID }) else {
-            isMissing = true
+            showMissing()
+            return
+        }
+        // The Mac reopens the last run's windows at launch; a session is only
+        // connected when someone asked for it.
+        if Platform.isMac,
+           environment.requestedSessionWindows.remove(profileID) == nil,
+           environment.runningSession(for: profile) == nil {
+            dismissWindow()
             return
         }
         let attached: SessionWorkspaceModel?
@@ -68,7 +90,7 @@ struct SessionWindowRoot: View {
             attached = await environment.connect(to: profile, presents: false)
         }
         guard let attached else {
-            isMissing = true
+            showMissing()
             return
         }
         attached.closeWindow = { dismissWindow() }

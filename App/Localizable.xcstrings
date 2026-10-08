@@ -319,6 +319,16 @@
         }
       }
     },
+    "Mac とリモートのクリップボードは自動で同期します（テキストと画像）。ファイルはここから送受信します": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Mac and remote clipboards stay in sync automatically (text and images). Send and receive files here."
+          }
+        }
+      }
+    },
     "NLA 必須": {
       "localizations": {
         "en": {
@@ -1539,6 +1549,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "The password is stored only in the Keychain and never written to the settings file."
+          }
+        }
+      }
+    },
+    "パスワードを保存できませんでした（%@）。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The password couldn't be saved (%@)."
           }
         }
       }
@@ -2993,6 +3013,16 @@
         }
       }
     },
+    "接続先の一覧": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Computers"
+          }
+        }
+      }
+    },
     "接続先を IP アドレスで指定したため、証明書のホスト名は検証されていません。Windows の自己署名証明書はコンピューター名しか持たないため、IP 指定では照合が成立しません。識別の根拠はフィンガープリントだけです。": {
       "localizations": {
         "en": {
@@ -3109,6 +3139,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connect in a New Session"
+          }
+        }
+      }
+    },
+    "新しい接続先…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Computer…"
           }
         }
       }
@@ -3699,6 +3739,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Settings"
+          }
+        }
+      }
+    },
+    "設定…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings…"
           }
         }
       }

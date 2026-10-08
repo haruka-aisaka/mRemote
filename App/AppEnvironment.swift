@@ -33,6 +33,19 @@ final class AppEnvironment {
     private(set) var wakingProfileID: ProfileID?
     /// Said once on the list, then cleared: a wake that could not be sent.
     var listMessage: String?
+    /// What the menu bar asked the list to show, taken and cleared by it.
+    var listRequest: ListRequest?
+    /// Opens, or brings forward, the window for a connection. Set by the
+    /// scene, because only a view can open a window; on the Mac every
+    /// session is shown this way.
+    @ObservationIgnored var openSessionWindow: ((UUID) -> Void)?
+    /// Session windows asked for in this run. On the Mac the system also
+    /// brings back the windows of the last run; those close rather than
+    /// connect on their own at launch.
+    @ObservationIgnored var requestedSessionWindows: Set<UUID> = []
+    /// How many list windows are open, so the menu bar opens one only when
+    /// there is none.
+    @ObservationIgnored var listWindowCount = 0
     /// Sessions that are still connected while the user is back on the list.
     /// SES-02 keeps a foreground connection alive until an explicit
     /// disconnect, so without this they would be running with no way back to
@@ -208,7 +221,10 @@ final class AppEnvironment {
             try await repository.upsert(profile)
             await refresh()
         } catch {
-            loadFailure = String(describing: error)
+            // The connection itself went ahead; only the saving failed, so the
+            // list stays and says so once. (A Mac build signed without a team
+            // cannot reach the Keychain: errSecMissingEntitlement.)
+            listMessage = String(localized: "パスワードを保存できませんでした（\(String(describing: error))）。")
             logger.error("saving a connection credential failed")
         }
     }
@@ -244,6 +260,12 @@ final class AppEnvironment {
     }
 
     func connect(to profile: ConnectionProfile) async {
+        // The Mac: a window per session, the list stays where it is. The
+        // window connects when it opens (SessionWindowRoot).
+        if Platform.isMac, let openSessionWindow {
+            openSessionWindow(profile.id.rawValue)
+            return
+        }
         await connect(to: profile, presents: true)
     }
 
@@ -314,6 +336,12 @@ final class AppEnvironment {
         // A session in a window of its own is shown there, never twice.
         if model.isWindowed {
             model.requestWindowFront?()
+            return
+        }
+        // The Mac never shows a session over the list: a session whose window
+        // was closed comes back in a new one.
+        if Platform.isMac, let openSessionWindow, let profileID = model.configuration.profileID {
+            openSessionWindow(profileID.rawValue)
             return
         }
         presentedSession = model
@@ -389,4 +417,10 @@ actor FailingProfileStore: ProfileStore {
     func save(_ document: ProfileDocument) throws {
         throw StoreError.malformedDocument(detail: reason)
     }
+}
+
+/// The list's own sheets, opened from the Mac's menu bar.
+enum ListRequest {
+    case settings
+    case newConnection
 }

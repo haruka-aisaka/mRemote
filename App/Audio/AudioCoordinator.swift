@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import AppleAdapters
 
 /// The one audio engine, playing exactly one session: the focused one.

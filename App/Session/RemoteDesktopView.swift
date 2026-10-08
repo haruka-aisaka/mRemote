@@ -131,6 +131,9 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// Buttons the platform reports as held right now. Kept so a touch phase
     /// that carries no button mask does not read as "everything released".
     private var indirectButtons: Set<PointerButton> = []
+    /// The Mac's right and middle buttons, which arrive from AppKit rather
+    /// than with the touches (`MacKeyboardCapture`).
+    private var macButtons: Set<PointerButton> = []
     /// Buttons held on the laptop deck's trackpad, which has its own: a
     /// tap-to-click there must not let go of a drag held with its button.
     private var laptopButtons: Set<PointerButton> = []
@@ -605,6 +608,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     func releaseHeldButtons() {
         liftTouches()
         indirectButtons = []
+        macButtons = []
         laptopButtons = []
         touchButtons = []
         deliver(pointerRouter.releaseAll())
@@ -753,7 +757,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // event presses the survivor again - a visible flicker, but the
         // alternative is a button left down on the server. The baseline device
         // is a Magic Keyboard trackpad, which has one button.
-        let buttons = ending ? [] : Self.pointerButtons(in: event?.buttonMask ?? [])
+        let buttons = (ending ? [] : Self.pointerButtons(in: event?.buttonMask ?? [])).union(macButtons)
         indirectButtons = buttons
         deliver(pointerRouter.buttonsChanged(
             to: buttons,
@@ -1129,6 +1133,37 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         publishDiagnostics()
     }
 
+    /// The Mac's keys, from AppKit (`MacKeyboardCapture`): the same usages
+    /// `pressesBegan` would carry, for the keys UIKit does not deliver there.
+    private func receiveMac(usage: UInt16, transition: InputTransition) {
+        apply(keyboard.receive(usage: usage, transition: transition, from: .uiKit))
+        publishDiagnostics()
+    }
+
+    /// A Mac right (1) or middle (2) click, pressed where the pointer is
+    /// hovering. A click anywhere else - another window, a sheet - is left
+    /// to the Mac.
+    private func receiveMacButton(_ number: UInt16, pressed: Bool) -> Bool {
+        let button: PointerButton
+        switch number {
+        case 1: button = .right
+        case 2: button = .middle
+        default: return false
+        }
+        guard isInputEnabled, window?.isKeyWindow == true, let hoverLocation else {
+            // A release still lands, so nothing stays held on the host.
+            guard !pressed, macButtons.contains(button) else { return false }
+            macButtons.remove(button)
+            indirectButtons.remove(button)
+            deliver(pointerRouter.buttonsChanged(to: indirectButtons, at: nil))
+            return true
+        }
+        if pressed { macButtons.insert(button) } else { macButtons.remove(button) }
+        if pressed { indirectButtons.insert(button) } else { indirectButtons.remove(button) }
+        deliver(pointerRouter.buttonsChanged(to: indirectButtons, at: viewportPoint(hoverLocation)))
+        return true
+    }
+
     private func gameControllerKeyboardDisconnected() {
         stopKeyRepeat()
         send(keyboard.sourceDisconnected(.gameController))
@@ -1185,6 +1220,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         super.didMoveToWindow()
         guard window != nil else {
             HardwareKeyboardMonitor.shared.release(self)
+            MacKeyboardCapture.shared.release(self)
             releaseHeldButtons()
             releaseHeldKeys(reason: .surfaceRemoved)
             return
@@ -1195,6 +1231,18 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             },
             onDisconnect: { [weak self] in
                 self?.gameControllerKeyboardDisconnected()
+            }
+        ))
+        MacKeyboardCapture.shared.claim(self, target: .init(
+            isCapturing: { [weak self] in
+                guard let self else { return false }
+                return isFirstResponder && window?.isKeyWindow == true && keyboard.isGateOpen
+            },
+            deliver: { [weak self] usage, transition in
+                self?.receiveMac(usage: usage, transition: transition)
+            },
+            pressButton: { [weak self] button, pressed in
+                self?.receiveMacButton(button, pressed: pressed) ?? false
             }
         ))
         captureKeyboardIfPossible()

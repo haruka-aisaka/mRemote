@@ -1,8 +1,9 @@
 # mRemote
 
-An RDP client for iPadOS/iOS. Its reason to exist is the Japanese keyboard:
-the Eisu and Kana keys on a physical JIS keyboard are sent to Windows as
-Muhenkan and Henkan instead of being consumed by the iPadOS input switcher.
+An RDP client for iPadOS/iOS, and for macOS through Mac Catalyst. Its reason
+to exist is the Japanese keyboard: the Eisu and Kana keys on a physical JIS
+keyboard are sent to Windows as Muhenkan and Henkan instead of being consumed
+by the system's input switcher.
 
 This is a personal project, developed by one person against one iPad, one
 keyboard and one Windows host. See
@@ -53,6 +54,15 @@ and the software keyboard with local/host IME modes and an extended key bar
 (6). Each phase's table in [`docs/roadmap.md`](docs/roadmap.md) marks what still
 needs the iPad and the Windows host.
 
+The Mac build is the same app through Mac Catalyst. Each connection opens in
+a window of its own beside the list, the Mac's keyboard and mouse go to
+Windows as they are (⌘ is the Windows key, ⌥ is Alt; 英数/かな are
+Muhenkan/Henkan; only ⌘Q, ⌘H, ⌘M, ⌘\` and ⌃⌘F stay with the Mac), and the
+iPad-only parts - the software keyboard, the laptop deck, the hinge - are left
+out. Text and images on the clipboard follow the user both ways without the
+session menu. It has been checked against the Windows host from a macOS 26 VM; see
+[`docs/input-design.md`](docs/input-design.md) section 12.
+
 ## Build and test
 
 The app target links the generated `artifacts/FreeRDP.xcframework` and
@@ -65,6 +75,10 @@ build; the app does not.
 # The app, its unit tests and the end-to-end UI test
 xcodebuild test -project mRemote.xcodeproj -scheme mRemote \
   -destination 'platform=iOS Simulator,name=iPad mini (A17 Pro)'
+
+# The Mac app (Mac Catalyst, Apple silicon)
+xcodebuild build -project mRemote.xcodeproj -scheme mRemote \
+  -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64'
 
 # Host-testable app layers
 swift test --package-path Packages/mRemoteKit
@@ -89,6 +103,15 @@ Building the native dependencies from source is documented in
 scripts/build-freerdp-xcframework.sh
 scripts/build-rdp-bridge-xcframework.sh
 ```
+
+Both XCFrameworks carry three slices: `ios-arm64`, `ios-arm64-simulator` and
+`ios-arm64-maccatalyst`. An artifact built before the Mac slice existed has
+to be rebuilt, or the Mac build will not link.
+
+The Mac app keeps passwords and approved certificates in the data-protection
+Keychain, which macOS only opens to an app signed with a team (the project's
+automatic signing does this). An ad-hoc signed build runs, but asks for the
+password and the certificate on every connection.
 
 ## License
 

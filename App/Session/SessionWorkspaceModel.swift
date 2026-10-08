@@ -54,6 +54,11 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     /// it coming back: pasting it straight back needs no new offer, because
     /// the remote still holds it (docs/architecture.md section 9).
     private var lastReceivedText: String?
+    /// The Mac only: the pasteboard and the remote clipboard kept the same
+    /// without being asked (`ClipboardMirror`).
+    @ObservationIgnored private var clipboardMirror = ClipboardMirror()
+    @ObservationIgnored private var clipboardWatch: Task<Void, Never>?
+    @ObservationIgnored private var isMirroringClipboard = false
     /// Built once in `init`; never replaced, so observation is not needed on
     /// the property itself - the controller is observable on its own.
     @ObservationIgnored private(set) var softwareKeyboard: SoftwareKeyboardController!
@@ -237,6 +242,9 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
                 await self?.apply(event)
             }
         }
+        if Platform.isMac, clipboardPolicy != .disabled {
+            watchMacPasteboard()
+        }
         do {
             try await session.connect()
         } catch {
@@ -297,6 +305,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             // what the remote holds.
             lastReceivedText = nil
             await refreshRemoteClipboardKinds()
+            if Platform.isMac { await mirrorRemoteClipboard() }
         case .microphone(let format):
             microphoneFormat = format
             if let format, let capable = session as? any MicrophoneCapableSession {
@@ -395,6 +404,80 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     }
 
     var clipboardPolicy: ClipboardPolicy { configuration.clipboardPolicy }
+
+    // MARK: Mac: a clipboard that follows the user
+
+    /// Looks at the pasteboard's change count twice a second while this
+    /// session has the keyboard, and offers Windows whatever is new. Reading
+    /// the count reads nothing of the content; the content is read only when
+    /// the count has moved. Copies made in another app while this window was
+    /// behind are picked up the moment it comes back to the front.
+    private func watchMacPasteboard() {
+        clipboardWatch?.cancel()
+        clipboardWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.mirrorLocalClipboard()
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    private func mirrorLocalClipboard() async {
+        guard clipboardPolicy.allowsSend, state == .connected, isFocused, !isMirroringClipboard,
+              !isTransferringClipboard, let clipboard = session as? any ClipboardCapableSession
+        else { return }
+        let pasteboard = UIPasteboard.general
+        guard clipboardMirror.takeLocalChange(changeCount: pasteboard.changeCount) else { return }
+        isMirroringClipboard = true
+        defer { isMirroringClipboard = false }
+        do {
+            if pasteboard.hasStrings, let text = pasteboard.string {
+                guard clipboardMirror.shouldOffer(text) else { return }
+                try await clipboard.offerClipboardText(text)
+                clipboardLog.info("mirrored local text: \(text.utf16.count, privacy: .public) units")
+            } else if pasteboard.hasImages, let image = pasteboard.image {
+                clipboardMirror.forgetText()
+                let encoded = ClipboardMedia.encode(image)
+                try await clipboard.offerClipboardImage(png: encoded.png, dib: encoded.dib)
+                clipboardLog.info("mirrored local image")
+            }
+        } catch {
+            // Tried again on the next change; a toast for a copy nobody asked
+            // to send would only be noise.
+            clipboardLog.error("mirroring local clipboard failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Windows copied something: text, or failing that an image, goes on the
+    /// Mac's pasteboard. Files stay on the menu's explicit save.
+    private func mirrorRemoteClipboard() async {
+        guard clipboardPolicy.allowsReceive, state == .connected, !isMirroringClipboard,
+              let clipboard = session as? any ClipboardCapableSession
+        else { return }
+        isMirroringClipboard = true
+        defer { isMirroringClipboard = false }
+        do {
+            if remoteHasText {
+                let text = try await clipboard.fetchRemoteClipboardText()
+                lastReceivedText = text
+                guard clipboardMirror.shouldWrite(text) else { return }
+                UIPasteboard.general.string = text
+                clipboardLog.info("mirrored remote text: \(text.utf16.count, privacy: .public) units")
+            } else if remoteHasImage {
+                guard let image = ClipboardMedia.image(from: try await clipboard.fetchRemoteClipboardImage()) else {
+                    return
+                }
+                clipboardMirror.forgetText()
+                UIPasteboard.general.image = image
+                clipboardLog.info("mirrored remote image")
+            } else {
+                return
+            }
+            clipboardMirror.wrote(changeCount: UIPasteboard.general.changeCount)
+        } catch {
+            clipboardLog.error("mirroring remote clipboard failed: \(String(describing: error), privacy: .public)")
+        }
+    }
 
     var canSendClipboard: Bool {
         clipboardPolicy.allowsSend && state == .connected
@@ -733,6 +816,8 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     func disconnect() async {
         MicrophoneCapture.shared.stop(for: self)
+        clipboardWatch?.cancel()
+        clipboardWatch = nil
         cancelReconnect()
         isMenuPresented = false
         softwareKeyboard.hide()

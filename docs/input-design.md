@@ -301,3 +301,29 @@ marked text がある最中に切り替える場合は確定またはキャン�
 - 開発 build 限定: 実機入力スパイク用の全 usage trace。画面上に記録中表示を出し、memory 上だけに保持する
 
 KeyProbe の全キー記録機能は研究用であり製品版へそのまま移植しない。診断ログはパスワード、`characters`、printable key sequence を記録せず、既定では永続化しない。
+
+## 12. Mac（Mac Catalyst）
+
+Mac 版は同じアプリを Mac Catalyst で動かす。入力の正規化（HID usage → scan code、調停、quarantine、リピート）は iPad と共通で、Mac で違うのは取得経路だけである。
+
+### 12.1 キーボード
+
+Mac Catalyst では `pressesBegan` に届かないキーが 2 種類ある（2026-10-08、macOS 26 VM で確認）。
+
+- 英数/かな: UIKit は `UIEvent type 4` を受け取るが、どのウインドウにも配送しない（`Sending UIEvent type: 4 … to windows: 0`）。
+- メニュー項目のキー（⌘W、⌘C、⌘N など）: `pressesBegan` より先にメニューの動作になる。⌘W ではセッションのウインドウが閉じた。
+
+このため Mac では、セッション面が key window の first responder で入力 gate が開いている間、AppKit の local event monitor（`NSEvent addLocalMonitorForEventsMatchingMask:`、Catalyst から AppKit は import できないので名前で引く）で `keyDown`/`keyUp`/`flagsChanged` を取り、仮想キーコード（`kVK_*`）を HID usage に直して `.uiKit` 経路として調停へ渡し、イベントは消費する（`MacKeyboardCapture`、表は `InputCore.MacVirtualKey`）。メニューにも UIKit にも届かないので、同じキーが二重に届くことはない。
+
+- 修飾キーは `flagsChanged` の左右別 device bit で押下/解放を判定する。device bit の無いソフトウェア生成イベントは device 非依存の flag で判定する。
+- Caps Lock は状態変化ごとに 1 回の押下として送る。
+- AppKit のオートリピートは捨て、iPad と同じくアプリ側のリピートを使う。
+- Mac に残すショートカット: ⌘Q、⌘H、⌘M、⌘\`、⌃⌘F。それ以外の ⌘ は Windows キーとの組み合わせとしてリモートへ送る（⌘W は Win+W）。⌘Tab、⌘Space など OS が先に取るものはアプリに届かない。
+- 対応: Command → Windows、Option → Alt、Control → Control、かな（`kVK_JIS_Kana`）→ LANG1 → 変換（`0x79`）、英数（`kVK_JIS_Eisu`）→ LANG2 → 無変換（`0x7B`）、¥ → `0x7D`、ろ → `0x73`。
+
+確認（2026-10-08、tart の macOS 26 VM から UTM 上の Windows 11、`KeyEcho`）: 英数/かな/¥/ろ、⌘W、⌘R（Win+R）、⌥F4（Alt+F4）、F1、矢印、前方削除が上表どおり届いた。ただし VM では tart の VNC が英数/かなを VM に送らないため、この 2 キーは `CGEventPost` した仮想キーコードでの確認であり、実機 JIS キーボードでは未確認。
+
+### 12.2 マウス
+
+左ボタン、移動、スクロールは iPad と同じ indirect pointer 経路で届く。右ボタンと中ボタンは UIKit がタッチとして渡さない（副ボタンはコンテキストメニュー要求になる）ので、同じ AppKit monitor で `rightMouseDown/Up`、`otherMouseDown/Up` を取り、セッション面が hover で追っている位置で押下/解放を送る。ポインタがセッション面の外にあるクリックは Mac に任せる。
+

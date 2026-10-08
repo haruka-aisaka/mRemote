@@ -8,7 +8,7 @@ struct mRemoteApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             RootView()
                 .environment(environment)
                 .task {
@@ -19,7 +19,8 @@ struct mRemoteApp: App {
                 // mremote://connect.
                 .onOpenURL { url in Task { await environment.open(url) } }
         }
-        // iPad: a session in a window of its own.
+        .commands { MacCommands(environment: environment) }
+        // iPad: a session in a window of its own. The Mac: every session.
         WindowGroup("セッション", id: "session", for: UUID.self) { $profileID in
             SessionWindowRoot(profileID: profileID)
                 .environment(environment)
@@ -42,6 +43,7 @@ struct mRemoteApp: App {
 struct RootView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ConnectionListView()
@@ -59,11 +61,53 @@ struct RootView: View {
                         .environment(environment)
                 }
             }
+            .onAppear {
+                environment.openSessionWindow = { [openWindow, environment] profileID in
+                    environment.requestedSessionWindows.insert(profileID)
+                    openWindow(value: profileID)
+                }
+                environment.listWindowCount += 1
+            }
+            .onDisappear { environment.listWindowCount -= 1 }
+            .macWindow(title: String(localized: "接続先"), minimumSize: CGSize(width: 420, height: 360))
             // With several windows, the one in front decides what types:
             // this one's session, or nothing while the list is up.
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active, UIApplication.shared.supportsMultipleScenes else { return }
                 Task { await environment.focus(environment.presentedSession?.id) }
             }
+    }
+}
+
+/// The Mac's menu bar. The list's own sheets (⌘, and ⌘N) open in the list
+/// window, which comes back if it was closed. While a session has the
+/// keyboard these shortcuts go to Windows instead, like every other ⌘ key
+/// (MacKeyboardCapture); the menu items still work with the pointer.
+struct MacCommands: Commands {
+    let environment: AppEnvironment
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        if Platform.isMac {
+            CommandGroup(replacing: .appSettings) {
+                Button("設定…") { showList(.settings) }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+            CommandGroup(replacing: .newItem) {
+                Button("新しい接続先…") { showList(.newConnection) }
+                    .keyboardShortcut("n", modifiers: .command)
+                Button("接続先の一覧") { showList(nil) }
+                    .keyboardShortcut("0", modifiers: .command)
+            }
+        }
+    }
+
+    /// `openWindow(id:)` makes another list window every time, so it is
+    /// only called when none is open.
+    private func showList(_ request: ListRequest?) {
+        if environment.listWindowCount == 0 {
+            openWindow(id: "main")
+        }
+        environment.listRequest = request
     }
 }

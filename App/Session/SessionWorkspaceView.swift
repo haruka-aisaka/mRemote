@@ -144,8 +144,13 @@ struct SessionWorkspaceView: View {
                     Task { await model.answer(.cancel) }
                 }
             )
+            .macSheetSize(height: 640)
         }
         .onChange(of: scenePhase, initial: false) { _, phase in
+            // A Mac window behind another app is still on screen, and that is
+            // all inactive means there; only a hidden or minimised one goes
+            // to the background.
+            if Platform.isMac, phase == .inactive { return }
             Task {
                 if phase == .active {
                     await model.sceneBecameActive()
@@ -167,7 +172,8 @@ struct SessionWorkspaceView: View {
     @ViewBuilder
     private func split(in size: CGSize, safeArea: EdgeInsets) -> some View {
         let isPortrait = size.height > size.width
-        let showsDeck = deckPreference.showsDeck(
+        // The Mac has its own keyboard and trackpad.
+        let showsDeck = !Platform.isMac && deckPreference.showsDeck(
             posture: hingePosture,
             isPortrait: isPortrait,
             landscapeWhenFolded: showsDeckFoldedInLandscape
@@ -208,7 +214,7 @@ struct SessionWorkspaceView: View {
                     }
                     endBanner
                     if !externalTakesDesktop {
-                        floatingMenu(showsDeck: showsDeck)
+                        floatingMenu(showsDeck: showsDeck, keyboardButton: !Platform.isMac)
                     }
                     toast
                 }
@@ -437,7 +443,7 @@ struct SessionWorkspaceView: View {
     /// the snapshot could be taken before it appears.
     @ViewBuilder
     private var privacyCover: some View {
-        if scenePhase != .active {
+        if scenePhase != .active, !Platform.isMac {
             ZStack {
                 Rectangle()
                     .fill(.ultraThickMaterial)
@@ -475,6 +481,7 @@ struct SessionWorkspaceView: View {
         .sheet(isPresented: $model.isMenuPresented) {
             SessionMenuSheet(model: model)
                 .presentationDetents([.medium, .large])
+                .macSheetSize()
         }
     }
 
