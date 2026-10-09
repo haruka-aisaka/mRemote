@@ -26,8 +26,6 @@ struct SessionMenuSheet: View {
             String(localized: "なぞるとポインターが動きます。タップでクリック、2 本指タップで右クリック、2 本指でスクロール。タップしてすぐもう一度触れて動かすか、押さえてから動かすとドラッグ。")
         case .viewport:
             String(localized: "タッチは Windows へ送りません。1 本指で表示を動かし、ピンチで拡大、ダブルタップで全体表示と 100% を切り替えます。")
-        case .touch:
-            String(localized: "指の操作をそのまま Windows のタッチとして送ります（ピンチやスワイプは Windows 側で動きます）。この画面での拡大はできません。")
         }
     }
     @AppStorage(CapsLockRole.storageKey) private var capsLockRole = CapsLockRole.capsLock
@@ -284,7 +282,6 @@ struct SessionMenuSheet: View {
                         Text("タッチした場所を操作").tag(TouchPointerMode.direct)
                         Text("トラックパッドとして使う").tag(TouchPointerMode.trackpad)
                         Text("表示の移動だけ").tag(TouchPointerMode.viewport)
-                        Text("Windows のタッチとして送る").tag(TouchPointerMode.touch)
                     }
                     .accessibilityIdentifier("session-touch-mode-picker")
                     Text(touchModeHint)

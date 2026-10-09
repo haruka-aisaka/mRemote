@@ -152,7 +152,6 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// and the trackpad's for the same reason those are kept apart.
     private var touchButtons: Set<PointerButton> = []
     private var viewportPan: UIPanGestureRecognizer?
-    private var pinchRecognizer: UIPinchGestureRecognizer?
     /// Fingers down as Windows touches, by the contact number each was given.
     private var touchContacts: [ObjectIdentifier: (id: UInt32, pixel: PixelPoint)] = [:]
     /// Direct mode's fingers down now, and whether this gesture goes to a
@@ -266,7 +265,6 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
         pinch.delegate = self
         addGestureRecognizer(pinch)
-        pinchRecognizer = pinch
 
         // Direct touches only: a trackpad drag is the remote pointer's, not
         // the viewport's.
@@ -692,7 +690,6 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
                 switch touchMode {
                 case .trackpad: directTrackpad.began(touch, in: self)
                 case .direct: directBegan(touch, event: event)
-                case .touch: remoteTouch(touch, phase: .down)
                 case .viewport: break
                 }
             }
@@ -711,7 +708,6 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             case .trackpad: directTrackpad.moved(direct, in: self)
             case .direct where directGoesAsTouch: direct.forEach { remoteTouch($0, phase: .move) }
             case .direct: directTouch.moved(direct, in: self)
-            case .touch: direct.forEach { remoteTouch($0, phase: .move) }
             case .viewport: break
             }
             super.touchesMoved(touches, with: event)
@@ -795,9 +791,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         directTouch.setEnabled(mode == .direct && isInputEnabled)
         if mode != .trackpad { directTrackpad.reset() }
         if mode != .direct { directTouch.reset() }
-        // Windows takes the pinch itself when it is given the fingers.
-        pinchRecognizer?.isEnabled = mode != .touch
-        if mode != .touch { liftTouches() }
+        liftTouches()
         directFingers.removeAll()
         directGoesAsTouch = false
     }
@@ -844,7 +838,6 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
                     directTouch.ended(touch, in: self, cancelled: cancelled)
                 }
                 directFingers.remove(ObjectIdentifier(touch))
-            case .touch: remoteTouch(touch, phase: cancelled ? .cancel : .up)
             case .viewport: break
             }
         }

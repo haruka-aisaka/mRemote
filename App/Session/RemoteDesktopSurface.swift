@@ -5,15 +5,15 @@ import SessionCore
 /// What a finger on the desktop does. A mouse or a trackpad drives the
 /// remote pointer whichever this is; pinch always zooms the local view.
 enum TouchPointerMode: String, CaseIterable {
-    /// Taps and drags act where the finger is, as on a touch screen.
+    /// Taps and drags act where the finger is, as on a touch screen: one
+    /// finger as a touch on a host that takes touches, the mouse otherwise.
+    /// (A setting saved as the former `touch` mode, every finger to
+    /// Windows, reads as this: `@AppStorage` falls back to the default.)
     case direct
     /// The desktop is a trackpad: the finger moves the pointer by travel.
     case trackpad
     /// Touch only pans and zooms the local view; nothing reaches the host.
     case viewport
-    /// Fingers reach Windows as touches - its own gestures, its own
-    /// keyboard - and the local view does not zoom.
-    case touch
 
     static let storageKey = "touch-pointer-mode"
 }

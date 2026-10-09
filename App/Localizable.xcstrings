@@ -425,16 +425,6 @@
         }
       }
     },
-    "Windows のタッチとして送る": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Send as Windows Touch"
-          }
-        }
-      }
-    },
     "Windows の拡大率": {
       "localizations": {
         "en": {
@@ -2839,16 +2829,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Presses cancelled"
-          }
-        }
-      }
-    },
-    "指の操作をそのまま Windows のタッチとして送ります（ピンチやスワイプは Windows 側で動きます）。この画面での拡大はできません。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sends your fingers to Windows as touches (pinches and swipes work on the Windows side). The view on this screen cannot be zoomed."
           }
         }
       }

@@ -240,14 +240,15 @@ effectiveDelta = deviceDelta × sensitivity × (isReversed ? -1 : 1)
 
 ## 9. タッチ操作
 
-要件の中心はマウスだが、iPhone やポインターのない iPad でも操作できるよう、画面へのタッチの扱いを四方式から選べる（セッションメニュー「画面のタッチ」、全セッション共通、既定は直接タッチ）。いずれもマウスと同じ `PointerInputRouter` を通る。マウス・トラックパッドの入力は方式に関係なくリモートポインターを動かす。
+要件の中心はマウスだが、iPhone やポインターのない iPad でも操作できるよう、画面へのタッチの扱いを三方式から選べる（セッションメニュー「画面のタッチ」、全セッション共通、既定は直接タッチ）。いずれもマウスと同じ `PointerInputRouter` を通る。マウス・トラックパッドの入力は方式に関係なくリモートポインターを動かす。
 
 | 方式 | 1 本指 | 2 本指 | ローカル表示 |
 |---|---|---|---|
 | 直接タッチ（`DirectTouchGestureTracker`）。RDPEI が開いている接続先（Windows、GNOME）では 1 本指をタッチとして送る（下記） | tap: その位置で左 click。0.5 秒以内・24pt 以内の 2 回目の tap は 1 回目と同じ位置を押し、double click として届く。長押し 0.5 秒: 右 click。なぞる: 押した位置から左ドラッグ | 移動: スクロール。tap: 右 click | pinch で zoom。zoom 中は pinch したまま動かすと viewport 移動 |
 | トラックパッド（`TrackpadGestureTracker`） | なぞる: 相対移動。tap: 左 click（2 回目のタッチを 0.25 秒待ってから送る）。tap の直後にもう一度触れて動かす、または押さえてから動かす: ドラッグ。2 回 tap: double click | 移動: スクロール。tap: 右 click | 同上。ポインターが端に寄ると表示が追従 |
 | 表示の移動だけ | viewport 移動。double tap: Fit/100% 切替 | — | pinch で zoom |
-| Windows のタッチとして送る（RDPEI） | 指ごとに contact（0〜9、空いている最小番号）として down/move/up を送る | 同じく。pinch・スワイプは Windows 側のジェスチャー | zoom しない（pinch を Windows に渡す） |
+
+以前あった 4 番目の方式「Windows のタッチとして送る」（すべての指を contact として送り、pinch も Windows に渡す）は、直接タッチがタッチ対応の接続先へ 1 本指をタッチとして送るようになって違いが 2 本指だけになったため、2026-10-09 に廃止した。保存済みの設定は直接タッチとして読む。
 
 直接タッチで接続先が RDPEI を開いているとき（`DesktopInputSink.acceptsTouch`。Windows、GNOME Remote Desktop）は、1 本指を Windows App のタッチモードと同じくタッチ（contact）として送り、tap・長押しの右 click・パンや選択は接続先が決める。方式は最初の指が触れたときに決める。2 本目の指が触れたら送ったタッチを cancel し、そのジェスチャーは上表のマウス操作に引き継ぐので、2 本指（スクロール、tap で右 click、pinch zoom）はどの接続先でも同じになる。Mac（macos-rdp-server は RDPEI を持たない）や RDPEI が開く前のログイン画面では、上表のマウス操作になる。
 
