@@ -21,11 +21,17 @@ import XCTest
 /// of the element's size.
 ///
 ///     tap <id>                         tap
-///     twotap <id>                      two-finger tap
+///     twotap <id|window>               two-finger tap
+///     pinch <id|window> <scale>        pinch, apart above 1
+///     fingers <id> <seconds> <fx1> <fy1> <fx2> <fy2> [<dx> <dy> [<late>]]
+///                                      two fingers down together (the second
+///                                      <late> seconds after), moved by dx, dy
+///                                      (fractions) over the time, lifted
 ///     doubletap <id>                   double tap
 ///     hold <id> <seconds>              press and hold
 ///     tapat <id> <fx> <fy>             tap at a point
 ///     drag <id> <fx1> <fy1> <fx2> <fy2> [holdSeconds]
+///     tapdrag <id> <fx1> <fy1> <fx2> <fy2>  tap, then at once press and drag
 ///     keys <id> <id> ...               tap each in turn
 ///     sleep <seconds>
 ///     value <id>                       report the element's value
@@ -133,8 +139,15 @@ final class LiveRDPUITests: XCTestCase {
             guard let target = target() else { return "missing" }
             target.doubleTap()
         case "twotap":
-            guard let target = target() else { return "missing" }
-            target.twoFingerTap()
+            // "window": the window's centre, for a surface whose floating
+            // buttons stop XCUI computing a point on it.
+            let tapped = arguments.first == "window" ? app.windows.firstMatch : target()
+            guard let tapped else { return "missing" }
+            tapped.twoFingerTap()
+        case "pinch":
+            let pinched = arguments.first == "window" ? app.windows.firstMatch : target()
+            guard let pinched else { return "missing" }
+            pinched.pinch(withScale: number(1), velocity: number(1) < 1 ? -1 : 1)
         case "hold":
             // Everything before the duration is the identifier.
             let held = element(arguments.dropLast().joined(separator: " "))
@@ -148,6 +161,20 @@ final class LiveRDPUITests: XCTestCase {
             let from = target.coordinate(withNormalizedOffset: CGVector(dx: number(1), dy: number(2)))
             let to = target.coordinate(withNormalizedOffset: CGVector(dx: number(3), dy: number(4)))
             from.press(forDuration: max(TimeInterval(number(5)), 0.05), thenDragTo: to)
+        case "tapdrag":
+            // Tap-and-a-half: the drag starts within the double-tap interval.
+            guard let target = target() else { return "missing" }
+            let from = target.coordinate(withNormalizedOffset: CGVector(dx: number(1), dy: number(2)))
+            let to = target.coordinate(withNormalizedOffset: CGVector(dx: number(3), dy: number(4)))
+            from.tap()
+            from.press(forDuration: 0.05, thenDragTo: to)
+        case "fingers":
+            guard let target = target() else { return "missing" }
+            let size = target.frame.size
+            let points = [CGVector(dx: number(2), dy: number(3)), CGVector(dx: number(4), dy: number(5))]
+                .map { target.coordinate(withNormalizedOffset: $0).screenPoint }
+            let shift = CGVector(dx: number(6) * size.width, dy: number(7) * size.height)
+            return synthesizeFingers(at: points, moving: shift, over: Double(number(1)), secondLate: Double(number(8)))
         case "keys":
             for identifier in arguments {
                 let key = element(identifier)
@@ -241,6 +268,58 @@ final class LiveRDPUITests: XCTestCase {
             return "unknown"
         }
         return "ok"
+    }
+
+    /// Fingers that go down together, which XCUIElement's twoFingerTap does
+    /// not manage on the desktop surface. XCTest's own event synthesizer,
+    /// reached through the runtime: XCPointerEventPath and
+    /// XCSynthesizedEventRecord are not public API.
+    private func synthesizeFingers(
+        at points: [CGPoint], moving shift: CGVector, over duration: Double, secondLate: Double
+    ) -> String {
+        guard let recordClass = NSClassFromString("XCSynthesizedEventRecord") as? NSObject.Type,
+              let pathClass = NSClassFromString("XCPointerEventPath") as? NSObject.Type
+        else { return "no synthesizer" }
+        typealias InitRecord = @convention(c) (AnyObject, Selector, NSString, Int) -> AnyObject
+        typealias InitPath = @convention(c) (AnyObject, Selector, CGPoint, Double) -> AnyObject
+        typealias MoveTo = @convention(c) (AnyObject, Selector, CGPoint, Double) -> Void
+        typealias LiftUp = @convention(c) (AnyObject, Selector, Double) -> Void
+        typealias AddPath = @convention(c) (AnyObject, Selector, AnyObject) -> Void
+        typealias Synthesize = @convention(c) (AnyObject, Selector, UnsafeMutablePointer<NSError?>?) -> Bool
+        func call<T>(_ object: AnyObject, _ name: String, as type: T.Type) -> T? {
+            let selector = NSSelectorFromString(name)
+            guard object.responds(to: selector), let method = object.method(for: selector) else { return nil }
+            return unsafeBitCast(method, to: type)
+        }
+        let initRecord = NSSelectorFromString("initWithName:interfaceOrientation:")
+        guard let recordAlloc = recordClass.perform(NSSelectorFromString("alloc"))?.takeUnretainedValue(),
+              let makeRecord = call(recordAlloc, "initWithName:interfaceOrientation:", as: InitRecord.self)
+        else { return "no record" }
+        let record = makeRecord(recordAlloc, initRecord, "fingers", UIInterfaceOrientation.portrait.rawValue)
+        let steps = 10
+        for (index, point) in points.enumerated() {
+            let start = index == 0 ? 0 : secondLate
+            guard let pathAlloc = pathClass.perform(NSSelectorFromString("alloc"))?.takeUnretainedValue(),
+                  let makePath = call(pathAlloc, "initForTouchAtPoint:offset:", as: InitPath.self)
+            else { return "no path" }
+            let path = makePath(pathAlloc, NSSelectorFromString("initForTouchAtPoint:offset:"), point, start)
+            if shift != .zero, let move = call(path, "moveToPoint:atOffset:", as: MoveTo.self) {
+                for step in 1...steps {
+                    let fraction = Double(step) / Double(steps)
+                    let to = CGPoint(x: point.x + shift.dx * fraction, y: point.y + shift.dy * fraction)
+                    move(path, NSSelectorFromString("moveToPoint:atOffset:"), to, start + (duration - start) * fraction)
+                }
+            }
+            guard let lift = call(path, "liftUpAtOffset:", as: LiftUp.self),
+                  let add = call(record, "addPointerEventPath:", as: AddPath.self)
+            else { return "no lift" }
+            lift(path, NSSelectorFromString("liftUpAtOffset:"), max(duration, start + 0.05))
+            add(record, NSSelectorFromString("addPointerEventPath:"), path)
+        }
+        guard let synthesize = call(record, "synthesizeWithError:", as: Synthesize.self) else { return "no synthesize" }
+        var error: NSError?
+        return synthesize(record, NSSelectorFromString("synthesizeWithError:"), &error)
+            ? "ok" : "failed \(error.map { "\($0)" } ?? "")"
     }
 
     private func append(_ text: String, to path: String) {
