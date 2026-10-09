@@ -108,7 +108,7 @@ final class DirectTouchGestureTrackerTests: XCTestCase {
         }
         tracker.ended(sample(0, 100, 60, at: 0.2), cancelled: false)
         tracker.ended(sample(1, 140, 60, at: 0.2), cancelled: false)
-        XCTAssertEqual(recorder.events, ["scroll"])
+        XCTAssertEqual(recorder.events, ["move 100,100", "scroll"])
         XCTAssertEqual(recorder.scrolled.dy, -40, accuracy: 0.001)
     }
 

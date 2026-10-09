@@ -250,13 +250,13 @@ effectiveDelta = deviceDelta × sensitivity × (isReversed ? -1 : 1)
 
 以前あった 4 番目の方式「Windows のタッチとして送る」（すべての指を contact として送り、pinch も Windows に渡す）は、直接タッチがタッチ対応の接続先へ 1 本指をタッチとして送るようになって違いが 2 本指だけになったため、2026-10-09 に廃止した。保存済みの設定は直接タッチとして読む。
 
-直接タッチで接続先が RDPEI を開いているとき（`DesktopInputSink.acceptsTouch`。Windows、GNOME Remote Desktop）は、1 本指を Windows App のタッチモードと同じくタッチ（contact）として送り、tap・長押しの右 click・パンや選択は接続先が決める。方式は最初の指が触れたときに決める。2 本目の指が触れたら送ったタッチを cancel し、そのジェスチャーは上表のマウス操作に引き継ぐので、2 本指（スクロール、tap で右 click、pinch zoom）はどの接続先でも同じになる。Mac（macos-rdp-server は RDPEI を持たない）や RDPEI が開く前のログイン画面では、上表のマウス操作になる。
+直接タッチで接続先が RDPEI を開いているとき（`DesktopInputSink.acceptsTouch`。Windows、GNOME Remote Desktop）は、1 本指を Windows App のタッチモードと同じくタッチ（contact）として送り、tap・長押しの右 click・パンや選択は接続先が決める。方式は最初の指が触れたときに決める。最初の指は 0.1 秒（`touchHoldBack`）送らずに待ち、その間に 2 本目が触れたらタッチは一度も送らずに上表のマウス操作にする。待つ間に指が離れた（tap）・動いた（パン）ときは、触れた位置の down からすぐ送る。0.1 秒より後の 2 本目は、送ったタッチを cancel してマウス操作に引き継ぐ。Windows（少なくとも Edge）は down 直後の cancel を tap として扱うため、待たずに送ると 2 本指 tap の下でリンクが開いた。2 本指（スクロール、tap で右 click、pinch zoom）はどの接続先でも同じになる。2 本指スクロールは最初の指の位置へポインターを移してからホイールを送る（ホイールはポインターの下のウィンドウに届き、タッチはポインターを動かさないため）。Mac（macos-rdp-server は RDPEI を持たない）や RDPEI が開く前のログイン画面では、上表のマウス操作になる。
 
 トラックパッドの tap の click を 0.25 秒待つのは、tap の直後のドラッグをボタンの押下だけにするため。click をすぐ送ると、続く押下が Windows では double click になり、ファイルをドラッグしようとして開いてしまう。
 
 pinch が成立すると UIKit が touch を cancel するため、途中のドラッグはボタンを離して終わり、click は送らない。折りたたみ端末で手元デッキをキーボードのみにしたときは、選択に関係なくトラックパッド方式になる。
 
-タッチと Apple Pencil は bridge ABI 4 の `mr_rdp_session_send_touch` / `send_pen` で送る。キーと同じ有界キューを通り、down は対応する up/cancel の空きを予約する。入力の門が閉じるとき（メニュー、フォーカス喪失、方式の切替）は、置いている指をすべて cancel、ペンを up にしてから閉じる。RDPEI がまだ無いとき（ログイン画面など）は FreeRDP がタッチを左ボタンに置き換える。
+タッチと Apple Pencil は bridge ABI 4 の `mr_rdp_session_send_touch` / `send_pen` で送る。キーと同じ有界キューを通り、down は対応する up/cancel の空きを予約する。入力の門が閉じるとき（メニュー、フォーカス喪失、方式の切替）は、置いている指をすべて cancel、ペンを up にしてから閉じる。RDPEI がまだ無いとき（ログイン画面など）は FreeRDP がタッチを左ボタンに置き換える。cancel は FreeRDP の `freerdp_client_handle_touch` を使わず、RDPEI の `TouchCancel`（UP|CANCELED）で送る。前者は UPDATE|CANCELED を送り、RDPEI クライアントはその contact を以後のフレームでも押したまま送り続け、FreeRDP 側の contact 表（10 枠）も UP でしか空かないため。
 
 Apple Pencil は方式に関係なくペンとして送る（iPad、「Apple Pencil をペンとして送る」、既定オン）。筆圧は force / maximumPossibleForce、傾きは altitude と azimuth から X/Y の度数、回転は iPadOS 17.5 以降の roll。ペンのボタン（barrel/eraser）は Apple Pencil に無いので送らない。ペン先が画面から浮いているあいだ（`UIHoverGestureRecognizer` の `zOffset` が 0 より大きい）は、位置と傾きを接触なしのホバーとして送る。
 

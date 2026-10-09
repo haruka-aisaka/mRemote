@@ -159,6 +159,13 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// lands, so a gesture never changes hands halfway.
     private var directFingers: Set<ObjectIdentifier> = []
     private var directGoesAsTouch = false
+    /// The first finger of a touch gesture, not sent yet: a second finger
+    /// landing meanwhile makes it a mouse gesture without the host ever
+    /// seeing a touch. A touch taken back later is a cancel, and Windows
+    /// (Edge, at least) still treats a quick down and cancel as a tap.
+    private var heldTouch: (touch: UITouch, location: CGPoint)?
+    private var heldTouchTimer: Timer?
+    static let touchHoldBack: TimeInterval = 0.1
     /// The pencil while it is down as a pen.
     private var penContact: (touch: ObjectIdentifier, pixel: PixelPoint)?
     var sendsPencilAsPen = true
@@ -706,7 +713,15 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             }
             switch touchMode {
             case .trackpad: directTrackpad.moved(direct, in: self)
-            case .direct where directGoesAsTouch: direct.forEach { remoteTouch($0, phase: .move) }
+            case .direct where directGoesAsTouch:
+                // Moving off means one finger, a drag: no waiting for a second.
+                if let held = heldTouch, direct.contains(held.touch) {
+                    let now = held.touch.location(in: self)
+                    if hypot(now.x - held.location.x, now.y - held.location.y) >= DirectTouchGestureTracker.tapTravel {
+                        sendHeldTouch()
+                    }
+                }
+                direct.forEach { remoteTouch($0, phase: .move) }
             case .direct: directTouch.moved(direct, in: self)
             case .viewport: break
             }
@@ -796,12 +811,29 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         directGoesAsTouch = false
     }
 
+    /// Sends the held first finger: down where it landed, then where it is.
+    private func sendHeldTouch() {
+        heldTouchTimer?.invalidate()
+        heldTouchTimer = nil
+        guard let held = heldTouch else { return }
+        heldTouch = nil
+        remoteTouch(held.touch, phase: .down, at: held.location)
+        remoteTouch(held.touch, phase: .move)
+    }
+
+    private func dropHeldTouch() {
+        heldTouchTimer?.invalidate()
+        heldTouchTimer = nil
+        heldTouch = nil
+    }
+
     /// Direct mode: where the finger is, as on a touch screen. A host that
     /// takes touches (Windows, GNOME) gets one finger as a touch - its own
     /// tap, press-and-hold and panning, as in the Windows App. Two fingers
-    /// are the same on every host: the second takes back the touch already
-    /// sent and the gesture goes on as the mouse one - scroll, right click,
-    /// and zooming the view here. Any other host (a Mac, a logon screen
+    /// are the same on every host: the gesture goes on as the mouse one -
+    /// scroll, right click, and zooming the view here. The first finger is
+    /// held back `touchHoldBack` for that; a second finger later than that
+    /// takes back the touch already sent. Any other host (a Mac, a logon screen
     /// before the touch channel opens) gets the mouse throughout.
     private func directBegan(_ touch: UITouch, event: UIEvent?) {
         if directFingers.isEmpty { directGoesAsTouch = inputSink?.acceptsTouch == true }
@@ -811,9 +843,15 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             return
         }
         if directFingers.count == 1 {
-            remoteTouch(touch, phase: .down)
+            heldTouch = (touch, touch.location(in: self))
+            let timer = Timer(timeInterval: Self.touchHoldBack, repeats: false) { [weak self] _ in
+                self?.sendHeldTouch()
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            heldTouchTimer = timer
             return
         }
+        dropHeldTouch()
         cancelRemoteTouches()
         directGoesAsTouch = false
         let earlier = (event?.allTouches ?? []).filter {
@@ -833,6 +871,10 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             case .trackpad: directTrackpad.ended(touch, cancelled: cancelled)
             case .direct:
                 if directGoesAsTouch {
+                    // A tap quicker than the hold-back goes now, whole.
+                    if heldTouch?.touch === touch {
+                        if cancelled { dropHeldTouch() } else { sendHeldTouch() }
+                    }
                     remoteTouch(touch, phase: cancelled ? .cancel : .up)
                 } else {
                     directTouch.ended(touch, in: self, cancelled: cancelled)
@@ -855,9 +897,9 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     /// One finger as a Windows touch. Each finger keeps the lowest contact
     /// number free when it went down, as a touch screen numbers them.
-    private func remoteTouch(_ touch: UITouch, phase: TouchInput.Phase) {
+    private func remoteTouch(_ touch: UITouch, phase: TouchInput.Phase, at location: CGPoint? = nil) {
         let key = ObjectIdentifier(touch)
-        let pixel = viewportTransform.remotePixel(fromLocal: viewportPoint(touch.location(in: self)))
+        let pixel = viewportTransform.remotePixel(fromLocal: viewportPoint(location ?? touch.location(in: self)))
         switch phase {
         case .down:
             guard isInputEnabled, touchContacts[key] == nil else { return }
@@ -941,6 +983,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     /// Every finger and the pen lifted, for a closing gate or a mode change.
     private func liftTouches() {
+        dropHeldTouch()
         cancelRemoteTouches()
         if let pen = penContact {
             inputSink?.send(pen: PenInput(phase: .up, point: pen.pixel))

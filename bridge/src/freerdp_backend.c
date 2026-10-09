@@ -16,6 +16,7 @@
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/disp.h>
 #include <freerdp/client/rail.h>
+#include <freerdp/client/rdpei.h>
 #include <freerdp/client/rdpgfx.h>
 #include <freerdp/svc.h>
 #include <freerdp/codec/region.h>
@@ -3148,6 +3149,38 @@ static BOOL mr_freerdp_send_pointer_command(
         input, PTR_FLAGS_HWHEEL, event->wheel_x, x, y);
 }
 
+/* FreeRDP cancels a touch as UPDATE|CANCELED, which its RDPEI client never
+ * retires: the finger goes on being sent as held in every later frame, and
+ * Windows ignores the mouse buttons meanwhile (a two-finger tap taking over
+ * from a touch did not right-click). RDPEI's own TouchCancel sends
+ * UP|CANCELED. FreeRDP's contact table, too, frees a slot only on UP, so ten
+ * cancels would leave no room for another finger: the slot is freed here. */
+static BOOL mr_freerdp_cancel_touch(
+    rdpClientContext *client,
+    const mr_rdp_touch_event *event)
+{
+    BOOL ok;
+    if (client->rdpei != NULL && client->rdpei->TouchCancel != NULL) {
+        INT32 rdpei_contact = 0;
+        ok = freerdp_get_state(&client->context) != CONNECTION_STATE_ACTIVE ||
+            client->rdpei->TouchCancel(
+                client->rdpei, (INT32)event->contact_id, (INT32)event->x,
+                (INT32)event->y, &rdpei_contact) == CHANNEL_RC_OK;
+    } else {
+        ok = freerdp_client_handle_touch(
+            client, FREERDP_TOUCH_CANCEL, (INT32)event->contact_id, 0u,
+            (INT32)event->x, (INT32)event->y);
+    }
+    for (size_t i = 0; i < ARRAYSIZE(client->contacts); i++) {
+        if (client->contacts[i].id == (INT32)event->contact_id) {
+            const FreeRDP_TouchContact empty = { 0 };
+            client->contacts[i] = empty;
+            break;
+        }
+    }
+    return ok;
+}
+
 /* Before RDPEI connects - a logon screen - FreeRDP turns a touch into the
  * left button itself, so this never needs to know. */
 static BOOL mr_freerdp_send_touch_command(
@@ -3169,8 +3202,7 @@ static BOOL mr_freerdp_send_touch_command(
             flags = FREERDP_TOUCH_UP;
             break;
         case MR_RDP_TOUCH_CANCEL:
-            flags = FREERDP_TOUCH_CANCEL;
-            break;
+            return mr_freerdp_cancel_touch((rdpClientContext *)backend->context, event);
         default:
             return FALSE;
     }

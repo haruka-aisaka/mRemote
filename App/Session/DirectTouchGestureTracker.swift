@@ -20,7 +20,8 @@ protocol DirectPointerControl: AnyObject {
 ///   place land on the same pixel, so they read as a double click;
 /// - a finger held still is a right click;
 /// - a finger moved drags with the left button, from where it went down;
-/// - two fingers moving scroll, and a two-finger tap is a right click.
+/// - two fingers moving scroll where they are, and a two-finger tap is a
+///   right click.
 ///
 /// Pinch is not here: it zooms the local view, and when it begins UIKit
 /// cancels these touches, which ends whatever was under way without a click.
@@ -41,6 +42,8 @@ final class DirectTouchGestureTracker {
     private var travel: CGFloat = 0
     private var startTime: TimeInterval = 0
     private var isDragging = false
+    /// The pointer has been put under the fingers for this scroll.
+    private var isScrolling = false
     /// The long press already clicked, so lifting the finger must not.
     private var isSpent = false
     private var cancelLongPress: (() -> Void)?
@@ -80,6 +83,7 @@ final class DirectTouchGestureTracker {
             target()?.setTouchButtons([], at: touches.values.first ?? origin)
         }
         touches = [:]
+        isScrolling = false
         maximumTouches = 0
         travel = 0
         isSpent = false
@@ -141,6 +145,12 @@ final class DirectTouchGestureTracker {
             }
         } else if maximumTouches >= 2 {
             if touches.count >= 2 {
+                // The wheel goes to the window under the pointer, which a
+                // touch never moved: put it under the fingers first.
+                if !isScrolling {
+                    isScrolling = true
+                    target.movePointer(to: origin)
+                }
                 target.scrollRemote(dx: Double(delta.x), dy: Double(delta.y))
             }
         } else if travel >= Self.tapTravel, let point = touches.values.first {
