@@ -65,21 +65,45 @@ final class ChannelTests: XCTestCase {
         // Having run dry, it waits again rather than playing each late packet.
         sample.withUnsafeBytes { _ = stream.push($0, sampleRate: 48_000, channels: 1) }
         XCTAssertEqual(render(stream, frames: 1_000, channels: 1)[0][0], 0)
-        let full = [Int16](repeating: 8_192, count: PCMAudioStream.primingFrames)
+        // That packet came right after the ring ran dry - late, not a new
+        // sound - so the next wait is one step longer.
+        let primed = PCMAudioStream.primingFrames + PCMAudioStream.primingStepFrames
+        let short = [Int16](repeating: 8_192, count: primed - 2)
+        short.withUnsafeBytes { _ = stream.push($0, sampleRate: 48_000, channels: 1) }
+        XCTAssertEqual(render(stream, frames: 1, channels: 1)[0][0], 0)
+        let full = [Int16](repeating: 8_192, count: 2)
         full.withUnsafeBytes { _ = stream.push($0, sampleRate: 48_000, channels: 1) }
         XCTAssertEqual(render(stream, frames: 2, channels: 1)[0], [0.5, 0.25])
     }
 
-    func testAFullRingDropsWholePacketsAndADiscardEmptiesIt() {
+    func testOnlyLatePacketsLengthenThePriming() {
         let stream = PCMAudioStream()
-        let packet = [UInt8](repeating: 1, count: PCMAudioStream.capacityBytes / 2 + 4)
-        packet.withUnsafeBytes {
-            XCTAssertTrue(stream.push($0, sampleRate: 44_100, channels: 1))
-            XCTAssertFalse(stream.push($0, sampleRate: 44_100, channels: 1))
+        // In render-sized calls: one call renders at most 4,096 frames.
+        func play(_ frames: Int) {
+            for start in stride(from: 0, to: frames, by: 1_000) {
+                _ = render(stream, frames: min(1_000, frames - start), channels: 1)
+            }
         }
-        XCTAssertEqual(stream.droppedPackets, 1)
-        stream.discardBacklog()
-        XCTAssertEqual(render(stream, frames: 4, channels: 1)[0], [0, 0, 0, 0])
+        func push(_ count: Int) {
+            let samples = [Int16](repeating: 8_192, count: count)
+            samples.withUnsafeBytes { _ = stream.push($0, sampleRate: 48_000, channels: 1) }
+        }
+        push(PCMAudioStream.primingFrames)
+        play(PCMAudioStream.primingFrames + 1)
+        // The sound ended: a long silence before the next one.
+        play(PCMAudioStream.lateGapFrames)
+        push(PCMAudioStream.primingFrames)
+        XCTAssertEqual(render(stream, frames: 1, channels: 1)[0][0], 0.25,
+                       "the end of a sound keeps the short wait")
+        // Steps up to the cap, however late the packets keep coming.
+        for _ in 0..<10 {
+            play(PCMAudioStream.maximumPrimingFrames + 1)
+            push(1)
+            _ = render(stream, frames: 1, channels: 1)
+        }
+        play(PCMAudioStream.maximumPrimingFrames + 1)
+        push(PCMAudioStream.maximumPrimingFrames)
+        XCTAssertEqual(render(stream, frames: 1, channels: 1)[0][0], 0.25)
     }
 
     // MARK: - Clipboard

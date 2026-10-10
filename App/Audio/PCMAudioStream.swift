@@ -35,6 +35,15 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
     /// pre-buffer ahead of real time, but macos-rdp-server streams the Mac's
     /// audio as it plays, so on Wi-Fi every late packet was a gap.
     static let primingFrames = 4_800
+    /// On a phone's Wi-Fi 100 ms was not enough: packets came late often
+    /// enough to make every few seconds a gap. A dry ring that refills within
+    /// `lateGapFrames` was a late packet, not the end of a sound, so the
+    /// priming grows by this much, up to `maximumPrimingFrames` (300 ms).
+    /// A sound that ends leaves a longer gap and changes nothing, so a host
+    /// that is quiet between sounds keeps the short delay.
+    static let primingStepFrames = 2_400
+    static let maximumPrimingFrames = 14_400
+    static let lateGapFrames = 24_000
 
     private let ring: OpaquePointer
     private let scratch: UnsafeMutablePointer<Int16>
@@ -50,6 +59,9 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
     /// Render thread only: waiting for the ring to fill, and for how long.
     private var isPriming = true
     private var primingWaitFrames = 0
+    private var primingTarget = PCMAudioStream.primingFrames
+    /// Silence rendered since the ring ran dry, until data comes back.
+    private var underrunGapFrames: Int?
     private let logger = AppLog.logger(.app)
 
     init() {
@@ -126,8 +138,18 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
         let frameBytes = channels * 2
         if isPriming {
             let queued = mr_pcm_ring_readable(ring) / frameBytes
+            if let gap = underrunGapFrames {
+                if queued == 0 {
+                    underrunGapFrames = gap + frameCount
+                } else {
+                    if gap < Self.lateGapFrames {
+                        primingTarget = min(primingTarget + Self.primingStepFrames, Self.maximumPrimingFrames)
+                    }
+                    underrunGapFrames = nil
+                }
+            }
             if queued > 0 { primingWaitFrames += frameCount }
-            if queued >= Self.primingFrames || primingWaitFrames >= Self.primingFrames {
+            if queued >= primingTarget || primingWaitFrames >= primingTarget {
                 isPriming = false
                 primingWaitFrames = 0
             }
@@ -139,7 +161,10 @@ final class PCMAudioStream: RemoteAudioSource, @unchecked Sendable {
                 mr_pcm_ring_read(ring, $0, wanted)
             }
             readFrames = read / frameBytes
-            if readFrames < frames { isPriming = true }
+            if readFrames < frames {
+                isPriming = true
+                underrunGapFrames = 0
+            }
         }
         for (channel, buffer) in buffers.enumerated() where channel < channels {
             guard let samples = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
