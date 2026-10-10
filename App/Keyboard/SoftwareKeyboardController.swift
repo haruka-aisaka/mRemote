@@ -67,6 +67,13 @@ final class SoftwareKeyboardController {
         isVisible = false
     }
 
+    /// The proxy lost first responder. Through `hide()` this is already
+    /// done; otherwise the system put the keyboard away.
+    func proxyDidResign() {
+        guard isVisible else { return }
+        hide()
+    }
+
     /// Refused while composing: the marked text has to be committed or
     /// cancelled first, or it would be typed under the wrong mode.
     func setMode(_ newMode: SoftwareKeyboardMode) {

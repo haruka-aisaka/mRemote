@@ -201,6 +201,10 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
     /// How far up the software keyboard reaches into this view.
     private var keyboardOverlap: CGFloat = 0
+    /// The docked software keyboard, in screen coordinates, while it is up.
+    /// Kept so the overlap can be measured again when this view changes
+    /// size - a laptop deck going away as the keyboard comes up, say.
+    private var dockedKeyboardFrame: CGRect?
     /// Whether the desktop is lifted above the software keyboard to keep the
     /// pointer in sight, as the Windows App on iPhone does.
     private var followsPointerAboveKeyboard = true
@@ -448,6 +452,7 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        updateKeyboardOverlap()
         updateTransform()
         reportRenderSize()
         // Drawn again at the new size now: when the desktop keeps its size -
@@ -1118,12 +1123,22 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         // Only a keyboard docked along the bottom covers a band of the view;
         // a floating or split one on an iPad is left to the user to move.
         let docked = end.maxY >= screen.maxY - 1 && end.width >= screen.width - 1
-        let frame = convert(end, from: window.screen.coordinateSpace)
-        setKeyboardOverlap(docked ? min(max(bounds.maxY - frame.minY, 0), bounds.height) : 0)
+        dockedKeyboardFrame = docked && end.minY < screen.maxY - 1 ? end : nil
+        updateKeyboardOverlap()
     }
 
     @objc private func keyboardWillHide(_ notification: Notification) {
-        setKeyboardOverlap(0)
+        dockedKeyboardFrame = nil
+        updateKeyboardOverlap()
+    }
+
+    private func updateKeyboardOverlap() {
+        guard let window, let keyboard = dockedKeyboardFrame else {
+            setKeyboardOverlap(0)
+            return
+        }
+        let frame = convert(keyboard, from: window.screen.coordinateSpace)
+        setKeyboardOverlap(min(max(bounds.maxY - frame.minY, 0), bounds.height))
     }
 
     private func setKeyboardOverlap(_ overlap: CGFloat) {

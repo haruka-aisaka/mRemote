@@ -20,6 +20,9 @@ struct SessionWorkspaceView: View {
     @State private var hingePosture: HingePosture = .unavailable
     @State private var windowSafeArea = EdgeInsets()
     @State private var laptopChannel = LaptopDeckChannel()
+    /// A deck 自動 brought up was put away with the keyboard button: it stays
+    /// away until the device is unfolded, without turning 自動 off.
+    @State private var dismissesFoldedDeck = false
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
     @AppStorage(TouchPointerMode.storageKey) private var touchMode = TouchPointerMode.direct
@@ -173,11 +176,13 @@ struct SessionWorkspaceView: View {
     private func split(in size: CGSize, safeArea: EdgeInsets) -> some View {
         let isPortrait = size.height > size.width
         // The Mac has its own keyboard and trackpad.
-        let wantsDeck = !Platform.isMac && deckPreference.showsDeck(
+        let preferenceWantsDeck = !Platform.isMac && deckPreference.showsDeck(
             posture: hingePosture,
             isPortrait: isPortrait,
             landscapeWhenFolded: showsDeckFoldedInLandscape
         )
+        let foldWantsDeck = preferenceWantsDeck && deckPreference == .automatic
+        let wantsDeck = preferenceWantsDeck && !(foldWantsDeck && dismissesFoldedDeck)
         // One keyboard at a time: while the iOS keyboard is up the deck
         // steps aside (at a hinge it comes back when the keyboard goes).
         let showsDeck = wantsDeck && !model.softwareKeyboard.isVisible
@@ -217,7 +222,7 @@ struct SessionWorkspaceView: View {
                     }
                     endBanner
                     if !externalTakesDesktop {
-                        floatingMenu(showsDeck: showsDeck, keyboardButton: !Platform.isMac)
+                        floatingMenu(showsDeck: showsDeck, foldWantsDeck: foldWantsDeck, keyboardButton: !Platform.isMac)
                     }
                     toast
                 }
@@ -258,7 +263,7 @@ struct SessionWorkspaceView: View {
                 .transition(.opacity)
             }
             if externalTakesDesktop {
-                floatingMenu(showsDeck: true, keyboardButton: false)
+                floatingMenu(showsDeck: true, foldWantsDeck: false, keyboardButton: false)
                     .padding(.top, safeArea.top)
             }
             #if DEBUG
@@ -299,15 +304,21 @@ struct SessionWorkspaceView: View {
             // The deck is the keyboard now; the system one would only cover it.
             if wants { model.softwareKeyboard.hide() }
         }
+        .onChange(of: foldWantsDeck) { _, wants in
+            // Unfolded: the next fold brings the deck up again.
+            if !wants { dismissesFoldedDeck = false }
+        }
+        // The keyboard button brings back whichever keyboard was on screen
+        // last, however it got there.
+        .onChange(of: showsDeck && deck != .fullScreen, initial: true) { _, shown in
+            if shown { keyboardButtonTarget = .laptopDeck }
+        }
         .onChange(of: model.softwareKeyboard.isVisible) { _, visible in
             guard visible else { return }
             keyboardButtonTarget = .softwareKeyboard
             // Brought up over a deck the user had shown: switched to, so it
             // does not come back when this keyboard is put away.
             if deckPreference == .always { deckPreference = .never }
-        }
-        .onChange(of: deckPreference) { _, preference in
-            if preference == .always { keyboardButtonTarget = .laptopDeck }
         }
     }
 
@@ -482,14 +493,14 @@ struct SessionWorkspaceView: View {
         }
     }
 
-    private func floatingMenu(showsDeck: Bool, keyboardButton: Bool = true) -> some View {
+    private func floatingMenu(showsDeck: Bool, foldWantsDeck: Bool, keyboardButton: Bool = true) -> some View {
         let softwareKeyboardShown = model.softwareKeyboard.isVisible
         return FloatingMenuButton(
             keyboard: !keyboardButton ? nil : .init(
                 isShowingKeyboard: softwareKeyboardShown || showsDeck,
                 isEnabled: softwareKeyboardShown || showsDeck || keyboardButtonTarget == .laptopDeck
                     || model.state.acceptsInput,
-                toggle: { toggleKeyboard(showsDeck: showsDeck) }
+                toggle: { toggleKeyboard(showsDeck: showsDeck, foldWantsDeck: foldWantsDeck) }
             )
         ) {
             model.isMenuPresented = true
@@ -505,16 +516,27 @@ struct SessionWorkspaceView: View {
     }
 
     /// Whichever keyboard is up goes away; with none up, the one used last
-    /// comes up.
-    private func toggleKeyboard(showsDeck: Bool) {
+    /// comes up. A deck 自動 brought up for the fold is only put aside, so
+    /// unfolding and folding again still brings it.
+    private func toggleKeyboard(showsDeck: Bool, foldWantsDeck: Bool) {
         if model.softwareKeyboard.isVisible {
             model.softwareKeyboard.hide()
         } else if showsDeck {
-            deckPreference = .never
+            if foldWantsDeck {
+                dismissesFoldedDeck = true
+            } else {
+                deckPreference = .never
+            }
         } else {
             switch keyboardButtonTarget {
-            case .softwareKeyboard: model.showSoftwareKeyboard()
-            case .laptopDeck: deckPreference = .always
+            case .softwareKeyboard:
+                model.showSoftwareKeyboard()
+            case .laptopDeck:
+                if foldWantsDeck {
+                    dismissesFoldedDeck = false
+                } else {
+                    deckPreference = .always
+                }
             }
         }
     }

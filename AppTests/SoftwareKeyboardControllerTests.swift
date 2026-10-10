@@ -83,6 +83,31 @@ final class SoftwareKeyboardControllerTests: XCTestCase {
         XCTAssertEqual(sent, [])
     }
 
+    /// UIKit gives first responder back to the proxy on its own, as a sheet
+    /// goes away; only while the keyboard is wanted may it take it, or the
+    /// iOS keyboard comes up beside the deck that replaced it.
+    func testTheProxyTakesTheKeyboardOnlyWhileItIsWanted() {
+        let controller = makeController()
+        let proxy = SoftwareKeyboardProxy(controller: controller)
+        XCTAssertFalse(proxy.canBecomeFirstResponder)
+        controller.show()
+        XCTAssertTrue(proxy.canBecomeFirstResponder)
+        controller.hide()
+        XCTAssertFalse(proxy.canBecomeFirstResponder)
+    }
+
+    /// Put away by the system - the iPad's hide-keyboard key - it is put
+    /// away for the workspace too, latches and all.
+    func testTheSystemPuttingTheKeyboardAwayHidesIt() {
+        let controller = makeController()
+        controller.show()
+        controller.tapModifier(.control)
+        XCTAssertNotEqual(controller.latch(.control), .off)
+        controller.proxyDidResign()
+        XCTAssertFalse(controller.isVisible)
+        XCTAssertEqual(controller.latch(.control), .off)
+    }
+
     func testHidingReleasesEveryLatch() {
         let controller = makeController(mode: .hostIME)
         controller.show()

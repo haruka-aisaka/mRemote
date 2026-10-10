@@ -55,6 +55,24 @@ final class SoftwareKeyboardProxy: UITextView, UITextViewDelegate {
         fatalError("init(coder:) is not supported")
     }
 
+    /// Only while the controller wants the keyboard. UIKit brings a text
+    /// view back as first responder on its own - as a sheet goes away, say -
+    /// and that would put the iOS keyboard up beside the laptop deck that
+    /// replaced it.
+    override var canBecomeFirstResponder: Bool {
+        controller?.isVisible == true && super.canBecomeFirstResponder
+    }
+
+    /// Put away by the system rather than by the controller - the iPad's
+    /// hide-keyboard key - is put away for the controller too, so the deck
+    /// and the keyboard button know.
+    override func resignFirstResponder() -> Bool {
+        let wasFirstResponder = isFirstResponder
+        let result = super.resignFirstResponder()
+        if wasFirstResponder, result { controller?.proxyDidResign() }
+        return result
+    }
+
     override var inputAccessoryView: UIView? {
         get { bar }
         set { bar = newValue }
