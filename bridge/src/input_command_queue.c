@@ -215,6 +215,15 @@ static int mr_input_scroll_mergeable(const mrx_scroll *tail, const mrx_scroll *n
           (tail->momentum_phase == continuing || tail->momentum_phase == MRX_PHASE_NONE)));
 }
 
+/* Two CHANGED events of one gesture: their deltas add up (magnify,
+ * rotate), or the later progress stands (Dock swipes). Beginnings and ends
+ * are kept, so the server still sees the gesture's shape. */
+static int mr_input_gesture_mergeable(const mrx_gesture *tail, const mrx_gesture *next)
+{
+    return tail->kind == next->kind && tail->kind != MRX_GESTURE_SMART_ZOOM &&
+        tail->phase == MRX_PHASE_CHANGED && next->phase == MRX_PHASE_CHANGED;
+}
+
 static mr_input_enqueue_result mr_input_enqueue_macrdpx(
     mr_input_command_queue *queue,
     const mr_input_command *command)
@@ -229,6 +238,19 @@ static mr_input_enqueue_result mr_input_enqueue_macrdpx(
                 message->u.pointer.action == MRX_POINTER_MOVE &&
                 previous->u.pointer.action == MRX_POINTER_MOVE) {
                 *tail = *command;
+                return MR_INPUT_ENQUEUE_COALESCED;
+            }
+            if (message->type == MRX_MSG_GESTURE &&
+                mr_input_gesture_mergeable(&previous->u.gesture, &message->u.gesture)) {
+                mrx_gesture *merged = &tail->value.macrdpx.u.gesture;
+                if (message->u.gesture.kind == MRX_GESTURE_MAGNIFY ||
+                    message->u.gesture.kind == MRX_GESTURE_ROTATE) {
+                    merged->value += message->u.gesture.value;
+                } else {
+                    /* A Dock swipe's progress is a total: the newer one. */
+                    merged->value = message->u.gesture.value;
+                }
+                merged->modifier_flags = message->u.gesture.modifier_flags;
                 return MR_INPUT_ENQUEUE_COALESCED;
             }
             if (message->type == MRX_MSG_SCROLL &&

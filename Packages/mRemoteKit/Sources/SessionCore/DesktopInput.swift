@@ -162,4 +162,12 @@ public protocol MacInputSink: DesktopInputSink {
     func send(macScroll: MacScrollInput)
     /// The whole modifier state, when the window regains the keyboard.
     func syncMacModifiers(_ flags: UInt64)
+    /// Pinch, rotate, smart zoom and the Dock's swipes go as themselves.
+    var acceptsMacGestures: Bool { get }
+    func send(macGesture: MacGestureInput)
+}
+
+public extension MacInputSink {
+    var acceptsMacGestures: Bool { false }
+    func send(macGesture: MacGestureInput) {}
 }

@@ -14,7 +14,8 @@ final class MacExtensionsTests: XCTestCase {
         // MRX_CAP_* in macrdpx.h.
         XCTAssertEqual(MacExtensionFeatures.macKeys.rawValue, 1)
         XCTAssertEqual(MacExtensionFeatures.cursorAlpha.rawValue, 32)
-        XCTAssertEqual(MacExtensionFeatures.all.rawValue, 0x3F)
+        XCTAssertEqual(MacExtensionFeatures.gestures.rawValue, 64)
+        XCTAssertEqual(MacExtensionFeatures.all.rawValue, 0x7F)
     }
 
     func testPlatformDefaultsAndRoundTrip() throws {

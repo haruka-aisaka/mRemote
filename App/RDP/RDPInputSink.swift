@@ -95,6 +95,30 @@ final class RDPInputSink: MacInputSink, @unchecked Sendable {
         return isAccepting && native != nil && macFeatures & UInt32(MRX_CAP_PRECISE_SCROLL) != 0
     }
 
+    var acceptsMacGestures: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return isAccepting && native != nil && macFeatures & UInt32(MRX_CAP_GESTURES) != 0
+    }
+
+    func send(macGesture input: MacGestureInput) {
+        lock.lock()
+        guard let target = macTargetLocked(UInt32(MRX_CAP_GESTURES)) else {
+            lock.unlock()
+            return
+        }
+        let flags = input.modifierFlags == 0 ? macFlags : input.modifierFlags
+        lock.unlock()
+        var message = mrx_message()
+        message.type = mrx_message_type(MRX_MSG_GESTURE)
+        message.u.gesture.kind = input.kind.rawValue
+        message.u.gesture.phase = input.phase?.rawValue ?? 0
+        message.u.gesture.value = Float(input.value)
+        message.u.gesture.velocity = Float(input.velocity)
+        message.u.gesture.modifier_flags = flags
+        target.sendMacrdpx(&message)
+    }
+
     /// The native session to send a MACRDPX message to, if `feature` was agreed.
     private func macTargetLocked(_ feature: UInt32) -> RDPNativeSession? {
         guard isAccepting, let native, macFeatures & feature == feature else { return nil }

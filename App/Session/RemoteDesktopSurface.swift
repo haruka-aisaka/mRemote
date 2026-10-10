@@ -46,6 +46,8 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     let touchMode: TouchPointerMode
     var followsPointerAboveKeyboard = true
     var sendsPencilAsPen = true
+    var swipeGestureMode = MacSwipeGestureMode.shortcuts
+    var sendsPinchToMac = true
     /// Points to ask the server for instead of the surface's own size.
     let renderSizeOverride: CGSize?
     /// Fed with every frame and pointer move, for a monitor to draw.
@@ -83,6 +85,8 @@ struct RemoteDesktopSurface: UIViewRepresentable {
         view.setTouchMode(touchMode)
         view.setFollowsPointerAboveKeyboard(followsPointerAboveKeyboard)
         view.sendsPencilAsPen = sendsPencilAsPen
+        view.swipeGestureMode = swipeGestureMode
+        view.sendsPinchToMac = sendsPinchToMac
         view.setRenderSizeOverride(renderSizeOverride)
         view.mirror = mirror
         view.setPrimaryRegion(primaryRegion?.primary)

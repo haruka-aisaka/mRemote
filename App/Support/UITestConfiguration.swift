@@ -30,6 +30,8 @@ enum UITestConfiguration {
         DeckShortcutStrip.storageKey,
         ExternalDisplayMode.storageKey,
         PencilInput.storageKey,
+        MacSwipeGestureMode.storageKey,
+        MacPinchGestures.storageKey,
         FoldResolutionPolicy.storageKey,
         DesktopSafeAreaPolicy.storageKey,
         DeckLayout.portraitFractionKey,

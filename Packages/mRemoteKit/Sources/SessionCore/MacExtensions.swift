@@ -47,9 +47,10 @@ public struct MacExtensionFeatures: OptionSet, Hashable, Sendable {
     public static let streamConfig = MacExtensionFeatures(rawValue: 1 << 3)
     public static let inputSource = MacExtensionFeatures(rawValue: 1 << 4)
     public static let cursorAlpha = MacExtensionFeatures(rawValue: 1 << 5)
+    public static let gestures = MacExtensionFeatures(rawValue: 1 << 6)
 
     public static let all: MacExtensionFeatures = [
-        .macKeys, .pointer, .preciseScroll, .streamConfig, .inputSource, .cursorAlpha,
+        .macKeys, .pointer, .preciseScroll, .streamConfig, .inputSource, .cursorAlpha, .gestures,
     ]
 }
 
@@ -138,6 +139,45 @@ public struct MacScrollInput: Hashable, Sendable {
         self.phase = phase
         self.momentumPhase = momentumPhase
         self.isDirectionInvertedFromDevice = isDirectionInvertedFromDevice
+        self.modifierFlags = modifierFlags
+    }
+}
+
+/// NSEvent.Phase bits, as the Mac extensions carry a gesture's phases.
+public enum MacGesturePhase: UInt8, Hashable, Sendable {
+    case began = 1
+    case changed = 4
+    case ended = 8
+    case cancelled = 16
+}
+
+/// One trackpad gesture beyond scrolling, for a Mac server (MRX GESTURE).
+public struct MacGestureInput: Hashable, Sendable {
+    public enum Kind: UInt8, Hashable, Sendable {
+        /// value: magnification since the previous event (0.1 = 10 % larger).
+        case magnify = 0
+        /// value: degrees since the previous event, counter-clockwise positive.
+        case rotate = 1
+        /// A two-finger double tap. No phase, no value.
+        case smartZoom = 2
+        /// The Dock's swipes, the screen following the fingers: value is the
+        /// progress so far in screen widths (heights), positive as the
+        /// fingers move left (up); velocity, on the end, in progress per second.
+        case dockHorizontal = 3
+        case dockVertical = 4
+    }
+
+    public let kind: Kind
+    public let phase: MacGesturePhase?
+    public let value: Double
+    public let velocity: Double
+    public let modifierFlags: UInt64
+
+    public init(kind: Kind, phase: MacGesturePhase?, value: Double = 0, velocity: Double = 0, modifierFlags: UInt64 = 0) {
+        self.kind = kind
+        self.phase = phase
+        self.value = value
+        self.velocity = velocity
         self.modifierFlags = modifierFlags
     }
 }

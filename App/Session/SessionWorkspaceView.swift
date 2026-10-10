@@ -44,6 +44,8 @@ struct SessionWorkspaceView: View {
     @AppStorage(DeckShortcutStrip.storageKey) private var showsDeckShortcuts = true
     @AppStorage(ExternalDisplayMode.storageKey) private var externalMode = ExternalDisplayMode.desktop
     @AppStorage(PencilInput.storageKey) private var sendsPencilAsPen = true
+    @AppStorage(MacSwipeGestureMode.storageKey) private var swipeGestureMode = MacSwipeGestureMode.shortcuts
+    @AppStorage(MacPinchGestures.storageKey) private var sendsPinchToMac = true
     private let externalDisplay = ExternalDisplayCoordinator.shared
 
     /// A monitor shows the desktop, and this screen is all keyboard and
@@ -408,6 +410,8 @@ struct SessionWorkspaceView: View {
                 touchMode: touchMode,
                 followsPointerAboveKeyboard: followsPointerAboveKeyboard,
                 sendsPencilAsPen: sendsPencilAsPen,
+                swipeGestureMode: swipeGestureMode,
+                sendsPinchToMac: sendsPinchToMac,
                 renderSizeOverride: renderSizeOverride,
                 mirror: model.desktopMirror,
                 primaryRegion: model.extendedLayout,

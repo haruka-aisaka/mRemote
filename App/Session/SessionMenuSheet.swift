@@ -39,6 +39,8 @@ struct SessionMenuSheet: View {
     private var safeAreaPolicy = DesktopSafeAreaPolicy.avoid
     @AppStorage(LaptopDeckPlacement.storageKey) private var deckPlacement = LaptopDeckPlacement.docked
     @AppStorage(KeyboardPointerFollowing.storageKey) private var followsPointerAboveKeyboard = true
+    @AppStorage(MacSwipeGestureMode.storageKey) private var swipeGestureMode = MacSwipeGestureMode.shortcuts
+    @AppStorage(MacPinchGestures.storageKey) private var sendsPinchToMac = true
     @AppStorage(LaptopDeckArrangement.splitInLandscapeStorageKey) private var splitsDeckInLandscape = false
     @AppStorage(LaptopDeckPreference.foldedLandscapeStorageKey) private var showsDeckFoldedInLandscape = false
     @AppStorage(FloatingButtonsIdleStyle.storageKey) private var buttonsIdleStyle = FloatingButtonsIdleStyle.dim
@@ -46,6 +48,17 @@ struct SessionMenuSheet: View {
     @AppStorage(ExternalDisplayMode.storageKey) private var externalMode = ExternalDisplayMode.desktop
     @AppStorage(PencilInput.storageKey) private var sendsPencilAsPen = true
     @State private var isPickingFilesToSend = false
+
+    private var swipeGestureHint: String {
+        switch swipeGestureMode {
+        case .shortcuts:
+            String(localized: "左右でデスクトップを切り替え（⌃← / ⌃→）、上で Mission Control（⌃↑）、下でアプリ Exposé（⌃↓）。Mac 側でこのショートカットが有効になっている必要があります")
+        case .followFingers:
+            String(localized: "Mac のトラックパッドと同じように、指に合わせて画面が動きます。macOS の非公開の仕組みを使うため、macOS のバージョンによっては動きません")
+        case .off:
+            String(localized: "3本指・4本指は2本指と同じくスクロールになります")
+        }
+    }
 
     private var canFloatDeck: Bool {
         UIDevice.current.userInterfaceIdiom == .pad || model.deviceHasHinge
@@ -304,6 +317,21 @@ struct SessionMenuSheet: View {
                         Text("反転").tag(ScrollDirection.reversed)
                     }
                     .accessibilityIdentifier("session-scroll-picker")
+                    // On the iPhone and iPad only: the Mac app has the Mac's
+                    // own trackpad.
+                    if model.configuration.remotePlatform == .macOS, !Platform.isMac {
+                        Picker("3・4本指のスワイプ", selection: $swipeGestureMode) {
+                            Text("ショートカットを送る").tag(MacSwipeGestureMode.shortcuts)
+                            Text("指に合わせて動かす（実験的）").tag(MacSwipeGestureMode.followFingers)
+                            Text("使わない").tag(MacSwipeGestureMode.off)
+                        }
+                        .accessibilityIdentifier("session-swipe-gesture-picker")
+                        Text(swipeGestureHint)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Toggle("ピンチ・回転・2本指ダブルタップを Mac に送る", isOn: $sendsPinchToMac)
+                            .accessibilityIdentifier("session-pinch-to-mac-toggle")
+                    }
                     // 自動 is the foldable's laptop posture; the other two
                     // let any device use the deck, or a folded one do without.
                     Picker("フル PC キーボード", selection: $deckPreference) {

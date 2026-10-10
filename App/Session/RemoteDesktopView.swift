@@ -565,6 +565,15 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         setScaleMode(scaleMode == .fit ? .oneToOne : .fit)
     }
 
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        // With the desktop as a Mac's trackpad, two fingers pinching are the
+        // Mac's, not a zoom of this view.
+        if gestureRecognizer is UIPinchGestureRecognizer, touchMode == .trackpad, macGestures.pinch {
+            return false
+        }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
+
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
@@ -1068,6 +1077,73 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     func scrollRemote(dx: Double, dy: Double) {
         deliver(pointerRouter.scrolled(horizontal: dx, vertical: dy))
+    }
+
+    // MARK: - Mac gestures
+
+    /// What three and four fingers do on a Mac host.
+    var swipeGestureMode = MacSwipeGestureMode.shortcuts
+    /// Pinch, rotate and smart zoom go to a Mac host; off, a pinch zooms here.
+    var sendsPinchToMac = true
+
+    private var macSink: (any MacInputSink)? {
+        guard isInputEnabled, let sink = inputSink as? any MacInputSink else { return nil }
+        return sink
+    }
+
+    var macGestures: TrackpadMacGestures {
+        guard let sink = macSink else { return .none }
+        var gestures = TrackpadMacGestures()
+        gestures.preciseScroll = sink.acceptsMacScroll
+        gestures.pinch = sendsPinchToMac && sink.acceptsMacGestures
+        switch swipeGestureMode {
+        case .followFingers:
+            gestures.swipes = sink.acceptsMacGestures ? .followFingers
+                : sink.acceptsMacInput ? .shortcuts : .off
+        case .shortcuts:
+            gestures.swipes = sink.acceptsMacInput ? .shortcuts : .off
+        case .off:
+            gestures.swipes = .off
+        }
+        return gestures
+    }
+
+    func scrollRemote(dx: Double, dy: Double, phase: MacGesturePhase) {
+        guard let sink = macSink, sink.acceptsMacScroll else {
+            scrollRemote(dx: dx, dy: dy)
+            return
+        }
+        // The fingers carry the content, as on a Mac with natural scrolling;
+        // reversed, they move the scroll bars instead.
+        let sign: Double = pointerRouter.scrollDirection == .normal ? 1 : -1
+        anchorRelativePointer()
+        sink.send(macScroll: MacScrollInput(
+            deltaX: dx * sign,
+            deltaY: dy * sign,
+            isPrecise: true,
+            phase: phase.rawValue,
+            momentumPhase: 0,
+            isDirectionInvertedFromDevice: pointerRouter.scrollDirection == .normal,
+            modifierFlags: 0
+        ))
+    }
+
+    func sendMacGesture(_ input: MacGestureInput) {
+        guard let sink = macSink, sink.acceptsMacGestures else { return }
+        // At the pointer: a pinch zooms what the cursor is over.
+        anchorRelativePointer()
+        sink.send(macGesture: input)
+    }
+
+    /// The shortcut a swipe stands for, as keys: ⌃ and an arrow.
+    func sendSwipeShortcut(_ direction: SwipeDirection) {
+        guard let sink = inputSink, isInputEnabled else { return }
+        let control: UInt16 = 0xE0
+        let arrow = direction.macShortcut.key
+        sink.send(KeyboardInput(usage: control, transition: .down))
+        sink.send(KeyboardInput(usage: arrow, transition: .down))
+        sink.send(KeyboardInput(usage: arrow, transition: .up))
+        sink.send(KeyboardInput(usage: control, transition: .up))
     }
 
     /// A click before the trackpad ever moved lands where the cursor is

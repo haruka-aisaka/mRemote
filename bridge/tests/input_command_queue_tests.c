@@ -630,6 +630,37 @@ static int test_mac_moves_and_scrolls_coalesce(void)
     return 1;
 }
 
+static int test_mac_gestures_coalesce_their_changes(void)
+{
+    mr_input_command_queue queue;
+    mr_input_command pinch = mac_command(MRX_MSG_GESTURE);
+    mr_input_command dock = mac_command(MRX_MSG_GESTURE);
+    mr_input_command out;
+    CHECK(mr_input_command_queue_init(&queue, 8u));
+    pinch.value.macrdpx.u.gesture.kind = MRX_GESTURE_MAGNIFY;
+    pinch.value.macrdpx.u.gesture.phase = MRX_PHASE_BEGAN;
+    CHECK(mr_input_command_queue_enqueue(&queue, &pinch) == MR_INPUT_ENQUEUE_QUEUED);
+    pinch.value.macrdpx.u.gesture.phase = MRX_PHASE_CHANGED;
+    pinch.value.macrdpx.u.gesture.value = 0.25f;
+    CHECK(mr_input_command_queue_enqueue(&queue, &pinch) == MR_INPUT_ENQUEUE_QUEUED);
+    /* Magnification deltas add up. */
+    CHECK(mr_input_command_queue_enqueue(&queue, &pinch) == MR_INPUT_ENQUEUE_COALESCED);
+    dock.value.macrdpx.u.gesture.kind = MRX_GESTURE_DOCK_VERTICAL;
+    dock.value.macrdpx.u.gesture.phase = MRX_PHASE_CHANGED;
+    dock.value.macrdpx.u.gesture.value = 0.25f;
+    CHECK(mr_input_command_queue_enqueue(&queue, &dock) == MR_INPUT_ENQUEUE_QUEUED);
+    /* A Dock swipe's progress is a total: the later one stands. */
+    dock.value.macrdpx.u.gesture.value = 0.75f;
+    CHECK(mr_input_command_queue_enqueue(&queue, &dock) == MR_INPUT_ENQUEUE_COALESCED);
+    dock.value.macrdpx.u.gesture.phase = MRX_PHASE_ENDED;
+    CHECK(mr_input_command_queue_enqueue(&queue, &dock) == MR_INPUT_ENQUEUE_QUEUED);
+    CHECK(mr_input_command_queue_count(&queue) == 4u);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out));
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.macrdpx.u.gesture.value == 0.5f);
+    CHECK(mr_input_command_queue_dequeue(&queue, &out) && out.value.macrdpx.u.gesture.value == 0.75f);
+    return 1;
+}
+
 static int test_mac_key_and_button_owe_their_release(void)
 {
     mr_input_command_queue queue;
@@ -681,6 +712,7 @@ int main(void)
         { "touch lift slot", test_a_full_queue_keeps_room_for_a_lift },
         { "pen coalescing", test_pen_hover_and_moves_coalesce },
         { "mac move/scroll coalescing", test_mac_moves_and_scrolls_coalesce },
+        { "mac gesture coalescing", test_mac_gestures_coalesce_their_changes },
         { "mac key/button release", test_mac_key_and_button_owe_their_release }
     };
     size_t index;

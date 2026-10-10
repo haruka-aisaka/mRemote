@@ -1188,7 +1188,8 @@ static int mr_macrdpx_to_server(mrx_message_type type)
 {
     return type == MRX_MSG_KEYBOARD_INFO || type == MRX_MSG_KEY ||
         type == MRX_MSG_MODIFIERS || type == MRX_MSG_POINTER ||
-        type == MRX_MSG_SCROLL || type == MRX_MSG_STREAM_CONFIG;
+        type == MRX_MSG_SCROLL || type == MRX_MSG_GESTURE ||
+        type == MRX_MSG_STREAM_CONFIG;
 }
 
 static mr_rdp_status mr_bridge_macrdpx_message(

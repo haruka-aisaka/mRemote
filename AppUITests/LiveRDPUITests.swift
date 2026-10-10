@@ -175,6 +175,20 @@ final class LiveRDPUITests: XCTestCase {
                 .map { target.coordinate(withNormalizedOffset: $0).screenPoint }
             let shift = CGVector(dx: number(6) * size.width, dy: number(7) * size.height)
             return synthesizeFingers(at: points, moving: shift, over: Double(number(1)), secondLate: Double(number(8)))
+        case "paths":
+            // paths <target> <seconds> x0 y0 x1 y1 [x0 y0 x1 y1 ...]: each
+            // finger from one normalized point to another, all together -
+            // three fingers swiping, two spreading.
+            guard let target = target() else { return "missing" }
+            var starts: [CGPoint] = []
+            var ends: [CGPoint] = []
+            var index = 2
+            while arguments.count >= index + 4 {
+                starts.append(target.coordinate(withNormalizedOffset: CGVector(dx: number(index), dy: number(index + 1))).screenPoint)
+                ends.append(target.coordinate(withNormalizedOffset: CGVector(dx: number(index + 2), dy: number(index + 3))).screenPoint)
+                index += 4
+            }
+            return synthesizeFingers(at: starts, moving: .zero, over: Double(number(1)), secondLate: 0, to: ends)
         case "keys":
             for identifier in arguments {
                 let key = element(identifier)
@@ -275,7 +289,8 @@ final class LiveRDPUITests: XCTestCase {
     /// reached through the runtime: XCPointerEventPath and
     /// XCSynthesizedEventRecord are not public API.
     private func synthesizeFingers(
-        at points: [CGPoint], moving shift: CGVector, over duration: Double, secondLate: Double
+        at points: [CGPoint], moving shift: CGVector, over duration: Double, secondLate: Double,
+        to ends: [CGPoint]? = nil
     ) -> String {
         guard let recordClass = NSClassFromString("XCSynthesizedEventRecord") as? NSObject.Type,
               let pathClass = NSClassFromString("XCPointerEventPath") as? NSObject.Type
@@ -303,10 +318,11 @@ final class LiveRDPUITests: XCTestCase {
                   let makePath = call(pathAlloc, "initForTouchAtPoint:offset:", as: InitPath.self)
             else { return "no path" }
             let path = makePath(pathAlloc, NSSelectorFromString("initForTouchAtPoint:offset:"), point, start)
-            if shift != .zero, let move = call(path, "moveToPoint:atOffset:", as: MoveTo.self) {
+            let travel = ends.map { CGVector(dx: $0[index].x - point.x, dy: $0[index].y - point.y) } ?? shift
+            if travel != .zero, let move = call(path, "moveToPoint:atOffset:", as: MoveTo.self) {
                 for step in 1...steps {
                     let fraction = Double(step) / Double(steps)
-                    let to = CGPoint(x: point.x + shift.dx * fraction, y: point.y + shift.dy * fraction)
+                    let to = CGPoint(x: point.x + travel.dx * fraction, y: point.y + travel.dy * fraction)
                     move(path, NSSelectorFromString("moveToPoint:atOffset:"), to, start + (duration - start) * fraction)
                 }
             }

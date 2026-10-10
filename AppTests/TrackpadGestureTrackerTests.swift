@@ -25,11 +25,30 @@ final class TrackpadGestureTrackerTests: XCTestCase {
             scrolled.dy += dy
             if events.last != "scroll" { events.append("scroll") }
         }
+
+        var macGestures = TrackpadMacGestures.none
+        var gestures: [MacGestureInput] = []
+        var phasedScrolls: [MacGesturePhase] = []
+        var shortcuts: [SwipeDirection] = []
+
+        func scrollRemote(dx: Double, dy: Double, phase: MacGesturePhase) {
+            scrolled.dx += dx
+            scrolled.dy += dy
+            phasedScrolls.append(phase)
+        }
+        func sendMacGesture(_ input: MacGestureInput) {
+            gestures.append(input)
+            if events.last != "gesture" { events.append("gesture") }
+        }
+        func sendSwipeShortcut(_ direction: SwipeDirection) {
+            shortcuts.append(direction)
+            events.append("shortcut")
+        }
     }
 
     private let recorder = Recorder()
     /// Stand-ins for UITouch identity; kept alive for the test's length.
-    private let fingers = [NSObject(), NSObject()]
+    private let fingers = [NSObject(), NSObject(), NSObject()]
     private var pendingLongPress: (@MainActor () -> Void)?
     /// A tap's click, held back for a second touch.
     private var pendingClick: (@MainActor () -> Void)?
@@ -177,6 +196,160 @@ final class TrackpadGestureTrackerTests: XCTestCase {
         tracker.ended(id: id(0), at: 1.1, cancelled: false)
         pendingClick?()
         XCTAssertEqual(recorder.events.count, 2)
+    }
+
+    // MARK: - A Mac host's gestures
+
+    private static let mac = TrackpadMacGestures(preciseScroll: true, pinch: true, swipes: .shortcuts)
+
+    /// Two fingers moving apart: a magnify, ended when they lift, and no
+    /// right click although they hardly travelled together.
+    func testTwoFingersSpreadingMagnifyOnAMac() {
+        recorder.macGestures = Self.mac
+        let tracker = makeTracker()
+        tracker.began(sample(0, 100, 100, at: 0))
+        tracker.began(sample(1, 140, 100, at: 0))
+        for step in 1...4 {
+            let spread = CGFloat(step) * 10
+            tracker.moved([sample(0, 100 - spread, 100, at: Double(step) * 0.016),
+                           sample(1, 140 + spread, 100, at: Double(step) * 0.016)])
+        }
+        tracker.ended(id: id(0), at: 0.1, cancelled: false)
+        tracker.ended(id: id(1), at: 0.1, cancelled: false)
+        pendingClick?()
+        let magnify = recorder.gestures.filter { $0.kind == .magnify }
+        XCTAssertEqual(magnify.first?.phase, .began)
+        XCTAssertEqual(magnify.last?.phase, .ended)
+        let total = magnify.reduce(1.0) { $0 * (1 + $1.value) }
+        XCTAssertEqual(total, 120.0 / 40.0, accuracy: 0.01, "the span went from 40 to 120")
+        XCTAssertEqual(recorder.events, ["gesture"], "a pinch is no click")
+    }
+
+    /// Turning the pair clockwise on screen is a negative (clockwise) rotation.
+    func testTwoFingersTurningRotate() {
+        recorder.macGestures = Self.mac
+        let tracker = makeTracker()
+        tracker.began(sample(0, 100, 100, at: 0))
+        tracker.began(sample(1, 200, 100, at: 0))
+        // The second finger swings down (clockwise on screen) about the first.
+        tracker.moved([sample(1, 200, 130, at: 0.05)])
+        tracker.ended(id: id(1), at: 0.1, cancelled: false)
+        tracker.ended(id: id(0), at: 0.1, cancelled: false)
+        let rotation = recorder.gestures.filter { $0.kind == .rotate }.reduce(0) { $0 + $1.value }
+        XCTAssertLessThan(rotation, -10)
+    }
+
+    /// Without the Mac's gestures, two fingers spreading are still a scroll.
+    func testWithoutAMacTwoFingersStillScroll() {
+        let tracker = makeTracker()
+        tracker.began(sample(0, 100, 100, at: 0))
+        tracker.began(sample(1, 140, 100, at: 0))
+        tracker.moved([sample(0, 90, 120, at: 0.016), sample(1, 150, 120, at: 0.016)])
+        tracker.ended(id: id(0), at: 0.1, cancelled: false)
+        tracker.ended(id: id(1), at: 0.1, cancelled: false)
+        XCTAssertEqual(recorder.events, ["scroll"])
+        XCTAssertTrue(recorder.gestures.isEmpty)
+    }
+
+    /// On a Mac, two fingers scrolling carry their phases, ended on lift.
+    func testAMacScrollHasPhases() {
+        recorder.macGestures = Self.mac
+        let tracker = makeTracker()
+        tracker.began(sample(0, 100, 100, at: 0))
+        tracker.began(sample(1, 140, 100, at: 0))
+        for step in 1...3 {
+            let y = 100 - CGFloat(step) * 10
+            tracker.moved([sample(0, 100, y, at: Double(step) * 0.016), sample(1, 140, y, at: Double(step) * 0.016)])
+        }
+        tracker.ended(id: id(0), at: 0.1, cancelled: false)
+        tracker.ended(id: id(1), at: 0.1, cancelled: false)
+        XCTAssertEqual(recorder.phasedScrolls.first, .began)
+        XCTAssertEqual(recorder.phasedScrolls.last, .ended)
+        XCTAssertEqual(recorder.scrolled.dy, -30, accuracy: 0.001)
+    }
+
+    /// Two two-finger taps are smart zoom; the first one's right click never
+    /// comes. One alone is still a right click, a moment later.
+    func testTwoTwoFingerTapsAreSmartZoom() {
+        recorder.macGestures = Self.mac
+        let tracker = makeTracker()
+        tracker.began(sample(0, 100, 100, at: 0))
+        tracker.began(sample(1, 140, 100, at: 0))
+        tracker.ended(id: id(0), at: 0.08, cancelled: false)
+        tracker.ended(id: id(1), at: 0.08, cancelled: false)
+        XCTAssertNotNil(pendingLongPress, "the right click waits")
+        XCTAssertEqual(recorder.events, [])
+        tracker.began(sample(0, 100, 100, at: 0.2))
+        tracker.began(sample(1, 140, 100, at: 0.2))
+        tracker.ended(id: id(0), at: 0.28, cancelled: false)
+        tracker.ended(id: id(1), at: 0.28, cancelled: false)
+        XCTAssertEqual(recorder.gestures.map(\.kind), [.smartZoom])
+        XCTAssertFalse(recorder.events.contains("click right"))
+
+        tracker.began(sample(0, 100, 100, at: 2))
+        tracker.began(sample(1, 140, 100, at: 2))
+        tracker.ended(id: id(0), at: 2.08, cancelled: false)
+        tracker.ended(id: id(1), at: 2.08, cancelled: false)
+        pendingLongPress?()
+        XCTAssertEqual(recorder.events.last, "click right")
+    }
+
+    private func threeFingerSwipe(_ tracker: TrackpadGestureTracker, dx: CGFloat, dy: CGFloat, steps: Int = 6) {
+        tracker.began(sample(0, 100, 150, at: 0))
+        tracker.began(sample(1, 140, 150, at: 0))
+        tracker.began(sample(2, 180, 150, at: 0))
+        for step in 1...steps {
+            let f = CGFloat(step) / CGFloat(steps)
+            let t = Double(step) * 0.016
+            tracker.moved([sample(0, 100 + dx * f, 150 + dy * f, at: t),
+                           sample(1, 140 + dx * f, 150 + dy * f, at: t),
+                           sample(2, 180 + dx * f, 150 + dy * f, at: t)])
+        }
+        for finger in 0..<3 { tracker.ended(id: id(finger), at: 0.2, cancelled: false) }
+    }
+
+    /// Three fingers up: Mission Control's shortcut, once.
+    func testThreeFingersUpSendTheMissionControlShortcut() {
+        recorder.macGestures = Self.mac
+        let tracker = makeTracker()
+        threeFingerSwipe(tracker, dx: 5, dy: -120)
+        XCTAssertEqual(recorder.shortcuts, [.up])
+        XCTAssertEqual(recorder.events, ["shortcut"], "neither a scroll nor a click")
+    }
+
+    /// Three fingers left bring in the Space to the right; a short swipe
+    /// sends nothing.
+    func testThreeFingersLeftSwitchSpacesAndAShortSwipeDoesNot() {
+        recorder.macGestures = Self.mac
+        let tracker = makeTracker()
+        threeFingerSwipe(tracker, dx: -100, dy: 0)
+        XCTAssertEqual(recorder.shortcuts, [.left])
+        XCTAssertEqual(SwipeDirection.left.macShortcut.label, "⌃→")
+        threeFingerSwipe(tracker, dx: 30, dy: 0)
+        XCTAssertEqual(recorder.shortcuts, [.left])
+    }
+
+    /// Following the fingers: the Dock's swipe, its progress growing as they
+    /// go up, ended (not called off) as they lift still going.
+    func testThreeFingersFollowedAreADockSwipe() {
+        recorder.macGestures = TrackpadMacGestures(preciseScroll: true, pinch: true, swipes: .followFingers)
+        let tracker = makeTracker()
+        tracker.padSize = CGSize(width: 400, height: 200)
+        threeFingerSwipe(tracker, dx: 0, dy: -140)
+        let dock = recorder.gestures.filter { $0.kind == .dockVertical }
+        XCTAssertEqual(dock.first?.phase, .began)
+        XCTAssertEqual(dock.last?.phase, .ended)
+        XCTAssertEqual(dock.last?.value ?? 0, 1.0, accuracy: 0.01, "140 of 200 x 0.7 is the whole way")
+        XCTAssertGreaterThan(dock.last?.velocity ?? 0, 0)
+        XCTAssertTrue(recorder.shortcuts.isEmpty)
+    }
+
+    /// With swipes off, three fingers scroll as before.
+    func testThreeFingersScrollWhenSwipesAreOff() {
+        recorder.macGestures = TrackpadMacGestures(preciseScroll: false, pinch: true, swipes: .off)
+        let tracker = makeTracker()
+        threeFingerSwipe(tracker, dx: 0, dy: -120)
+        XCTAssertEqual(recorder.events, ["scroll"])
     }
 
     func testASlowTouchIsNoTap() {
