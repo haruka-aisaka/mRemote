@@ -67,6 +67,7 @@ static mr_rdp_transport_security mr_freerdp_transport_security(uint32_t selected
 #define MR_FREERDP_CLIPBOARD_PROBE_TIMEOUT_MS 10000u
 #define MR_FREERDP_COMMAND_BATCH_LIMIT 64u
 #define MR_FREERDP_RDPSND_SUBSYSTEM "mremote"
+#define MR_FREERDP_RDPSND_LATENCY_MS "400"
 #define MR_FREERDP_MAX_AUDIO_SINKS 2u
 /* The one pen this adapter registers with RDPEI. */
 #define MR_FREERDP_PEN_DEVICE_ID 1
@@ -2818,7 +2819,13 @@ static BOOL mr_freerdp_pre_connect(freerdp *instance)
 {
     mr_freerdp_backend *backend = mr_freerdp_backend_from_instance(instance);
     rdpSettings *settings;
-    const char *rdpsnd[] = { "rdpsnd", "sys:" MR_FREERDP_RDPSND_SUBSYSTEM };
+    /* latency: how far ahead of its own play clock rdpsnd lets audio run
+     * before it drops a wave (rdpsnd_detect_overrun). At the default 0 that
+     * is one wave: a few waves arriving together after a Wi-Fi stall - a
+     * server streaming live audio sends them as they are made - lost one,
+     * a click every few seconds. The app's ring absorbs this much. */
+    const char *rdpsnd[] = { "rdpsnd", "sys:" MR_FREERDP_RDPSND_SUBSYSTEM,
+                             "latency:" MR_FREERDP_RDPSND_LATENCY_MS };
     const BOOL audio = (backend != NULL &&
         (backend->channel_flags & MR_RDP_CHANNEL_FLAG_AUDIO) != 0u) ? TRUE : FALSE;
     const BOOL clipboard = (backend != NULL &&
