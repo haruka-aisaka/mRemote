@@ -119,6 +119,8 @@ final class TrackpadGestureTracker {
     /// makes it the swipe's shortcut.
     static let swipeDecision: CGFloat = 12
     static let swipeShortcutTravel: CGFloat = 50
+    /// Progress per second onwards that carries a short Dock swipe through.
+    static let swipeFlickSpeed = 1.0
     /// How far the span or the angle must change, before the fingers travel
     /// together, for two fingers to be a pinch rather than a scroll.
     static let pinchSpanChange: CGFloat = 0.08
@@ -441,6 +443,16 @@ final class TrackpadGestureTracker {
         }
     }
 
+    /// Whether a Dock swipe let go here goes on to the next Space (into
+    /// Mission Control) rather than back: past halfway, or flicked onwards.
+    /// The Dock completes every swipe that ends, whatever its speed, so the
+    /// choice is made here and a swipe going back is sent as cancelled.
+    static func swipeCompletes(progress: Double, velocity: Double) -> Bool {
+        guard progress != 0 else { return false }
+        let onwards = progress > 0 ? velocity : -velocity
+        return abs(progress) >= 0.5 || (onwards >= Self.swipeFlickSpeed && abs(progress) >= 0.05)
+    }
+
     /// Ends whatever the fingers were doing on the host.
     private func finishMultiFinger(cancelled: Bool) {
         guard let target = target() else { return }
@@ -456,12 +468,10 @@ final class TrackpadGestureTracker {
         }
         if swipeBegan {
             swipeBegan = false
-            // Heading back towards where it started: the swipe is called off,
-            // as a trackpad's is.
-            let goingBack = swipeVelocity != 0 && (swipeVelocity > 0) != (swipeProgress > 0)
             target.sendMacGesture(MacGestureInput(
                 kind: swipeAxisHorizontal == true ? .dockHorizontal : .dockVertical,
-                phase: cancelled || goingBack ? .cancelled : .ended,
+                phase: cancelled || !Self.swipeCompletes(progress: swipeProgress, velocity: swipeVelocity)
+                    ? .cancelled : .ended,
                 value: swipeProgress,
                 velocity: swipeVelocity
             ))

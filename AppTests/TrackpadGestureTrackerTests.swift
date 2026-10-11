@@ -344,6 +344,18 @@ final class TrackpadGestureTrackerTests: XCTestCase {
         XCTAssertTrue(recorder.shortcuts.isEmpty)
     }
 
+    /// A Dock swipe let go short of halfway goes back unless flicked on:
+    /// the Dock would complete any swipe that ends, so it is called off.
+    func testShortDockSwipeGoesBackUnlessFlicked() {
+        XCTAssertTrue(TrackpadGestureTracker.swipeCompletes(progress: 0.6, velocity: 0))
+        XCTAssertTrue(TrackpadGestureTracker.swipeCompletes(progress: -0.6, velocity: 0))
+        XCTAssertFalse(TrackpadGestureTracker.swipeCompletes(progress: 0.3, velocity: 0.2))
+        XCTAssertTrue(TrackpadGestureTracker.swipeCompletes(progress: 0.2, velocity: 2))
+        XCTAssertTrue(TrackpadGestureTracker.swipeCompletes(progress: -0.2, velocity: -2))
+        XCTAssertFalse(TrackpadGestureTracker.swipeCompletes(progress: 0.3, velocity: -2))
+        XCTAssertFalse(TrackpadGestureTracker.swipeCompletes(progress: 0.01, velocity: 3))
+    }
+
     /// With swipes off, three fingers scroll as before.
     func testThreeFingersScrollWhenSwipesAreOff() {
         recorder.macGestures = TrackpadMacGestures(preciseScroll: false, pinch: true, swipes: .off)
