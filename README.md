@@ -124,9 +124,14 @@ Both XCFrameworks carry three slices: `ios-arm64`, `ios-arm64-simulator` and
 to be rebuilt, or the Mac build will not link.
 
 The Mac app keeps passwords and approved certificates in the data-protection
-Keychain, which macOS only opens to an app signed with a team (the project's
-automatic signing does this). An ad-hoc signed build runs, but asks for the
-password and the certificate on every connection.
+Keychain, which macOS only opens to an app whose provisioning profile grants a
+Keychain access group (`config/mRemote-maccatalyst.entitlements`; automatic
+signing fetches the profile and registers the Mac). Signed with a team but
+without that profile, saving a password fails with -34018. An ad-hoc signed
+build runs, but asks for the password and the certificate on every connection.
+
+The XCFrameworks' Mac slice is arm64 only, so a Release build (which is
+universal by default) is built with `ARCHS=arm64`.
 
 ## License
 

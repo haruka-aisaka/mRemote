@@ -399,6 +399,7 @@
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "config/mRemote-maccatalyst.entitlements";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/external/macrdpx/include";
 				SWIFT_OBJC_BRIDGING_HEADER = "App/RDP/mRemote-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2,6";
@@ -443,6 +444,7 @@
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = "config/mRemote-maccatalyst.entitlements";
 				HEADER_SEARCH_PATHS = "$(SRCROOT)/external/macrdpx/include";
 				SWIFT_OBJC_BRIDGING_HEADER = "App/RDP/mRemote-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2,6";
