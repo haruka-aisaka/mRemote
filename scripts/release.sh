@@ -56,7 +56,7 @@ xcodebuild build "${common[@]}" \
     | grep -E "error:|warning: .*sign|BUILD (SUCCEEDED|FAILED)" || true
 MAC_APP="$DERIVED/mac/Build/Products/Release-maccatalyst/mRemote.app"
 codesign --verify --strict "$MAC_APP"
-codesign -dv "$MAC_APP" 2>&1 | grep -q "Signature=adhoc"
+[[ "$(codesign -dv "$MAC_APP" 2>&1)" == *"Signature=adhoc"* ]] || { echo "The Mac app is not ad-hoc signed." >&2; exit 1; }
 MAC_ZIP="$OUT/mRemote-$TAG-macos-arm64.zip"
 ditto -c -k --keepParent "$MAC_APP" "$MAC_ZIP"
 
