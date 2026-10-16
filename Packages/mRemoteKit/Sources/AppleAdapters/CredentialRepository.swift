@@ -27,10 +27,16 @@ public struct KeychainError: Error, Hashable, Sendable, CustomStringConvertible 
 public struct KeychainCredentialRepository: CredentialRepository {
     private let service: String
     private let accessGroup: String?
+    private let store: KeychainStore
 
-    public init(service: String = "com.mikuta0407.mRemote.credentials", accessGroup: String? = nil) {
+    public init(
+        service: String = "com.mikuta0407.mRemote.credentials",
+        accessGroup: String? = nil,
+        store: KeychainStore = .dataProtection
+    ) {
         self.service = service
         self.accessGroup = accessGroup
+        self.store = store
     }
 
     private func baseQuery(for reference: CredentialReference) -> [String: Any] {
@@ -43,6 +49,7 @@ public struct KeychainCredentialRepository: CredentialRepository {
         if let accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
+        store.apply(to: &query)
         return query
     }
 

@@ -95,8 +95,9 @@ final class AppEnvironment {
             // user's profiles had vanished.
             store = FailingProfileStore(reason: String(describing: error))
         }
-        let credentials = KeychainCredentialRepository()
-        let trust = KeychainTrustRepository()
+        let keychain = KeychainStore.detect()
+        let credentials = KeychainCredentialRepository(store: keychain)
+        let trust = KeychainTrustRepository(store: keychain)
         return AppEnvironment(
             store: store,
             credentials: credentials,

@@ -79,10 +79,16 @@ extension TrustRepository {
 public struct KeychainTrustRepository: TrustRepository {
     private let service: String
     private let accessGroup: String?
+    private let store: KeychainStore
 
-    public init(service: String = "com.mikuta0407.mRemote.trust", accessGroup: String? = nil) {
+    public init(
+        service: String = "com.mikuta0407.mRemote.trust",
+        accessGroup: String? = nil,
+        store: KeychainStore = .dataProtection
+    ) {
         self.service = service
         self.accessGroup = accessGroup
+        self.store = store
     }
 
     private func baseQuery(account: String?) -> [String: Any] {
@@ -97,6 +103,7 @@ public struct KeychainTrustRepository: TrustRepository {
         if let accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
+        store.apply(to: &query)
         return query
     }
 
@@ -113,7 +120,11 @@ public struct KeychainTrustRepository: TrustRepository {
     }()
 
     private func record(host: String, port: UInt16) throws -> TrustRecord? {
-        var query = baseQuery(account: "\(host):\(port)")
+        try record(account: "\(host):\(port)")
+    }
+
+    private func record(account: String) throws -> TrustRecord? {
+        var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
@@ -160,9 +171,11 @@ public struct KeychainTrustRepository: TrustRepository {
         }
     }
 
+    /// The accounts first, then each item: the login keychain refuses to
+    /// return the data of more than one item at a time (errSecParam).
     public func allRecords() throws -> [TrustRecord] {
         var query = baseQuery(account: nil)
-        query[kSecReturnData as String] = true
+        query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitAll
 
         var items: CFTypeRef?
@@ -171,8 +184,10 @@ public struct KeychainTrustRepository: TrustRepository {
         guard status == errSecSuccess else {
             throw KeychainError(operation: "SecItemCopyMatching", status: status)
         }
-        guard let data = items as? [Data] else { return [] }
-        return data.compactMap { try? Self.decoder.decode(TrustRecord.self, from: $0) }
+        guard let attributes = items as? [[String: Any]] else { return [] }
+        return attributes
+            .compactMap { $0[kSecAttrAccount as String] as? String }
+            .compactMap { try? record(account: $0) }
     }
 }
 

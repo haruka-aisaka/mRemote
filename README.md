@@ -75,6 +75,28 @@ own screen, at Retina pixels for a Retina client. Any other server stays
 plain RDP; see
 [`docs/input-design.md`](docs/input-design.md) section 13.
 
+## Install
+
+**macOS** (Apple silicon, macOS 14 or later), with Homebrew:
+
+```sh
+brew install --cask mikuta0407/apps/mremote
+```
+
+The Mac app is ad-hoc signed and not notarized; the cask removes the
+quarantine attribute so it opens. It keeps passwords and approved
+certificates in the login keychain, and after an update macOS may ask once to
+let the new build read them.
+
+**iPadOS / iOS**: each [release](https://github.com/mikuta0407/mRemote/releases)
+carries an unsigned IPA (`mRemote-<version>-ios-unsigned.ipa`). Install it with
+[LiveContainer](https://github.com/LiveContainer/LiveContainer), or sign it
+yourself.
+
+Releases are made with `scripts/release.sh vX.Y.Z`, which builds both, creates
+the GitHub release and updates the cask in
+[mikuta0407/homebrew-apps](https://github.com/mikuta0407/homebrew-apps).
+
 ## Build and test
 
 Clone with `--recurse-submodules` (or run `git submodule update --init`):
@@ -124,15 +146,16 @@ Both XCFrameworks carry three slices: `ios-arm64`, `ios-arm64-simulator` and
 to be rebuilt, or the Mac build will not link.
 
 The Mac app keeps passwords and approved certificates in the data-protection
-Keychain, which macOS only opens to an app whose provisioning profile grants a
-Keychain access group (`config/mRemote-maccatalyst.entitlements`; automatic
-signing fetches the profile and registers the Mac). Signed with a team but
-without that profile, saving a password fails with -34018. An ad-hoc signed
-build runs, but asks for the password and the certificate on every connection.
+Keychain when it can: macOS only opens that to an app whose provisioning
+profile grants a Keychain access group (`config/mRemote-maccatalyst.entitlements`;
+automatic signing fetches the profile and registers the Mac, but a free team's
+profile expires after seven days). An ad-hoc signed build - the released one -
+has no profile, so at launch it finds that it cannot write there (-34018) and
+uses the login keychain instead (`KeychainStore`).
 
 The XCFrameworks' Mac slice is arm64 only, so a Release build (which is
 universal by default) is built with `ARCHS=arm64`.
 
 ## License
 
-Dependency licenses and the SBOM are under [`ThirdParty/`](ThirdParty/).
+[MIT](LICENSE). Dependency licenses and the SBOM are under [`ThirdParty/`](ThirdParty/).

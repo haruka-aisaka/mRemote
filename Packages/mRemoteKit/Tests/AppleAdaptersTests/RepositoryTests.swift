@@ -2,9 +2,9 @@ import XCTest
 import SessionCore
 @testable import AppleAdapters
 
-/// The Keychain-backed repositories need a signed host app, so these cover the
-/// shared decision logic and the in-memory implementations. The Keychain
-/// queries themselves are exercised on device.
+/// The data-protection keychain needs a signed host app, so these cover the
+/// shared decision logic and the in-memory implementations; its queries are
+/// exercised on device. The login keychain is covered below.
 final class TrustRepositoryTests: XCTestCase {
     private func record(host: String = "desk.example", fingerprint: String) -> TrustRecord {
         TrustRecord(
@@ -103,5 +103,54 @@ final class RedactionTests: XCTestCase {
     func testUsernameIsRedacted() {
         XCTAssertEqual(Redaction.username(nil), "user#none")
         XCTAssertFalse(Redaction.username("mikuta").contains("mikuta"))
+    }
+}
+
+/// The login keychain, as the ad-hoc signed Mac app uses it. The test runner
+/// has no application identifier either, so it can only write there.
+final class LoginKeychainTests: XCTestCase {
+    func testWithoutAnApplicationIdentifierTheLoginKeychainIsUsed() {
+        XCTAssertEqual(KeychainStore.detect(), .login)
+    }
+
+    func testCredentialsRoundTripInTheLoginKeychain() throws {
+        let repository = KeychainCredentialRepository(
+            service: "com.mikuta0407.mRemote.tests.\(UUID().uuidString)",
+            store: .login
+        )
+        let reference = CredentialReference()
+        defer { try? repository.delete(reference) }
+
+        try repository.store(password: "secret", for: reference)
+        XCTAssertEqual(try repository.password(for: reference), "secret")
+        try repository.store(password: "rotated", for: reference)
+        XCTAssertEqual(try repository.password(for: reference), "rotated")
+        try repository.delete(reference)
+        XCTAssertNil(try repository.password(for: reference))
+    }
+
+    func testTrustRoundTripsInTheLoginKeychain() throws {
+        let repository = KeychainTrustRepository(
+            service: "com.mikuta0407.mRemote.tests.\(UUID().uuidString)",
+            store: .login
+        )
+        defer { try? repository.remove(host: "desk.example", port: 3389) }
+
+        try repository.store(TrustRecord(
+            host: "desk.example",
+            port: 3389,
+            leafSHA256: "aa",
+            subject: "CN=desk",
+            issuer: "CN=desk",
+            notBefore: Date(timeIntervalSince1970: 0),
+            notAfter: Date(timeIntervalSince1970: 4_000_000_000)
+        ))
+        guard case .matches(let stored) = try repository.decision(
+            host: "desk.example", port: 3389, leafSHA256: "aa"
+        ) else {
+            return XCTFail("the stored approval was not found")
+        }
+        XCTAssertEqual(stored.leafSHA256, "aa")
+        XCTAssertEqual(try repository.allRecords().count, 1)
     }
 }
