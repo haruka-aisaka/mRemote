@@ -25,15 +25,9 @@ struct SettingsView: View {
 
                 Section {
                     Picker("解像度", selection: $settings.resolutionPolicy) {
-                        ForEach([ResolutionPolicy.adaptive] + ResolutionPolicy.presets, id: \.self) { policy in
-                            Text(Formatting.resolutionLabel(policy)).tag(policy)
-                        }
+                        ResolutionPickerRows()
                     }
                     .accessibilityIdentifier("settings-resolution-picker")
-                    Picker("初期倍率", selection: $settings.initialScale) {
-                        Text("画面に合わせる").tag(InitialScale.fit)
-                        Text("100%").tag(InitialScale.oneToOne)
-                    }
                     // A matter of the device in hand, so it is kept on the
                     // device rather than with the other settings.
                     Toggle("画面の端まで使う", isOn: Binding(

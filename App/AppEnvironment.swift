@@ -214,6 +214,7 @@ final class AppEnvironment {
             if let reference = profile.configuration.rdp?.gateway?.account.credentialReference {
                 try? credentials.delete(reference)
             }
+            ScaleMemory().forget(profile.id)
             await refresh()
         } catch {
             listMessage = String(localized: "接続先を削除できませんでした（\(String(describing: error))）。")
@@ -235,6 +236,7 @@ final class AppEnvironment {
 
     func duplicate(_ profile: ConnectionProfile) async {
         let copy = profile.duplicated(displayName: String(localized: "\(profile.displayName) のコピー"))
+        ScaleMemory().copy(from: profile.id, to: copy.id)
         await save(copy, password: nil)
     }
 

@@ -148,7 +148,10 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         self.configuration = configuration
         self.id = session.id
         self.displayName = configuration.displayName
-        self.runtime = SessionRuntimeState(from: configuration)
+        var runtime = SessionRuntimeState(from: configuration)
+        // The scale this connection was last viewed at, not a setting.
+        runtime.scale = ScaleMemory().scale(for: configuration.profileID)
+        self.runtime = runtime
         self.isMacHost = configuration.remotePlatform == .macOS
         self.softwareKeyboard = SoftwareKeyboardController(
             mode: environment.globalSettings.softwareKeyboardMode,
@@ -786,8 +789,10 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     // MARK: - Presentation
 
+    /// From the menu or a double tap. The connection opens at it next time.
     func setScaleMode(_ mode: InitialScale) {
         runtime.scale = mode
+        ScaleMemory().remember(mode, for: configuration.profileID)
     }
 
     /// Live, per-session, and never written back to the profile unless the
