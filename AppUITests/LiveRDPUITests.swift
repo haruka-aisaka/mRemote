@@ -59,6 +59,12 @@ import XCTest
 ///                                      until the element can be tapped
 ///     connected <seconds>              answer the prompts of a new connection
 ///                                      and wait for its desktop
+///     haslabel <text>                  report whether an element's label starts so
+///     count <text>                     how many buttons have this in their label
+///     terminate / launch               quit the app, start it again
+///     choose <label>                   scroll an open menu or list to the button
+///                                      with this label, and tap it
+///     addprofile <name>[|<resolution>] add a connection to the same host
 ///
 /// The password is typed into the credential prompt and not saved.
 final class LiveRDPUITests: XCTestCase {
@@ -94,7 +100,7 @@ final class LiveRDPUITests: XCTestCase {
 
         let row = element("profile-row-\(profileName)")
         if !row.waitForExistence(timeout: 5) {
-            addProfile(host: host, user: user)
+            addProfile(name: profileName, host: host, user: user, resolution: environment["MREMOTE_LIVE_RESOLUTION"])
         }
         XCTAssertTrue(row.waitForExistence(timeout: 10), "the profile is listed")
         row.tap()
@@ -200,8 +206,9 @@ final class LiveRDPUITests: XCTestCase {
         case "paths":
             // paths <target> <seconds> x0 y0 x1 y1 [x0 y0 x1 y1 ...]: each
             // finger from one normalized point to another, all together -
-            // three fingers swiping, two spreading.
-            guard let target = target() else { return "missing" }
+            // three fingers swiping, two spreading. "window": the whole
+            // window, for something without an identifier (an open menu).
+            guard let target = arguments.first == "window" ? app.windows.firstMatch : target() else { return "missing" }
             var starts: [CGPoint] = []
             var ends: [CGPoint] = []
             var index = 2
@@ -302,16 +309,36 @@ final class LiveRDPUITests: XCTestCase {
             Thread.sleep(forTimeInterval: TimeInterval(number(0)))
         case "end":
             ended = true
+        case "haslabel":
+            let text = arguments.joined(separator: " ")
+            let found = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label BEGINSWITH %@", text)).firstMatch
+            return "haslabel=\(found.exists)"
+        case "count":
+            let text = arguments.joined(separator: " ")
+            return "count=\(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", text)).count)"
+        case "choose":
+            let button = app.buttons[arguments.joined(separator: " ")].firstMatch
+            guard scrollIntoView(button) else {
+                return "missing frame=\(button.exists ? "\(button.frame)" : "none") window=\(app.windows.firstMatch.frame)"
+            }
+            button.tap()
+        case "terminate":
+            app.terminate()
+        case "launch":
+            app.launch()
+            guard element("profile-list").waitForExistence(timeout: 10)
+                    || element("empty-state").exists else { return "no list" }
+        case "addprofile":
+            let parts = arguments.joined(separator: " ").split(separator: "|").map(String.init)
+            guard let name = parts.first, let host = environment["MREMOTE_LIVE_HOST"],
+                  let user = environment["MREMOTE_LIVE_USER"] else { return "missing" }
+            addProfile(name: name, host: host, user: user, resolution: parts.count > 1 ? parts[1] : nil)
+            return element("profile-row-\(name)").waitForExistence(timeout: 10) ? "ok" : "not listed"
         case "reveal":
             // A list builds its rows as they scroll in, and a half-height
             // sheet shows only the first few.
-            let found = element(arguments.joined(separator: " "))
-            let list = app.collectionViews.firstMatch
-            for _ in 0..<12 where !(found.exists && found.isHittable) {
-                guard list.exists else { break }
-                list.swipeUp()
-            }
-            return found.exists && found.isHittable ? "ok" : "missing"
+            return scrollIntoView(element(arguments.joined(separator: " "))) ? "ok" : "missing"
         case "connected":
             // After opening a connection again from the list: the prompts
             // come back, then the status text goes when the desktop comes.
@@ -393,6 +420,34 @@ final class LiveRDPUITests: XCTestCase {
             ? "ok" : "failed \(error.map { "\($0)" } ?? "")"
     }
 
+    /// Scrolls whatever is on screen - a list, a sheet, an open menu - a
+    /// little at a time, down and then back up, until the element can be
+    /// tapped. Short strokes on the window rather than swipes of a row: a
+    /// swipe overshoots, and a row scrolled away is rebuilt and lost.
+    private func scrollIntoView(_ found: XCUIElement) -> Bool {
+        let window = app.windows.firstMatch
+        // A menu's rows never report isHittable: in sight is where the
+        // middle of the row is on the window, clear of its top and bottom.
+        func inSight() -> Bool {
+            guard found.exists else { return false }
+            let frame = found.frame, bounds = window.frame.insetBy(dx: 0, dy: 40)
+            return !frame.isEmpty && bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+        }
+        // In the upper half: the keyboard may still be up below.
+        for (from, to) in [(0.5, 0.28), (0.28, 0.5)] {
+            for _ in 0..<14 {
+                if inSight() { return true }
+                // A finger that moves at once: pressed first, an open menu
+                // takes the drag as sliding to choose, and picks a row.
+                let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: from)).screenPoint
+                let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: to)).screenPoint
+                _ = synthesizeFingers(at: [start], moving: .zero, over: 0.3, secondLate: 0, to: [end])
+                Thread.sleep(forTimeInterval: 0.3)
+            }
+        }
+        return inSight()
+    }
+
     private func append(_ text: String, to path: String) {
         if let handle = FileHandle(forWritingAtPath: path) {
             handle.seekToEndOfFile()
@@ -403,7 +458,7 @@ final class LiveRDPUITests: XCTestCase {
         }
     }
 
-    private func addProfile(host: String, user: String) {
+    private func addProfile(name profileName: String, host: String, user: String, resolution: String?) {
         let add = element("add-profile-button").exists
             ? element("add-profile-button") : element("empty-add-profile-button")
         add.tap()
@@ -440,7 +495,7 @@ final class LiveRDPUITests: XCTestCase {
         app.typeText(user)
         // TEST_RUNNER_MREMOTE_LIVE_RESOLUTION: a fixed size, as its label
         // in the picker ("1920×1080（16:9）"). Above the platform in the form.
-        if let resolution = environment["MREMOTE_LIVE_RESOLUTION"] {
+        if let resolution {
             let picker = element("profile-resolution-picker")
             let form = app.collectionViews
                 .matching(NSPredicate(format: "identifier != 'profile-list'")).firstMatch
@@ -449,8 +504,9 @@ final class LiveRDPUITests: XCTestCase {
                     .press(forDuration: 0.05, thenDragTo: form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
             }
             picker.tap()
+            // A long menu builds only the rows in sight.
             let option = app.buttons[resolution].firstMatch
-            XCTAssertTrue(option.waitForExistence(timeout: 3), "the resolution \(resolution) is offered")
+            XCTAssertTrue(scrollIntoView(option), "the resolution \(resolution) is offered")
             option.tap()
         }
         // TEST_RUNNER_MREMOTE_LIVE_PLATFORM=macOS: a Mac running macos-rdp-server.

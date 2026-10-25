@@ -103,7 +103,7 @@ class App {
       TEST_RUNNER_MREMOTE_LIVE_PLATFORM: "macOS",
       TEST_RUNNER_MREMOTE_LIVE_PROFILE: PROFILE,
       TEST_RUNNER_MREMOTE_LIVE_RESOLUTION: RESOLUTION.label,
-      TEST_RUNNER_MREMOTE_LIVE_HOLD: "900",
+      TEST_RUNNER_MREMOTE_LIVE_HOLD: "5400", // 全部で 40 分ほどかかる
       TEST_RUNNER_MREMOTE_LIVE_COMMANDS: this.commands,
     };
     const logFile = await Deno.open(`${RUN}/xctest.log`, { create: true, write: true, truncate: true });
@@ -155,6 +155,8 @@ interface Frame {
 }
 
 let target: Deno.ChildProcess | undefined;
+/** 目印の窓が覆っている範囲（いま映っているはずの Mac の画面） */
+let frame: Frame | undefined;
 
 async function showTarget(): Promise<Frame> {
   await Deno.remove(TARGET_DIR, { recursive: true }).catch(() => {});
@@ -331,6 +333,106 @@ async function scaleSetting(app: App): Promise<string> {
   });
 }
 
+// ── 変更定義書のテストのための手順 ──────────────────────────────────
+
+async function startServer(extra: string[] = []) {
+  await run("deno", ["run", "-A", `${SERVER}/tests/e2e/e2e.ts`, "--serve", "--keep", "120", ...extra]);
+}
+
+async function stopServer() {
+  hideTarget();
+  await run("deno", ["run", "-A", `${SERVER}/tests/e2e/e2e.ts`, "--stop"], false);
+}
+
+/** 一覧の接続先を開き、画面が出るまで待つ。目印の窓がなければ出す */
+async function openProfile(app: App, name: string) {
+  expect((await app.cmd(`wait profile-row-${name} 15`)) === "ok", `一覧に ${name} がない`);
+  await app.cmd(`tap profile-row-${name}`);
+  expect((await app.cmd("connected 60", 120000)) === "ok", `${name} に接続できない`);
+  log(`${name} を開いた`);
+  if (!target) await showTarget();
+}
+
+/** 一覧の「実行中」から、維持していたセッションへ戻る */
+async function openRunning(app: App, name: string) {
+  expect((await app.cmd(`wait running-session-${name} 10`)) === "ok", `実行中に ${name} がない`);
+  await app.cmd(`tap running-session-${name}`);
+  expect((await app.cmd("wait remote-desktop-surface 15")) === "ok", "セッションに戻れない");
+}
+
+async function disconnectToList(app: App) {
+  await press(app, "session-menu-button", "session-menu-close", true);
+  expect((await app.cmd("reveal session-disconnect")) === "ok", "メニューに切断がない");
+  await app.cmd("tap session-disconnect");
+  expect((await app.cmd("button 切断")) === "ok", "切断の確認が出ない");
+  expect((await app.cmd("wait profile-list 15")) === "ok", "一覧に戻らない");
+  await sleep(1500);
+}
+
+async function returnToList(app: App) {
+  await withMenu(app, async () => {
+    expect((await app.cmd("reveal session-return-to-list")) === "ok", "メニューに一覧へ戻るがない");
+    await app.cmd("tap session-return-to-list");
+  });
+  expect((await app.cmd("wait profile-list 10")) === "ok", "一覧に戻らない");
+}
+
+async function setScale(app: App, label: "100%" | "画面に合わせる") {
+  await withMenu(app, async () => {
+    await app.cmd("reveal session-scale-picker");
+    await app.cmd("tap session-scale-picker");
+    expect((await app.cmd(`button ${label}`)) === "ok", `表示倍率の ${label} が選べない`);
+  });
+}
+
+/** 画面の映り方とメニューの表示倍率の両方が label であること */
+async function expectScale(app: App, label: "100%" | "画面に合わせる", name: string): Promise<Shot | undefined> {
+  frame = await targetFrame();
+  const s = await waitFor(`${label} で映る`, async () => {
+    const f = await targetFrame();
+    const s = await shot(app, name);
+    try {
+      if (label === "100%") expectOneToOne(s);
+      else expectFitted(s, f);
+      return s;
+    } catch (e) {
+      log(`まだ: ${(e as Error).message.split("\n")[0]}`);
+      return null;
+    }
+  }, 20000);
+  const menu = await scaleSetting(app);
+  expect(menu === label, `メニューの表示倍率が「${menu}」（${label} のはず）`);
+  return s;
+}
+
+/** Mac の仮想ディスプレイがこの画素数になり、目印の窓が覆い直すまで待つ */
+async function expectDisplay(pw: number, ph: number): Promise<Display> {
+  const d = await waitFor(`仮想ディスプレイ ${pw}x${ph}`, async () => {
+    const v = await virtualDisplays();
+    return v.length === 1 && v[0].pw === pw && v[0].ph === ph && v[0];
+  }, 20000);
+  frame = await waitFor("目印の窓が覆い直す", async () => {
+    const f = await targetFrame();
+    return Math.round(f.w * f.scale) === pw && f;
+  }, 10000);
+  return d;
+}
+
+/** 映っているデスクトップの (u, v) の割合の所をタップし、Mac の同じ所がクリックされたことを確かめる */
+async function tapAt(app: App, s: Shot, u: number, v: number): Promise<string> {
+  const f = await targetFrame();
+  const surface = await surfaceFrame(app);
+  const bg = s.background;
+  const before = (await clicks()).length;
+  const px = (bg.x + bg.w * u) / s.scale, py = (bg.y + bg.h * v) / s.scale;
+  await app.cmd(`tapat remote-desktop-surface ${((px - surface.x) / surface.w).toFixed(4)} ${((py - surface.y) / surface.h).toFixed(4)}`);
+  const click = await waitFor("クリック", async () => (await clicks())[before]);
+  const want = { x: f.x + f.w * u, y: f.y + f.h * v };
+  expect(Math.abs(click.x - want.x) <= f.w * 0.02 && Math.abs(click.y - want.y) <= f.w * 0.02,
+    "クリックの位置がずれている", { want, got: click });
+  return `(${click.x.toFixed(0)},${click.y.toFixed(0)})`;
+}
+
 // ── テスト ────────────────────────────────────────────────────────────
 
 interface Result {
@@ -378,7 +480,6 @@ async function main() {
 
   const app = new App();
   await app.start(sim);
-  let frame: Frame | undefined;
   let surface: { x: number; y: number; w: number; h: number } | undefined;
 
   try {
@@ -546,43 +647,248 @@ async function main() {
       return "ダブルタップ → 100% → メニュー「100%」 → 描き直しても 100%";
     });
 
-    await test("reopen", "切断して一覧から開き直すと、同じ仮想ディスプレイで、初期倍率どおりに映る", async () => {
+    // ── 表示倍率を接続先ごとに覚える（docs/changes/2026-10-25-remember-scale.md）──
+
+    await test("remember-menu", "メニューで 100% にして切断し、一覧から開き直すと 100% で始まる", async () => {
       expect(frame, "接続できていない");
       const before = await virtualDisplays();
-      // 開き直す前に 100% にしておく（開き直したら初期倍率の「画面に合わせる」に戻るのが今の仕様）
-      await withMenu(app, async () => {
-        await app.cmd("reveal session-scale-picker");
-        await app.cmd("tap session-scale-picker");
-        expect((await app.cmd("button 100%")) === "ok", "表示倍率の 100% が選べない");
-      });
-      await press(app, "session-menu-button", "session-menu-close", true);
-      expect((await app.cmd("reveal session-disconnect")) === "ok", "メニューに切断がない");
-      await app.cmd("tap session-disconnect");
-      expect((await app.cmd("button 切断")) === "ok", "切断の確認が出ない");
-      expect((await app.cmd(`wait profile-row-${PROFILE} 15`)) === "ok", "一覧に戻らない");
-      log("切断して一覧へ");
-      await sleep(2000);
-      await app.cmd(`tap profile-row-${PROFILE}`);
-      expect((await app.cmd("connected 60", 120000)) === "ok", "開き直しても接続できない");
-      log("開き直して接続");
+      await setScale(app, "100%");
+      await disconnectToList(app);
+      await openProfile(app, PROFILE);
       const after = await waitFor("仮想ディスプレイ", async () => {
         const v = await virtualDisplays();
         return v.length === 1 && v[0].pw === RESOLUTION.w && v;
       });
       expect(after[0].id === before[0]?.id, "仮想ディスプレイが使い回されていない", { before, after });
-      frame = await targetFrame();
-      const s = await waitFor("目印の窓が映る", async () => {
-        const s = await shot(app, "reopen");
-        try {
-          expectFitted(s, frame!);
-          return s;
-        } catch (e) {
-          log(`まだ: ${(e as Error).message.split("\n")[0]}`);
-          return null;
+      await expectScale(app, "100%", "remember-menu");
+      return `ディスプレイ ${after[0].id}・100% で始まった`;
+    });
+
+    await test("remember-doubletap", "ダブルタップで「画面に合わせる」に戻して開き直すと、画面に合わせるで始まる", async () => {
+      await setTouchMode(app, "表示の移動だけ");
+      await app.cmd("doubletap remote-desktop-surface");
+      await expectScale(app, "画面に合わせる", "doubletap-fit");
+      await setTouchMode(app, "タッチした場所を操作");
+      await disconnectToList(app);
+      await openProfile(app, PROFILE);
+      await expectScale(app, "画面に合わせる", "remember-doubletap");
+      return "ダブルタップの倍率も開き直しで引き継がれた";
+    });
+
+    await test("remember-settings", "設定の「表示」に「初期倍率」がない", async () => {
+      await returnToList(app);
+      await app.cmd("tap settings-button");
+      expect((await app.cmd("wait settings-resolution-picker 5")) === "ok", "設定が開かない");
+      const result = await app.cmd("haslabel 初期倍率");
+      await app.cmd("back");
+      expect(result === "haslabel=false", "設定に「初期倍率」が残っている", result);
+      await openRunning(app, PROFILE);
+      return "初期倍率なし";
+    });
+
+    await test("remember-keep", "「接続先一覧へ戻る（接続を維持）」から戻っても倍率はそのまま", async () => {
+      await setScale(app, "100%");
+      await returnToList(app);
+      await openRunning(app, PROFILE);
+      await expectScale(app, "100%", "remember-keep");
+      return "100% のまま";
+    });
+
+    await test("remember-relaunch", "切断せずにアプリを終了し、起動し直して開くと最後の倍率で始まる", async () => {
+      // 前のテストで 100%
+      hideTarget();
+      await app.cmd("terminate");
+      expect((await app.cmd("launch", 60000)) === "ok", "アプリが起動しない");
+      await openProfile(app, PROFILE);
+      await expectScale(app, "100%", "remember-relaunch");
+      return "起動し直しても 100%";
+    });
+
+    await test("remember-failed", "接続に失敗したあとでも、覚えた倍率は変わらない", async () => {
+      await disconnectToList(app);
+      await stopServer();
+      await app.cmd(`tap profile-row-${PROFILE}`);
+      expect((await app.cmd("wait session-retry 60", 90000)) === "ok", "接続の失敗が表示されない");
+      log("接続に失敗");
+      await withMenu(app, async () => {
+        expect((await app.cmd("reveal session-disconnect")) === "ok", "メニューに切断がない");
+        await app.cmd("tap session-disconnect");
+        await app.cmd("button 切断");
+      });
+      expect((await app.cmd(`wait profile-row-${PROFILE} 15`)) === "ok", "一覧に戻らない");
+      await startServer();
+      await openProfile(app, PROFILE);
+      await expectScale(app, "100%", "remember-failed");
+      return "失敗のあとも 100%";
+    });
+
+    await test("remember-duplicate", "複製は同じ倍率で始まり、複製先を変えても元は変わらない", async () => {
+      const copy = `${PROFILE} のコピー`;
+      await setScale(app, "100%");
+      await disconnectToList(app);
+      await app.cmd(`hold profile-row-${PROFILE} 1.5`);
+      expect((await app.cmd("button 複製")) === "ok", "複製がない");
+      expect((await app.cmd(`wait profile-row-${copy} 10`)) === "ok", "複製が一覧に出ない");
+      await openProfile(app, copy);
+      await expectScale(app, "100%", "duplicate");
+      await setScale(app, "画面に合わせる");
+      await disconnectToList(app);
+      await openProfile(app, PROFILE);
+      await expectScale(app, "100%", "original");
+      await disconnectToList(app);
+      await openProfile(app, copy);
+      await expectScale(app, "画面に合わせる", "copy-again");
+      return "複製は 100% で始まり、複製先は画面に合わせる・元は 100% のまま";
+    });
+
+    await test("remember-delete", "削除して同じ名前で作り直すと「画面に合わせる」で始まる", async () => {
+      const copy = `${PROFILE} のコピー`;
+      await setScale(app, "100%");
+      await disconnectToList(app);
+      await app.cmd(`hold profile-row-${copy} 1.5`);
+      expect((await app.cmd("button 削除")) === "ok", "削除がない");
+      expect((await app.cmd(`waitgone profile-row-${copy} 10`)) === "ok", "削除されない");
+      expect((await app.cmd(`addprofile ${copy}|${RESOLUTION.label}`, 120000)) === "ok", "作り直せない");
+      await openProfile(app, copy);
+      await expectScale(app, "画面に合わせる", "recreated");
+      await disconnectToList(app);
+      return "作り直した接続先は画面に合わせる";
+    });
+
+    await test("remember-upgrade", "「初期倍率 100%」だった版から上げても、各接続先は最初「画面に合わせる」で始まる", async () => {
+      // 前の版の状態を作る: 全体設定の初期倍率を 100% にし、覚えた倍率を消す
+      hideTarget();
+      await app.cmd("terminate");
+      const sim = await simulatorId();
+      const container = (await run("xcrun", ["simctl", "get_app_container", sim, APP_ID, "data"])).trim();
+      const path = `${container}/Library/Application Support/mRemote-profiles.json`;
+      const doc = JSON.parse(await Deno.readTextFile(path));
+      doc.globalSettings.initialScale = "oneToOne";
+      await Deno.writeTextFile(path, JSON.stringify(doc));
+      // アプリの設定はアプリのコンテナの中にある。cfprefsd を通して消す（ファイルを直接書くと古い値が戻る）
+      const prefs = `${container}/Library/Preferences/${APP_ID}`;
+      for (const profile of doc.profiles) {
+        await run("xcrun", ["simctl", "spawn", sim, "defaults", "delete", prefs,
+          `remembered-scale.${profile.id.rawValue}`], false);
+      }
+      const left = await run("xcrun", ["simctl", "spawn", sim, "defaults", "read", prefs], false);
+      expect(!left.includes("remembered-scale"), "覚えた倍率を消せない", left);
+      expect((await app.cmd("launch", 60000)) === "ok", "アプリが起動しない");
+      await openProfile(app, PROFILE);
+      await expectScale(app, "画面に合わせる", "upgrade");
+      return "前の版の 100% の設定は使われない";
+    });
+
+    // ── 解像度の候補（docs/changes/2026-10-25-resolution-presets.md）──
+
+    await test("presets-pickers", "設定・接続先の編集・セッションのメニューの解像度が、横長・縦長の見出しつきで最後まで選べる", async () => {
+      // 候補の数と並び順は単体テスト（DisplayScaleTests・ResolutionLabelTests）で確かめる。
+      // ここでは、開いたメニューの上端に「横長」、下端に「縦長」の見出しがあり、最初と最後の候補まで届くこと
+      const counts: string[] = [];
+      // 開いたメニューを指でスクロールする（行は見えている分しか作られず、行ごとのスワイプは見失う）。
+      // 窓の真ん中あたりを縦になぞる。toTop: 上端へ
+      const scrollMenu = async (toTop: boolean) => {
+        for (let i = 0; i < 4; i++) {
+          await app.cmd(toTop ? "paths window 0.25 0.5 0.3 0.5 0.85" : "paths window 0.25 0.5 0.8 0.5 0.25");
         }
-      }, 20000);
-      expect((await scaleSetting(app)) === "画面に合わせる", "メニューの表示倍率が初期倍率と違う");
-      return `ディスプレイ ${after[0].id}・デスクトップ ${s.background.w}x${s.background.h}px`;
+      };
+      const check = async (where: string) => {
+        await scrollMenu(true);
+        const top = (await app.cmd("haslabel 横長")) === "haslabel=true" &&
+          (await app.cmd("haslabel 1024×768（4:3）")) === "haslabel=true";
+        // 少しずつ下へ: 途中で「縦長」の見出しが、最後に 2160×2880 が出る
+        let portraitHeading = false, last = false;
+        for (let i = 0; i < 10 && !last; i++) {
+          await app.cmd("paths window 0.25 0.5 0.7 0.5 0.4");
+          portraitHeading ||= (await app.cmd("haslabel 縦長")) === "haslabel=true";
+          last = (await app.cmd("haslabel 2160×2880（3:4）")) === "haslabel=true";
+        }
+        const bottom = portraitHeading && last;
+        expect(top && bottom, `${where}の見出しか端の候補が出ない`, { top, portraitHeading, last });
+        counts.push(where);
+      };
+      // セッションのメニュー: いちばん下の縦長まで選べ、Mac がその大きさになる
+      await withMenu(app, async () => {
+        expect((await app.cmd("reveal session-resolution-picker")) === "ok", "メニューに解像度がない");
+        await app.cmd("tap session-resolution-picker");
+        await check("メニュー");
+        expect((await app.cmd("choose 2160×2880（3:4）")) === "ok", "最後の候補が選べない");
+      });
+      await expectDisplay(2160, 2880);
+      await withMenu(app, async () => {
+        await app.cmd("reveal session-resolution-picker");
+        await app.cmd("tap session-resolution-picker");
+        expect((await app.cmd("choose 2048×1536（4:3）")) === "ok", "2048×1536 が選べない");
+      });
+      await expectDisplay(2048, 1536);
+      await returnToList(app);
+      // 設定
+      await app.cmd("tap settings-button");
+      await app.cmd("reveal settings-resolution-picker");
+      await app.cmd("tap settings-resolution-picker");
+      await check("設定");
+      await scrollMenu(true);
+      expect((await app.cmd("choose 自動（画面に合わせる）")) === "ok", "設定の自動が選べない"); // 今の値を選び直して閉じる
+      await app.cmd("back");
+      // 接続先の編集（以前の候補 3840×2160 を選んである接続先）
+      expect((await app.cmd(`addprofile E2E 4K|3840×2160（16:9）`, 120000)) === "ok", "4K の接続先を作れない");
+      await app.cmd("hold profile-row-E2E 4K 1.5");
+      await app.cmd("button 編集");
+      expect((await app.cmd("reveal profile-resolution-picker")) === "ok", "編集画面に解像度がない");
+      const value = await app.cmd("value profile-resolution-picker");
+      expect(value.includes("3840×2160（16:9）"), "以前の候補が選ばれていない", value);
+      await app.cmd("tap profile-resolution-picker");
+      await check("編集");
+      await app.cmd("choose 2160×2880（3:4）"); // 閉じるため。編集は取り消すので保存されない
+      await app.cmd("tap profile-cancel-button");
+      await openRunning(app, PROFILE);
+      return `見出しあり（${counts.join("・")}）・最後の候補と 2048×1536 に切り替わった`;
+    });
+
+    await test("preset-duo", "2848×2004（iPhone Duo）でつなぐと、Mac が Retina の 2848×2004 になり四隅まで映る", async () => {
+      await disconnectToList(app);
+      expect((await app.cmd("addprofile E2E Duo|2848×2004（iPhone Duo）", 120000)) === "ok", "接続先を作れない");
+      await openProfile(app, "E2E Duo");
+      const d = await expectDisplay(2848, 2004);
+      expect(d.hidpi, "Retina になっていない", d);
+      await expectScale(app, "画面に合わせる", "duo");
+      return `${d.pw}x${d.ph}（${d.w}x${d.h}pt）`;
+    });
+
+    await test("preset-portrait", "1352×1920（iPhone Duo 縦）でつなぐと Retina の縦長になり、横にしてもタップがずれない", async () => {
+      await disconnectToList(app);
+      expect((await app.cmd("addprofile E2E 縦|1352×1920（iPhone Duo 縦）", 120000)) === "ok", "接続先を作れない");
+      await openProfile(app, "E2E 縦");
+      const d = await expectDisplay(1352, 1920);
+      expect(d.hidpi, "Retina になっていない", d);
+      await expectScale(app, "画面に合わせる", "portrait");
+      await app.cmd("orient left");
+      await app.cmd("sleep 2");
+      const s = await expectScale(app, "画面に合わせる", "portrait-landscape");
+      const click = await tapAt(app, s!, 0.3, 0.7);
+      await app.cmd("orient portrait");
+      await app.cmd("sleep 2");
+      return `${d.pw}x${d.ph}（${d.w}x${d.h}pt）・横向きのタップ ${click}`;
+    });
+
+    await test("presets-nodisp", "表示制御チャネルのないサーバでは、候補を選んでも大きさが変わらず落ちない", async () => {
+      await disconnectToList(app);
+      await stopServer();
+      await startServer(["--env", "RDP_DISP=0"]);
+      await openProfile(app, "E2E Duo");
+      await expectDisplay(2848, 2004);
+      await withMenu(app, async () => {
+        await app.cmd("reveal session-resolution-picker");
+        expect((await app.cmd("haslabel このサーバーは接続中の解像度変更に対応していません")) === "haslabel=true",
+          "対応していないことの説明がない");
+      });
+      await app.cmd("sleep 3");
+      await expectDisplay(2848, 2004);
+      expect((await app.cmd("exists session-status")) === "exists=false", "接続が切れた");
+      await disconnectToList(app);
+      await stopServer();
+      await startServer();
+      return "2848×2004 のまま・説明あり";
     });
   } finally {
     await app.end();
