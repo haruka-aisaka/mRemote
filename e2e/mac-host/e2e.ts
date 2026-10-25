@@ -416,6 +416,9 @@ async function openRunning(app: App, name: string) {
 }
 
 async function disconnectToList(app: App) {
+  // 前のテストが一覧に戻って終わっていれば、切断するものはない
+  if ((await app.cmd("exists session-menu-button")) === "exists=false" &&
+      (await app.cmd("exists profile-list")) === "exists=true") return;
   await press(app, "session-menu-button", "session-menu-close", true);
   expect((await app.cmd("reveal session-disconnect")) === "ok", "メニューに切断がない");
   await app.cmd("tap session-disconnect");
@@ -1151,6 +1154,7 @@ async function main() {
       await disconnectToList(app);
       await stopServer();
       await startServer();
+      await openProfile(app, PROFILE); // 次のテストはセッションを開いた状態から始まる
       return "2848×2004 のまま・説明あり";
     });
 
