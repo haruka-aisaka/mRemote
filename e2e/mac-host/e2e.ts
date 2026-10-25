@@ -181,6 +181,22 @@ async function clicks(): Promise<{ x: number; y: number }[]> {
   });
 }
 
+/**
+ * 入力欄にキーが届く状態にする: 入力欄（Mac の画面の真ん中）をタップしてクリックし、目印の窓のアプリが前面で
+ * 入力欄が編集中になったことを確かめる。通知の確認パネルなどが前面を取っていると届かない
+ */
+async function focusField(app: App) {
+  await app.cmd("tapat remote-desktop-surface 0.5 0.5");
+  const status = await waitFor("目印の窓の入力欄が前面", async () => {
+    const s = JSON.parse(await Deno.readTextFile(`${TARGET_DIR}/status.json`));
+    return s.active && s.key && s.editing && s;
+  }, 5000).catch(async () => {
+    const s = await Deno.readTextFile(`${TARGET_DIR}/status.json`).catch(() => "{}");
+    throw new Failure(`Mac 側で目印の窓の入力欄が前面にない（キーが届かない状態）: ${s.trim()}`);
+  });
+  return status;
+}
+
 async function typed(): Promise<string> {
   return await Deno.readTextFile(`${TARGET_DIR}/typed.txt`).catch(() => "");
 }
@@ -272,10 +288,22 @@ async function surfaceFrame(app: App): Promise<{ x: number; y: number; w: number
   return { x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), h: Number(m[4]) };
 }
 
+/**
+ * 浮いているボタンを、印（check）が望む状態になるまで押す。ボタンはしばらく触らないと端に寄り、
+ * そのときの最初のタップは起こすだけになる
+ */
+async function press(app: App, button: string, check: string, wantExists: boolean) {
+  for (let i = 0; i < 3; i++) {
+    await app.cmd(`tap ${button}`);
+    const r = await app.cmd(`${wantExists ? "wait" : "waitgone"} ${check} 3`);
+    if (r === "ok") return;
+  }
+  throw new Failure(`${button} を押しても ${check} が${wantExists ? "出ない" : "消えない"}`);
+}
+
 /** セッションのメニューを開いて body を実行し、必ず閉じる */
 async function withMenu<T>(app: App, body: () => Promise<T>): Promise<T> {
-  await app.cmd("tap session-menu-button");
-  expect((await app.cmd("wait session-menu-close 5")) === "ok", "メニューが開かない");
+  await press(app, "session-menu-button", "session-menu-close", true);
   try {
     return await body();
   } finally {
@@ -340,7 +368,11 @@ async function main() {
   }
   await run("swiftc", ["-O", "-o", COLOR_BOXES, `${HERE}color-boxes.swift`]);
   console.log("準備: テスト用サーバを起動");
-  console.log("  " + (await run("deno", ["run", "-A", `${SERVER}/tests/e2e/e2e.ts`, "--serve", "--keep", "120"])).trim());
+  console.log("  " + (await run("deno", [
+    "run", "-A", `${SERVER}/tests/e2e/e2e.ts`, "--serve", "--keep", "120",
+    // MREMOTE_E2E_SERVER_LOG=debug: サーバが受けたキーやポインタもログに出す
+    ...(Deno.env.get("MREMOTE_E2E_SERVER_LOG") ? ["--log", Deno.env.get("MREMOTE_E2E_SERVER_LOG")!] : []),
+  ])).trim());
   // 前の実行のプロファイルや設定を残さない
   await run("xcrun", ["simctl", "uninstall", sim, APP_ID], false);
 
@@ -404,40 +436,75 @@ async function main() {
       return done.join(" ");
     });
 
-    await test("keyboard", "ソフトウェアキーボードの文字とデッキのキーが Mac に届く", async () => {
+    await test("keyboard", "デッキのキーと iOS キーボードの文字が Mac に届く（デッキ → iOS → デッキ）", async () => {
       expect(frame, "接続できていない");
-      // 入力欄をクリックしておく（タップのテストで済んでいるが、単独でも動くように）
-      const before = await typed();
-      await app.cmd("tap session-keyboard-button");
-      await app.cmd("sleep 1");
-      await app.cmd("type e2e123");
-      const soft = await waitFor("ソフトウェアキーボードの文字", async () => {
-        const t = await typed();
-        return t.endsWith("e2e123") && t;
-      }, 10000).catch(async () => {
-        throw new Failure(`届かない: 入力欄は ${JSON.stringify(await typed())}（前は ${JSON.stringify(before)}）`);
-      });
-      await app.cmd("tap session-keyboard-button"); // しまう
       // キーとして送る経路（文字ではなく Mac のキーコード）は、ラップトップデッキのキーで確かめる。
-      // シミュレータでは XCTest が合成したハードウェアキーがアプリに届かない（入力診断で受信 0 件）ので使えない
-      await withMenu(app, async () => {
-        expect((await app.cmd("reveal session-toggle-laptop-deck")) === "ok", "メニューにデッキがない");
-        await app.cmd("tap session-toggle-laptop-deck");
-      });
-      expect((await app.cmd("wait laptop-deck 5")) === "ok", "デッキが出ない");
+      // シミュレータでは XCTest が合成したハードウェアキーがアプリに届かない（入力診断で受信 0 件）ので使えない。
+      // キーボードボタンは最後に使った方を出すので、どちらを出すかはメニューで選ぶ
+      const showDeck = async () => {
+        await withMenu(app, async () => {
+          expect((await app.cmd("reveal session-toggle-laptop-deck")) === "ok", "メニューにデッキがない");
+          await app.cmd("tap session-toggle-laptop-deck");
+        });
+        expect((await app.cmd("wait laptop-deck 5")) === "ok", "デッキが出ない");
+      };
+      const expectTyped = async (what: string, suffix: string) =>
+        await waitFor(what, async () => {
+          const t = await typed();
+          return t.endsWith(suffix) && t;
+        }, 10000).catch(async () => {
+          throw new Failure(`${what}が届かない: 入力欄は ${JSON.stringify(await typed())}（${suffix} で終わるはず）`);
+        });
+
+      await focusField(app);
+      await showDeck();
       for (const key of ["k", "q", "digit7"]) await app.cmd(`tap laptop-key-${key}`);
-      const hard = await waitFor("デッキのキー", async () => {
-        const t = await typed();
-        return t.endsWith("kq7") && t;
-      }, 10000).catch(async () => {
-        throw new Failure(`届かない: 入力欄は ${JSON.stringify(await typed())}`);
+      await expectTyped("デッキのキー", "kq7");
+      log("デッキ");
+
+      await withMenu(app, async () => {
+        expect((await app.cmd("reveal session-show-keyboard")) === "ok", "メニューにキーボードがない");
+        await app.cmd("tap session-show-keyboard");
       });
+      expect((await app.cmd("wait key-escape 5")) === "ok", "iOS キーボードが出ない");
+      expect((await app.cmd("exists laptop-deck")) === "exists=false", "iOS キーボードとデッキが両方出ている");
+      await app.cmd("type e2e");
+      await expectTyped("iOS キーボードの文字", "kq7e2e");
+      log("iOS キーボード");
+
+      await showDeck();
+      expect((await app.cmd("exists key-escape")) === "exists=false", "デッキと iOS キーボードが両方出ている");
+      for (const key of ["z", "digit5"]) await app.cmd(`tap laptop-key-${key}`);
+      const all = await expectTyped("iOS キーボードのあとのデッキのキー", "kq7e2ez5");
+      await press(app, "session-keyboard-button", "laptop-deck", false); // しまう
+      return `入力欄 ${JSON.stringify(all)}`;
+    });
+
+    await test("keyboard-hide", "iOS キーボードをボタンでしまってからデッキを出しても、デッキのキーが届く", async () => {
+      expect(frame, "接続できていない");
+      await focusField(app);
+      const before = await typed();
+      await withMenu(app, async () => {
+        expect((await app.cmd("reveal session-show-keyboard")) === "ok", "メニューにキーボードがない");
+        await app.cmd("tap session-show-keyboard");
+      });
+      expect((await app.cmd("wait key-escape 5")) === "ok", "iOS キーボードが出ない");
+      await app.cmd("type x");
+      await press(app, "session-keyboard-button", "key-escape", false);
       await withMenu(app, async () => {
         await app.cmd("reveal session-toggle-laptop-deck");
         await app.cmd("tap session-toggle-laptop-deck");
       });
-      await app.cmd("waitgone laptop-deck 5");
-      return `入力欄 ${JSON.stringify(hard)}（ソフトウェアキーボードのあと ${JSON.stringify(soft)}）`;
+      expect((await app.cmd("wait laptop-deck 5")) === "ok", "デッキが出ない");
+      await app.cmd("tap laptop-key-y");
+      const t = await waitFor("デッキのキー", async () => {
+        const t = await typed();
+        return t.endsWith("xy") && t;
+      }, 10000).catch(async () => {
+        throw new Failure(`届かない: 入力欄は ${JSON.stringify(await typed())}（前は ${JSON.stringify(before)}、xy で終わるはず）`);
+      });
+      await press(app, "session-keyboard-button", "laptop-deck", false);
+      return `入力欄 ${JSON.stringify(t)}`;
     });
 
     await test("zoom-toggle", "ダブルタップで 100% にすると、メニューにも反映され、描き直しても 100% のまま", async () => {
@@ -488,7 +555,7 @@ async function main() {
         await app.cmd("tap session-scale-picker");
         expect((await app.cmd("button 100%")) === "ok", "表示倍率の 100% が選べない");
       });
-      await app.cmd("tap session-menu-button");
+      await press(app, "session-menu-button", "session-menu-close", true);
       expect((await app.cmd("reveal session-disconnect")) === "ok", "メニューに切断がない");
       await app.cmd("tap session-disconnect");
       expect((await app.cmd("button 切断")) === "ok", "切断の確認が出ない");
