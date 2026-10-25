@@ -166,6 +166,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
                 }
             }
         )
+        observeNetwork()
     }
 
     /// From the menu: close it, then bring the keyboard up once the sheet is
@@ -427,6 +428,9 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
                 isMacHost = true
                 softwareKeyboard.isMacHost = true
             }
+            // A Mac draws a saved-data desktop at 1x, and can take the audio
+            // compressed now that it has said what it supports.
+            dataSaverChanged()
         case let .portForwardFailed(localPort, error):
             clipboardMessage = error == EADDRINUSE
                 ? String(localized: "ポート転送 localhost:\(localPort) は使用中のため開けませんでした。")
@@ -845,6 +849,13 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     private func requestDesktopLayout() {
         guard var (width, height) = runtime.resolution.desktopSize(fitting: externalRenderSize ?? renderSize) else { return }
+        // Saving data: a Retina desktop at half its pixels (one monitor only).
+        let request = DataSaverLayout.request(
+            width: width, height: height, scale: requestedScale, isMacHost: isMacHost,
+            saving: isDataSaverActive && extendedSecondarySize == nil
+        )
+        (width, height) = (request.width, request.height)
+        if desktopPixelScale != request.desktopPixelScale { desktopPixelScale = request.desktopPixelScale }
         let secondary = externalRenderSize == nil ? extendedSecondarySize : nil
         if secondary != nil {
             // The bridge takes even widths only; the split must fall where
@@ -858,29 +869,84 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         guard lastRequestedDesktopSize?.width != width
                 || lastRequestedDesktopSize?.height != height
                 || lastRequestedSecondary?.width != secondary?.width
-                || lastRequestedSecondary?.height != secondary?.height else { return }
+                || lastRequestedSecondary?.height != secondary?.height
+                || lastRequestedScale != request.scale else { return }
         lastRequestedDesktopSize = (width, height)
         lastRequestedSecondary = secondary
+        lastRequestedScale = request.scale
 
         resizeTask?.cancel()
         guard let desktop else { return }
+        let scale = request.scale
         resizeTask = Task { [weak self] in
             try? await Task.sleep(for: Self.resizeDebounce)
             guard !Task.isCancelled else { return }
-            await desktop.requestDesktopLayout(primary: (width, height), secondary: secondary)
+            await desktop.requestDesktopLayout(primary: (width, height), secondary: secondary, scale: scale)
             await self?.refresh()
         }
     }
 
+    @ObservationIgnored private var lastRequestedScale: RemoteDisplayScale?
+
+    // MARK: - Saving data (docs/changes/2026-10-25-data-saver.md)
+
+    /// The network is cellular or in Low Data Mode, followed while the
+    /// session runs.
+    private(set) var isNetworkConstrained = NetworkConstraint.shared.isConstrained
+    @ObservationIgnored private var networkObservation: Task<Void, Never>?
+    /// Viewport points per desktop pixel at 100%: two while a Retina desktop
+    /// comes at half its pixels.
+    private(set) var desktopPixelScale: Double = 1
+
+    var isDataSaverActive: Bool { runtime.dataSaver.isActive(onConstrainedNetwork: isNetworkConstrained) }
+
+    /// From the session menu; saved as the connection's own setting.
+    func setDataSaver(_ policy: DataSaverPolicy) {
+        guard policy != runtime.dataSaver else { return }
+        runtime.dataSaver = policy
+        saveToConnection { $0.dataSaver = policy == .automatic ? nil : policy }
+        dataSaverChanged()
+    }
+
+    private func observeNetwork() {
+        guard networkObservation == nil else { return }
+        let changes = NetworkConstraint.shared.changes()
+        networkObservation = Task { [weak self] in
+            for await constrained in changes {
+                guard let self else { return }
+                self.isNetworkConstrained = constrained
+                self.dataSaverChanged()
+            }
+        }
+    }
+
+    private func dataSaverChanged() {
+        requestDesktopLayout()
+        if let audio = session as? any DataSaverCapableSession {
+            let active = isDataSaverActive
+            Task { await audio.setCompressedAudio(active) }
+        }
+    }
+
     @ObservationIgnored private var displayScale: RemoteDisplayScale?
+    private var requestedScale: RemoteDisplayScale { displayScale ?? .unscaled }
 
     /// How large Windows should draw. Resolved by the view, which knows the
-    /// screen; the session sends it with the next layout, or at once.
+    /// screen; the session sends it with the next layout, or at once -
+    /// halved while saving data sends a Retina desktop at half its pixels.
     func setDisplayScale(_ scale: RemoteDisplayScale) {
         guard scale != displayScale else { return }
         displayScale = scale
         guard let desktop else { return }
-        Task { await desktop.setDisplayScale(scale) }
+        if renderSize != nil || externalRenderSize != nil {
+            requestDesktopLayout()
+        } else {
+            // Before the surface has a size: the scale goes with the connection.
+            let effective = DataSaverLayout.request(
+                width: 0, height: 0, scale: scale, isMacHost: isMacHost, saving: isDataSaverActive
+            ).scale
+            Task { await desktop.setDisplayScale(effective) }
+        }
     }
 
     func desktopSizeChanged(width: Int, height: Int) {

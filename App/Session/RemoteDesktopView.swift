@@ -124,6 +124,8 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     private var lastSubmittedCommandBuffer: MTLCommandBuffer?
     private var desktopSize = (width: 1, height: 1)
     private var scaleMode: InitialScale
+    /// Two while saving data sends a Retina desktop at half its pixels.
+    private var desktopPixelScale: Double = 1
     private var zoom: Double = 1
     private var pan = ViewportPoint.zero
     private var panOrigin = ViewportPoint.zero
@@ -493,6 +495,13 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         setNeedsDisplay()
     }
 
+    func setDesktopPixelScale(_ scale: Double) {
+        guard scale != desktopPixelScale else { return }
+        desktopPixelScale = scale
+        updateTransform()
+        setNeedsDisplay()
+    }
+
     private func updateTransform(desktopChanged: Bool = false) {
         if desktopChanged {
             zoom = 1
@@ -505,7 +514,8 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             scaleMode: scaleMode,
             zoom: zoom,
             pan: pan,
-            occludedBottom: followsPointerAboveKeyboard ? Double(keyboardOverlap) : 0
+            occludedBottom: followsPointerAboveKeyboard ? Double(keyboardOverlap) : 0,
+            desktopPixelScale: desktopPixelScale
         )
         // Clamping happens inside the transform, so read the accepted values
         // back rather than keeping a copy that disagrees with what is drawn.

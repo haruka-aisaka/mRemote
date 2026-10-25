@@ -41,6 +41,14 @@ public protocol DesktopSession: RemoteSession {
         primary: (width: Int, height: Int),
         secondary: (width: Int, height: Int)?
     ) async
+
+    /// Size and scale in one layout, so that changing both - as saving data
+    /// does - resizes the desktop once rather than twice.
+    func requestDesktopLayout(
+        primary: (width: Int, height: Int),
+        secondary: (width: Int, height: Int)?,
+        scale: RemoteDisplayScale
+    ) async
 }
 
 extension DesktopSession {
@@ -54,4 +62,20 @@ extension DesktopSession {
     ) async {
         await requestDesktopSize(width: primary.width, height: primary.height)
     }
+
+    public func requestDesktopLayout(
+        primary: (width: Int, height: Int),
+        secondary: (width: Int, height: Int)?,
+        scale: RemoteDisplayScale
+    ) async {
+        await setDisplayScale(scale)
+        await requestDesktopLayout(primary: primary, secondary: secondary)
+    }
+}
+
+/// A session that can send its audio compressed while saving data
+/// (docs/changes/2026-10-25-data-saver.md). Only a Mac server that agreed to
+/// it does; any other keeps sending it as it is.
+public protocol DataSaverCapableSession: RemoteSession {
+    func setCompressedAudio(_ compressed: Bool) async
 }

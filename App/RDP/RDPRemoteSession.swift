@@ -17,7 +17,7 @@ import SessionCore
 /// docs/architecture.md requires the event stream to be a "read me again"
 /// signal rather than a log a consumer rebuilds state from.
 actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSession, MicrophoneCapableSession,
-    MacExtensionCapableSession {
+    MacExtensionCapableSession, DataSaverCapableSession {
     nonisolated let id: SessionID
     nonisolated let profileID: ProfileID?
     nonisolated let frameStore = LatestDesktopFrameStore()
@@ -281,6 +281,35 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     func requestDesktopLayout(primary: (width: Int, height: Int), secondary: (width: Int, height: Int)?) async {
         desiredDesktopSize = primary
         desiredSecondary = secondary
+        resizeAttempts = 0
+        sendDesiredDesktopSize()
+    }
+
+    /// Saving data asks a Mac server for its audio compressed
+    /// (docs/changes/2026-10-25-data-saver.md). Remembered, and sent again
+    /// whenever the Mac extensions come up.
+    private var wantsCompressedAudio = false
+
+    func setCompressedAudio(_ compressed: Bool) async {
+        wantsCompressedAudio = compressed
+        sendAudioConfig()
+    }
+
+    private func sendAudioConfig() {
+        // Filled in with the Mac extension that carries it.
+    }
+
+    func requestDesktopLayout(
+        primary: (width: Int, height: Int),
+        secondary: (width: Int, height: Int)?,
+        scale: RemoteDisplayScale
+    ) async {
+        desiredDesktopSize = primary
+        desiredSecondary = secondary
+        if scale != displayScale {
+            displayScale = scale
+            displayScaleIsPending = true
+        }
         resizeAttempts = 0
         sendDesiredDesktopSize()
     }

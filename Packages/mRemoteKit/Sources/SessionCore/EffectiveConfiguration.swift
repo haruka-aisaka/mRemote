@@ -192,22 +192,25 @@ public struct SessionRuntimeState: Hashable, Sendable {
     public var zoom: Double
     public var scrollDirection: ScrollDirection
     public var isLocallyMuted: Bool
-    /// Starts as the connection's setting; the session menu changes it for
-    /// this session only.
+    /// Starts as the connection's setting; the session menu changes it, and
+    /// saves it as the connection's own.
     public var resolution: ResolutionPolicy
+    public var dataSaver: DataSaverPolicy
 
     public init(
         scale: InitialScale = .fit,
         zoom: Double = 1.0,
         scrollDirection: ScrollDirection = .normal,
         isLocallyMuted: Bool = false,
-        resolution: ResolutionPolicy = .adaptive
+        resolution: ResolutionPolicy = .adaptive,
+        dataSaver: DataSaverPolicy = .automatic
     ) {
         self.scale = scale
         self.zoom = zoom
         self.scrollDirection = scrollDirection
         self.isLocallyMuted = isLocallyMuted
         self.resolution = resolution
+        self.dataSaver = dataSaver
     }
 
     public init(from configuration: EffectiveConnectionConfiguration) {
@@ -216,7 +219,8 @@ public struct SessionRuntimeState: Hashable, Sendable {
             zoom: 1.0,
             scrollDirection: configuration.scrollDirection,
             isLocallyMuted: false,
-            resolution: configuration.resolutionPolicy
+            resolution: configuration.resolutionPolicy,
+            dataSaver: configuration.dataSaver
         )
     }
 }

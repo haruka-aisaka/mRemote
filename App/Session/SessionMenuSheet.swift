@@ -245,6 +245,23 @@ struct SessionMenuSheet: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+                    Picker("省データ", selection: Binding(
+                        get: { model.runtime.dataSaver },
+                        set: { model.setDataSaver($0) }
+                    )) {
+                        ForEach(DataSaverPolicy.allCases, id: \.self) { policy in
+                            Text(DataSaverLabel.text(policy)).tag(policy)
+                        }
+                    }
+                    .accessibilityIdentifier("session-data-saver-picker")
+                    Text(DataSaverLabel.status(
+                        policy: model.runtime.dataSaver,
+                        active: model.isDataSaverActive,
+                        constrained: model.isNetworkConstrained
+                    ))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("session-data-saver-status")
                     Toggle("画面の端まで使う", isOn: Binding(
                         get: { safeAreaPolicy == .fullScreen },
                         set: { safeAreaPolicy = $0 ? .fullScreen : .avoid }

@@ -64,6 +64,11 @@ public struct ViewportTransform: Hashable, Sendable {
     /// keyboard, say. The desktop may be lifted that far so its lower part
     /// can be brought above the cover.
     public let occludedBottom: Double
+    /// Viewport points per desktop pixel at 100%. One, except while saving
+    /// data sends a Retina desktop at half its pixels: then two, so 100%
+    /// shows things as large as it did before
+    /// (docs/changes/2026-10-25-data-saver.md).
+    public let desktopPixelScale: Double
 
     public static let minimumZoom = 1.0
     public static let maximumZoom = 8.0
@@ -75,7 +80,8 @@ public struct ViewportTransform: Hashable, Sendable {
         scaleMode: InitialScale = .fit,
         zoom: Double = 1.0,
         pan: ViewportPoint = .zero,
-        occludedBottom: Double = 0
+        occludedBottom: Double = 0,
+        desktopPixelScale: Double = 1
     ) {
         let clampedZoom = Self.clampZoom(zoom)
         let occluded = occludedBottom.isFinite ? min(max(occludedBottom, 0), max(viewport.height, 0)) : 0
@@ -85,6 +91,7 @@ public struct ViewportTransform: Hashable, Sendable {
         self.scaleMode = scaleMode
         self.zoom = clampedZoom
         self.occludedBottom = occluded
+        self.desktopPixelScale = desktopPixelScale.isFinite && desktopPixelScale > 0 ? desktopPixelScale : 1
         // Pan is stored already clamped so that no consumer can observe an
         // offset that would show the ground behind the desktop.
         self.pan = Self.clampPan(
@@ -97,7 +104,8 @@ public struct ViewportTransform: Hashable, Sendable {
                     desktopWidth: desktopWidth,
                     desktopHeight: desktopHeight,
                     viewport: viewport,
-                    scaleMode: scaleMode
+                    scaleMode: scaleMode,
+                    desktopPixelScale: desktopPixelScale.isFinite && desktopPixelScale > 0 ? desktopPixelScale : 1
                 ) * clampedZoom,
                 occludedBottom: occluded
             )
@@ -115,7 +123,8 @@ public struct ViewportTransform: Hashable, Sendable {
             desktopWidth: desktopWidth,
             desktopHeight: desktopHeight,
             viewport: viewport,
-            scaleMode: scaleMode
+            scaleMode: scaleMode,
+            desktopPixelScale: desktopPixelScale
         )
     }
 
@@ -123,7 +132,8 @@ public struct ViewportTransform: Hashable, Sendable {
         desktopWidth: Int,
         desktopHeight: Int,
         viewport: ViewportSize,
-        scaleMode: InitialScale
+        scaleMode: InitialScale,
+        desktopPixelScale: Double
     ) -> Double {
         guard desktopWidth > 0, desktopHeight > 0, !viewport.isEmpty else { return 1 }
         switch scaleMode {
@@ -133,7 +143,7 @@ public struct ViewportTransform: Hashable, Sendable {
                 viewport.height / Double(desktopHeight)
             )
         case .oneToOne:
-            return 1
+            return desktopPixelScale
         }
     }
 
@@ -243,7 +253,8 @@ public struct ViewportTransform: Hashable, Sendable {
             scaleMode: scaleMode ?? self.scaleMode,
             zoom: zoom ?? self.zoom,
             pan: pan ?? self.pan,
-            occludedBottom: occludedBottom
+            occludedBottom: occludedBottom,
+            desktopPixelScale: desktopPixelScale
         )
     }
 
@@ -257,7 +268,8 @@ public struct ViewportTransform: Hashable, Sendable {
             scaleMode: scaleMode,
             zoom: zoom,
             pan: .zero,
-            occludedBottom: occludedBottom
+            occludedBottom: occludedBottom,
+            desktopPixelScale: desktopPixelScale
         )
     }
 

@@ -79,3 +79,33 @@ public enum FoldResolutionPolicy: String, Hashable, Sendable, CaseIterable {
     /// larger rather than rearranged.
     case lockToDeck
 }
+
+/// What to ask the server for while saving data
+/// (docs/changes/2026-10-25-data-saver.md): a Retina desktop - one drawn at
+/// 150% or more - at half its pixels and as large as before, which a Mac
+/// draws at 1x and Windows at half the scale. This device draws it twice as
+/// large. Anything else is asked for as it is.
+public struct DataSaverLayout: Equatable, Sendable {
+    public let width: Int
+    public let height: Int
+    public let scale: RemoteDisplayScale
+    /// Viewport points per desktop pixel at 100%.
+    public let desktopPixelScale: Double
+
+    public static func request(
+        width: Int, height: Int, scale: RemoteDisplayScale, isMacHost: Bool, saving: Bool
+    ) -> DataSaverLayout {
+        guard saving, scale.desktopPercent >= 150 else {
+            return DataSaverLayout(width: width, height: height, scale: scale, desktopPixelScale: 1)
+        }
+        // The protocol takes even widths, and 200 pixels or more.
+        var half = max(width / 2, 200)
+        half -= half % 2
+        return DataSaverLayout(
+            width: half,
+            height: max(height / 2, 200),
+            scale: isMacHost ? .unscaled : RemoteDisplayScale(percent: scale.desktopPercent / 2),
+            desktopPixelScale: 2
+        )
+    }
+}

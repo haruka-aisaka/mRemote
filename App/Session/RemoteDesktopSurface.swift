@@ -40,6 +40,8 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     let cursorStore: RemoteCursorStore?
     let inputSink: (any DesktopInputSink)?
     let scaleMode: InitialScale
+    /// Viewport points per desktop pixel at 100% (two while saving data).
+    var desktopPixelScale: Double = 1
     let scrollDirection: ScrollDirection
     /// Where the laptop deck finds this surface, when there is one.
     let laptopChannel: LaptopDeckChannel?
@@ -73,12 +75,14 @@ struct RemoteDesktopSurface: UIViewRepresentable {
             scrollDirection: scrollDirection
         )
         configure(view)
+        view.setDesktopPixelScale(desktopPixelScale)
         return view
     }
 
     func updateUIView(_ view: RemoteDesktopView, context: Context) {
         configure(view)
         view.setScaleMode(scaleMode)
+        view.setDesktopPixelScale(desktopPixelScale)
     }
 
     private func configure(_ view: RemoteDesktopView) {

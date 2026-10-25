@@ -18,7 +18,30 @@ final class NetworkConstraint: @unchecked Sendable {
             self?.update(path.isExpensive || path.isConstrained)
         }
         monitor.start(queue: DispatchQueue(label: "com.mikuta0407.mRemote.network-constraint"))
+        #if DEBUG
+        watchSimulatedConstraint()
+        #endif
     }
+
+    #if DEBUG
+    /// Tests stand in for cellular, which a simulator cannot be on: with
+    /// MREMOTE_SIMULATED_CONSTRAINT_FILE set, the file's "1" or "0" decides,
+    /// read every half second. Debug builds only.
+    private func watchSimulatedConstraint() {
+        guard let path = ProcessInfo.processInfo.environment["MREMOTE_SIMULATED_CONSTRAINT_FILE"] else { return }
+        monitor.pathUpdateHandler = nil
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "com.mikuta0407.mRemote.simulated-constraint"))
+        timer.schedule(deadline: .now(), repeating: .milliseconds(500))
+        timer.setEventHandler { [weak self] in
+            let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+            self?.update(text.trimmingCharacters(in: .whitespacesAndNewlines) == "1")
+        }
+        timer.resume()
+        simulatedConstraintTimer = timer
+    }
+
+    private var simulatedConstraintTimer: DispatchSourceTimer?
+    #endif
 
     var isConstrained: Bool {
         lock.lock()

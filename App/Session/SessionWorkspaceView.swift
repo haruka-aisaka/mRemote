@@ -476,6 +476,7 @@ struct SessionWorkspaceView: View {
                 cursorStore: model.cursorStore,
                 inputSink: model.inputSink,
                 scaleMode: model.runtime.scale,
+                desktopPixelScale: model.desktopPixelScale,
                 scrollDirection: model.runtime.scrollDirection,
                 laptopChannel: laptopChannel,
                 touchMode: touchMode,
