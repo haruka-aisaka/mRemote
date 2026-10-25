@@ -5,10 +5,24 @@
 アプリの使い方そのままで確かめる。
 
 ```sh
-deno run -A e2e/mac-host/e2e.ts                     # ビルドして全部
+deno run -A e2e/mac-host/e2e.ts --suite smoke       # 普段はこれ（接続・表示・入力。ビルド込みで 10 分ほど）
+deno run -A e2e/mac-host/e2e.ts --suite saver,presets
+deno run -A e2e/mac-host/e2e.ts                     # 全部（約 70 分。版を上げるときなど）
 deno run -A e2e/mac-host/e2e.ts --no-build --only connect,display,tap
 deno run -A e2e/mac-host/e2e.ts --simulator "iPhone 18 Pro"
 ```
+
+| 組 | 中身 | 目安 |
+|---|---|---|
+| smoke | 接続・表示・タップ・キーボード・表示倍率の切り替え | 10 分 |
+| settings | 表示倍率・解像度・画質を覚えて次の接続に引き継ぐ（remember-*・writeback-*・settings-migrate） | 25 分 |
+| presets | 解像度の候補（presets-*・preset-*） | 15 分 |
+| saver | 無音のときの音声・省データ（saver-*） | 15 分 |
+| full | 全部 | 70 分 |
+
+どの組も、最初に connect を流す。組の中は書かれた順に流れる（前のテストの状態に頼るものがある）。
+時間がかかるのは、UI の操作が 1 回 1〜3 秒かかること、開き直しを確かめるつなぎ直しが多いこと、
+通信量や音を測る待ち時間があることによる。サーバ側だけの変更なら、サーバの E2E（約 2 分）で足りることが多い。
 
 前提: macos-rdp-server のフォークを `~/projects/forks/macos-rdp-server` に置き（`MACOS_RDP_SERVER` で変えられる）、
 サーバを一度 `~/.macos-rdp/bin/macos-rdp-daemon` に入れて画面収録などを許可しておく。`brew install freerdp`、Deno。

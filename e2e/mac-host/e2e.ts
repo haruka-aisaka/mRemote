@@ -4,7 +4,15 @@
  * テスト用の macos-rdp-server（127.0.0.1:3390）へつなぎ、接続・表示・入力・表示倍率・
  * 一覧からの開き直しを確かめる。
  *
- *   deno run -A e2e/mac-host/e2e.ts [--no-build] [--only 名前,名前] [--simulator <名前か UDID>]
+ *   deno run -A e2e/mac-host/e2e.ts [--no-build] [--suite 組,組 | --only 名前,名前] [--simulator <名前か UDID>]
+ *
+ * 組（--suite。何も指定しなければ全部 = full、約 70 分）:
+ *   smoke     接続・表示・タップ・キーボード・表示倍率の切り替え（普段はこれ。ビルド込みで 10 分ほど）
+ *   settings  表示倍率・解像度・画質を覚えて次の接続に引き継ぐ（約 25 分）
+ *   presets   解像度の候補（約 15 分）
+ *   saver     無音のときの音声・省データ（約 15 分）
+ *   full      全部
+ * どの組も、最初に connect（接続先を作って接続する）を流す。
  *
  * 仕組み:
  * - サーバは macos-rdp-server（フォーク）の tests/e2e/e2e.ts --serve で、本番とは別に起動する
@@ -39,7 +47,33 @@ const CONSTRAINT_FILE = `${RUN}/constrained`;
 const { analyzeTone, writeToneWav, TONE_HZ, TONE_SECONDS } = await import(`file://${SERVER}/tests/e2e/tone.ts`);
 
 const args = Deno.args;
-const only = args.includes("--only") ? args[args.indexOf("--only") + 1].split(",") : null;
+/** 組ごとのテスト。並びはテストの書かれた順のまま流れる（前のテストの状態に頼るものがある） */
+const SUITES: Record<string, string[]> = {
+  smoke: ["display", "tap", "keyboard", "zoom-toggle"],
+  settings: [
+    "remember-menu", "remember-doubletap", "remember-settings", "remember-keep", "remember-relaunch",
+    "remember-failed", "remember-duplicate", "remember-delete", "remember-upgrade", "settings-migrate",
+    "writeback-resolution", "writeback-quality", "writeback-scale-editor", "writeback-inherit", "writeback-deleted",
+  ],
+  presets: ["presets-pickers", "preset-duo", "preset-portrait", "presets-nodisp"],
+  saver: [
+    "saver-silence", "saver-always", "saver-moving", "saver-never", "saver-auto", "saver-unscaled",
+    "saver-switch-audio", "saver-nodisp",
+  ],
+};
+function selectedTests(): string[] | null {
+  if (args.includes("--only")) return args[args.indexOf("--only") + 1].split(",");
+  if (!args.includes("--suite")) return null;
+  const names = args[args.indexOf("--suite") + 1].split(",");
+  if (names.includes("full")) return null;
+  const unknown = names.filter((n) => !SUITES[n]);
+  if (unknown.length) {
+    console.error(`知らない組: ${unknown.join(", ")}（${Object.keys(SUITES).join("・")}・full）`);
+    Deno.exit(2);
+  }
+  return ["connect", ...names.flatMap((n) => SUITES[n])];
+}
+const only = selectedTests();
 const simulatorArg = args.includes("--simulator") ? args[args.indexOf("--simulator") + 1] : "iPhone Duo";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
