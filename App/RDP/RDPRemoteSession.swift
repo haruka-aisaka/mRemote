@@ -291,12 +291,14 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     private var wantsCompressedAudio = false
 
     func setCompressedAudio(_ compressed: Bool) async {
+        guard compressed != wantsCompressedAudio else { return }
         wantsCompressedAudio = compressed
         sendAudioConfig()
     }
 
+    /// It travels with the stream settings (macrdpx STREAM_CONFIG).
     private func sendAudioConfig() {
-        // Filled in with the Mac extension that carries it.
+        sendStreamConfig()
     }
 
     func requestDesktopLayout(
@@ -933,6 +935,9 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         message.type = mrx_message_type(MRX_MSG_STREAM_CONFIG)
         message.u.stream_config.max_fps = UInt16(request.framesPerSecond)
         message.u.stream_config.bitrate_kbps = UInt32(request.bitrateKbps)
+        // Saving data: the audio as AAC, from a server that offers it.
+        message.u.stream_config.audio_compressed =
+            wantsCompressedAudio && macStatus.features.contains(.audioAAC) ? 1 : 0
         native?.sendMacrdpx(&message)
     }
 

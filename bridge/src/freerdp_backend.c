@@ -1,3 +1,4 @@
+#include <AudioToolbox/AudioToolbox.h>
 #include "bridge_internal.h"
 #include "certificate_chain.h"
 #include "control_deadline.h"
@@ -1815,7 +1816,28 @@ typedef struct mr_freerdp_rdpsnd_device {
     rdpsndDevicePlugin device;
     mr_freerdp_backend *backend;
     mr_rdpsnd_device *sink;
+    /* While a Mac server sends AAC to save data (macrdpx AUDIO_AAC): the
+     * decoder to PCM, and the one packet the converter is being given. */
+    AudioConverterRef aac;
+    UInt32 aac_channels;
+    const BYTE *aac_packet;
+    UInt32 aac_packet_size;
+    AudioStreamPacketDescription aac_description;
+    int16_t *aac_pcm;
 } mr_freerdp_rdpsnd_device;
+
+/* macrdpx AUDIO_AAC: AAC-LC in ADTS frames, a format only macos-rdp-server
+ * offers, so no other server can pick it. */
+#define MR_FREERDP_WAVE_FORMAT_MRX_AAC 0x4D52
+/* Frames one AAC packet decodes to, with room to spare. */
+#define MR_FREERDP_AAC_MAX_FRAMES 2048u
+
+static int mr_freerdp_audio_format_is_aac(const AUDIO_FORMAT *format)
+{
+    return format != NULL && format->wFormatTag == MR_FREERDP_WAVE_FORMAT_MRX_AAC &&
+        format->nChannels >= 1u && format->nChannels <= 2u &&
+        (format->nSamplesPerSec == 44100u || format->nSamplesPerSec == 48000u);
+}
 
 static int mr_freerdp_audio_format_supported(const AUDIO_FORMAT *format)
 {
@@ -1824,6 +1846,104 @@ static int mr_freerdp_audio_format_supported(const AUDIO_FORMAT *format)
         format->nChannels >= 1u && format->nChannels <= 2u &&
         format->nSamplesPerSec >= 8000u && format->nSamplesPerSec <= 192000u &&
         format->nBlockAlign == format->nChannels * 2u;
+}
+
+static void mr_freerdp_aac_close(mr_freerdp_rdpsnd_device *device)
+{
+    if (device->aac != NULL) {
+        AudioConverterDispose(device->aac);
+        device->aac = NULL;
+    }
+    free(device->aac_pcm);
+    device->aac_pcm = NULL;
+}
+
+static int mr_freerdp_aac_open(mr_freerdp_rdpsnd_device *device, const AUDIO_FORMAT *format)
+{
+    AudioStreamBasicDescription in;
+    AudioStreamBasicDescription out;
+    mr_freerdp_aac_close(device);
+    memset(&in, 0, sizeof(in));
+    in.mSampleRate = format->nSamplesPerSec;
+    in.mFormatID = kAudioFormatMPEG4AAC;
+    in.mFormatFlags = kMPEG4Object_AAC_LC;
+    in.mFramesPerPacket = 1024u;
+    in.mChannelsPerFrame = format->nChannels;
+    memset(&out, 0, sizeof(out));
+    out.mSampleRate = format->nSamplesPerSec;
+    out.mFormatID = kAudioFormatLinearPCM;
+    out.mFormatFlags = kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked;
+    out.mBytesPerPacket = 2u * format->nChannels;
+    out.mFramesPerPacket = 1u;
+    out.mBytesPerFrame = 2u * format->nChannels;
+    out.mChannelsPerFrame = format->nChannels;
+    out.mBitsPerChannel = 16u;
+    device->aac_pcm = (int16_t *)malloc(MR_FREERDP_AAC_MAX_FRAMES * 2u * format->nChannels);
+    if (device->aac_pcm == NULL || AudioConverterNew(&in, &out, &device->aac) != noErr) {
+        device->aac = NULL;
+        mr_freerdp_aac_close(device);
+        return 0;
+    }
+    device->aac_channels = format->nChannels;
+    return 1;
+}
+
+/* Hands the converter the one packet there is, then says there is no more. */
+static OSStatus mr_freerdp_aac_input(
+    AudioConverterRef converter,
+    UInt32 *packets,
+    AudioBufferList *data,
+    AudioStreamPacketDescription **descriptions,
+    void *context)
+{
+    mr_freerdp_rdpsnd_device *device = (mr_freerdp_rdpsnd_device *)context;
+    (void)converter;
+    if (device->aac_packet == NULL) {
+        *packets = 0u;
+        return (OSStatus)0x6D727845; /* 'mrxE': none until the next frame */
+    }
+    data->mNumberBuffers = 1u;
+    data->mBuffers[0].mNumberChannels = device->aac_channels;
+    data->mBuffers[0].mData = (void *)device->aac_packet;
+    data->mBuffers[0].mDataByteSize = device->aac_packet_size;
+    device->aac_description.mStartOffset = 0;
+    device->aac_description.mVariableFramesInPacket = 0u;
+    device->aac_description.mDataByteSize = device->aac_packet_size;
+    if (descriptions != NULL) {
+        *descriptions = &device->aac_description;
+    }
+    *packets = 1u;
+    device->aac_packet = NULL;
+    return noErr;
+}
+
+/* Each ADTS frame decoded and played as PCM. */
+static void mr_freerdp_aac_play(mr_freerdp_rdpsnd_device *device, const BYTE *data, size_t size)
+{
+    size_t at = 0u;
+    while (device->aac != NULL && at + 7u <= size && data[at] == 0xFFu && (data[at + 1u] & 0xF0u) == 0xF0u) {
+        const size_t header = (data[at + 1u] & 1u) ? 7u : 9u;
+        const size_t length = ((size_t)(data[at + 3u] & 3u) << 11) | ((size_t)data[at + 4u] << 3) |
+            ((size_t)data[at + 5u] >> 5);
+        AudioBufferList list;
+        UInt32 frames = MR_FREERDP_AAC_MAX_FRAMES;
+        if (length < header || at + length > size) {
+            break;
+        }
+        device->aac_packet = data + at + header;
+        device->aac_packet_size = (UInt32)(length - header);
+        list.mNumberBuffers = 1u;
+        list.mBuffers[0].mNumberChannels = device->aac_channels;
+        list.mBuffers[0].mData = device->aac_pcm;
+        list.mBuffers[0].mDataByteSize = MR_FREERDP_AAC_MAX_FRAMES * 2u * device->aac_channels;
+        (void)AudioConverterFillComplexBuffer(device->aac, mr_freerdp_aac_input, device, &frames, &list, NULL);
+        device->aac_packet = NULL;
+        if (frames > 0u) {
+            (void)mr_rdpsnd_device_play(device->sink, 0u, 0u, (const uint8_t *)device->aac_pcm,
+                (size_t)frames * 2u * device->aac_channels);
+        }
+        at += length;
+    }
 }
 
 static void mr_freerdp_rdpsnd_format(const AUDIO_FORMAT *source, mr_rdpsnd_format *out)
@@ -1870,7 +1990,8 @@ static BOOL mr_freerdp_rdpsnd_format_supported(
     const AUDIO_FORMAT *format)
 {
     (void)device;
-    return mr_freerdp_audio_format_supported(format) ? TRUE : FALSE;
+    return mr_freerdp_audio_format_supported(format) || mr_freerdp_audio_format_is_aac(format)
+        ? TRUE : FALSE;
 }
 
 static BOOL mr_freerdp_rdpsnd_open(
@@ -1881,7 +2002,23 @@ static BOOL mr_freerdp_rdpsnd_open(
     mr_freerdp_rdpsnd_device *device = (mr_freerdp_rdpsnd_device *)plugin;
     mr_rdpsnd_format native;
     (void)latency;
-    if (device == NULL || !mr_freerdp_audio_format_supported(format)) {
+    if (device == NULL) {
+        return FALSE;
+    }
+    if (mr_freerdp_audio_format_is_aac(format)) {
+        /* AAC decodes to PCM of the same rate and channels. */
+        AUDIO_FORMAT pcm = *format;
+        if (!mr_freerdp_aac_open(device, format)) {
+            return FALSE;
+        }
+        pcm.wFormatTag = WAVE_FORMAT_PCM;
+        pcm.wBitsPerSample = 16u;
+        pcm.nBlockAlign = (UINT16)(format->nChannels * 2u);
+        mr_freerdp_rdpsnd_format(&pcm, &native);
+        return mr_rdpsnd_device_open(device->sink, &native) == MR_RDP_STATUS_OK;
+    }
+    mr_freerdp_aac_close(device);
+    if (!mr_freerdp_audio_format_supported(format)) {
         return FALSE;
     }
     mr_freerdp_rdpsnd_format(format, &native);
@@ -1909,6 +2046,10 @@ static UINT mr_freerdp_rdpsnd_play(
 {
     mr_freerdp_rdpsnd_device *device = (mr_freerdp_rdpsnd_device *)plugin;
     if (device != NULL) {
+        if (device->aac != NULL) {
+            mr_freerdp_aac_play(device, data, size);
+            return 0u;
+        }
         /* Block number and timestamp are not exposed by this FreeRDP
          * version; mr_rdpsnd carries them for telemetry only. */
         (void)mr_rdpsnd_device_play(device->sink, 0u, 0u, data, size);
@@ -1920,6 +2061,7 @@ static void mr_freerdp_rdpsnd_close(rdpsndDevicePlugin *plugin)
 {
     mr_freerdp_rdpsnd_device *device = (mr_freerdp_rdpsnd_device *)plugin;
     if (device != NULL) {
+        mr_freerdp_aac_close(device);
         (void)mr_rdpsnd_device_close(device->sink);
     }
 }
@@ -1938,6 +2080,7 @@ static void mr_freerdp_rdpsnd_free(rdpsndDevicePlugin *plugin)
         }
     }
     (void)pthread_mutex_unlock(&device->backend->mutex);
+    mr_freerdp_aac_close(device);
     (void)mr_rdpsnd_device_free(&device->sink);
     free(device);
 }

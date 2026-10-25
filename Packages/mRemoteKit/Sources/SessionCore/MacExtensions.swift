@@ -55,9 +55,11 @@ public struct MacExtensionFeatures: OptionSet, Hashable, Sendable {
     public static let inputSource = MacExtensionFeatures(rawValue: 1 << 4)
     public static let cursorAlpha = MacExtensionFeatures(rawValue: 1 << 5)
     public static let gestures = MacExtensionFeatures(rawValue: 1 << 6)
+    /// The server sends its audio as AAC on request, to save data.
+    public static let audioAAC = MacExtensionFeatures(rawValue: 1 << 7)
 
     public static let all: MacExtensionFeatures = [
-        .macKeys, .pointer, .preciseScroll, .streamConfig, .inputSource, .cursorAlpha, .gestures,
+        .macKeys, .pointer, .preciseScroll, .streamConfig, .inputSource, .cursorAlpha, .gestures, .audioAAC,
     ]
 }
 

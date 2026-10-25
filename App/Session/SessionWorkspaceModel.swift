@@ -423,14 +423,17 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
             await refreshRemoteClipboardKinds()
             if Platform.isMac { await mirrorRemoteClipboard() }
         case .macExtensions(let status):
+            let first = macExtensions == nil
             macExtensions = status
             if !isMacHost {
                 isMacHost = true
                 softwareKeyboard.isMacHost = true
             }
             // A Mac draws a saved-data desktop at 1x, and can take the audio
-            // compressed now that it has said what it supports.
-            dataSaverChanged()
+            // compressed now that it has said what it supports. Once: the
+            // server reports its stream again after every request, and
+            // answering each report with a request never ends.
+            if first { dataSaverChanged() }
         case let .portForwardFailed(localPort, error):
             clipboardMessage = error == EADDRINUSE
                 ? String(localized: "ポート転送 localhost:\(localPort) は使用中のため開けませんでした。")

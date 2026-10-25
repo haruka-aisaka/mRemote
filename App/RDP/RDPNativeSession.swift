@@ -1075,6 +1075,12 @@ private func rdpAudioCallback(
     let packet = packetPointer.pointee
     guard let bytes = packet.bytes, packet.bits_per_sample == 16,
           (1...2).contains(packet.channels) else { return }
+    #if DEBUG
+    AudioDump.shared?.write(
+        UnsafeRawBufferPointer(start: bytes, count: packet.length),
+        sampleRate: Int(packet.samples_per_second), channels: Int(packet.channels)
+    )
+    #endif
     // Straight into the ring: audio, like frames, never touches the actor.
     context.audioStream.push(
         UnsafeRawBufferPointer(start: bytes, count: packet.length),
@@ -1238,3 +1244,34 @@ private func rdpMacrdpxCallback(
         break
     }
 }
+
+#if DEBUG
+/// Tests check what the app was given to play - after AAC was decoded - with
+/// MREMOTE_AUDIO_DUMP_FILE set: the PCM is appended there, and its rate and
+/// channels written beside it (<file>.format). Debug builds only.
+final class AudioDump: @unchecked Sendable {
+    static let shared: AudioDump? = ProcessInfo.processInfo.environment["MREMOTE_AUDIO_DUMP_FILE"].map(AudioDump.init)
+
+    private let path: String
+    private let lock = NSLock()
+    private var handle: FileHandle?
+    private var format = ""
+
+    private init(path: String) {
+        self.path = path
+        FileManager.default.createFile(atPath: path, contents: nil)
+        handle = FileHandle(forWritingAtPath: path)
+    }
+
+    func write(_ bytes: UnsafeRawBufferPointer, sampleRate: Int, channels: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        let described = "\(sampleRate) \(channels)\n"
+        if described != format {
+            format = described
+            try? described.write(toFile: path + ".format", atomically: true, encoding: .utf8)
+        }
+        handle?.write(Data(bytes))
+    }
+}
+#endif
