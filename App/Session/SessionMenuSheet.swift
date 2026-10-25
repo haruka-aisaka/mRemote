@@ -231,8 +231,8 @@ struct SessionMenuSheet: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
-                    // For this session; the connection's own setting is the
-                    // one it starts from next time.
+                    // Saved as the connection's own setting, so the next
+                    // session starts from it too.
                     Picker("解像度", selection: Binding(
                         get: { model.runtime.resolution },
                         set: { model.setResolution($0) }

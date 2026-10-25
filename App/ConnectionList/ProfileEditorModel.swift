@@ -82,6 +82,9 @@ final class ProfileEditorModel: Identifiable {
     var usesH264 = true
     var remotePlatform = RemotePlatform.automatic
     var streamQuality = StreamQuality.automatic
+    /// The connection's display scale, also changed from its session.
+    var displayScale = InitialScale.fit
+    var dataSaver = DataSaverPolicy.automatic
     var remoteProgram = ""
     var remoteArguments = ""
     var wakesOnLAN = false
@@ -141,6 +144,8 @@ final class ProfileEditorModel: Identifiable {
             usesH264 = rdp.prefersH264
             remotePlatform = rdp.remotePlatform
             streamQuality = rdp.preferredStreamQuality
+            displayScale = rdp.initialScale.resolved(default: .fit)
+            dataSaver = rdp.preferredDataSaver
             remoteProgram = rdp.remoteApp?.program ?? ""
             remoteArguments = rdp.remoteApp?.arguments ?? ""
             if let wake = profile.wakeOnLAN {
@@ -326,6 +331,8 @@ final class ProfileEditorModel: Identifiable {
         configuration.clipboardPolicy = clipboardPolicy
         configuration.scrollDirection = scrollDirection
         configuration.resolutionPolicy = resolutionPolicy
+        configuration.initialScale = .explicit(displayScale)
+        configuration.dataSaver = dataSaver == .automatic ? nil : dataSaver
         configuration.securityPolicy = securityPolicy
         if usesGateway, let gatewayPort {
             var gateway = configuration.gateway ?? RDPGatewayConfiguration(host: trimmedGatewayHost)

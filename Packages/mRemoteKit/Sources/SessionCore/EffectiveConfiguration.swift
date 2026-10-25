@@ -25,6 +25,7 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
     public let prefersH264: Bool
     public let remotePlatform: RemotePlatform
     public let streamQuality: StreamQuality
+    public let dataSaver: DataSaverPolicy
     /// Set for an SSH connection, which then ignores the RDP settings above
     /// (they hold the global defaults, unused). docs/ssh-design.md 5.2.
     public let ssh: EffectiveSSHSettings?
@@ -54,6 +55,7 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
         prefersH264: Bool = true,
         remotePlatform: RemotePlatform = .standard,
         streamQuality: StreamQuality = .automatic,
+        dataSaver: DataSaverPolicy = .automatic,
         ssh: EffectiveSSHSettings? = nil,
         proxy: ProxyServer? = nil
     ) {
@@ -77,6 +79,7 @@ public struct EffectiveConnectionConfiguration: Hashable, Sendable {
         self.prefersH264 = prefersH264
         self.remotePlatform = remotePlatform
         self.streamQuality = streamQuality
+        self.dataSaver = dataSaver
         self.ssh = ssh
         self.proxy = proxy
     }
@@ -111,7 +114,10 @@ public struct EffectiveProfileResolver: Sendable {
             endpoint: profile.endpoint,
             account: profile.account,
             resolutionPolicy: rdp.resolutionPolicy.resolved(default: globalSettings.resolutionPolicy),
-            initialScale: rdp.initialScale.resolved(default: globalSettings.initialScale),
+            // The connection's own scale, last chosen in its session; never
+            // the global setting, which is no longer offered
+            // (docs/changes/2026-10-25-remember-scale.md).
+            initialScale: rdp.initialScale.resolved(default: .fit),
             displayQuality: rdp.displayQuality.resolved(default: globalSettings.displayQuality),
             keyboardLayout: rdp.keyboardLayout.resolved(default: globalSettings.keyboardLayout),
             audioPlayback: rdp.audioPlayback.resolved(default: globalSettings.audioPlayback),
@@ -126,6 +132,7 @@ public struct EffectiveProfileResolver: Sendable {
             prefersH264: rdp.prefersH264,
             remotePlatform: rdp.remotePlatform,
             streamQuality: rdp.preferredStreamQuality,
+            dataSaver: rdp.preferredDataSaver,
             proxy: proxy
         )
     }
@@ -162,7 +169,7 @@ extension EffectiveProfileResolver {
             endpoint: profile.endpoint,
             account: profile.account,
             resolutionPolicy: globalSettings.resolutionPolicy,
-            initialScale: globalSettings.initialScale,
+            initialScale: .fit,
             displayQuality: globalSettings.displayQuality,
             keyboardLayout: globalSettings.keyboardLayout,
             audioPlayback: false,

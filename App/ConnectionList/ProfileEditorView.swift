@@ -83,10 +83,21 @@ struct ProfileEditorView: View {
                         label: Formatting.resolutionLabel
                     )
                     .accessibilityIdentifier("profile-resolution-picker")
+                    Picker("表示倍率", selection: $model.displayScale) {
+                        Text("画面に合わせる").tag(InitialScale.fit)
+                        Text("100%").tag(InitialScale.oneToOne)
+                    }
+                    .accessibilityIdentifier("profile-scale-picker")
+                    Picker("省データ", selection: $model.dataSaver) {
+                        ForEach(DataSaverPolicy.allCases, id: \.self) { policy in
+                            Text(DataSaverLabel.text(policy)).tag(policy)
+                        }
+                    }
+                    .accessibilityIdentifier("profile-data-saver-picker")
                 } header: {
                     Text("画面")
                 } footer: {
-                    Text("接続中でもセッションメニューから変えられます。")
+                    Text("接続中にセッションメニューで変えると、ここにも保存されます。省データは、音声を圧縮し（Mac のとき）、Retina の画面を半分の画素数で送ります。")
                 }
 
                 Section("キーボード") {

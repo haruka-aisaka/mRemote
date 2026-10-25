@@ -131,6 +131,7 @@ final class AppEnvironment {
             let repository = try await ProfileRepository(store: store)
             self.repository = repository
             await refresh()
+            await moveRememberedScales()
         } catch {
             loadFailure = String(describing: error)
             logger.error("profile store load failed")
@@ -142,6 +143,37 @@ final class AppEnvironment {
         profiles = await repository.profiles
         globalSettings = await repository.globalSettings
         proxies = await repository.proxies
+    }
+
+    /// A setting changed from a session's menu becomes that connection's
+    /// own setting (docs/changes/2026-10-25-session-settings-writeback.md).
+    /// A connection deleted while its session was open is left alone.
+    func updateRDPConfiguration(of profileID: ProfileID?, _ change: (inout RDPConfiguration) -> Void) async {
+        guard let repository, let profileID,
+              var profile = await repository.profiles.first(where: { $0.id == profileID }),
+              var rdp = profile.configuration.rdp else { return }
+        let before = rdp
+        change(&rdp)
+        guard rdp != before else { return }
+        profile.configuration = .rdp(rdp)
+        profile.updatedAt = Date()
+        do {
+            try await repository.upsert(profile)
+            await refresh()
+        } catch {
+            logger.error("saving a session setting failed")
+        }
+    }
+
+    /// The display scale the previous version kept on the device for each
+    /// connection moves into the connection's own setting, once.
+    private func moveRememberedScales() async {
+        let memory = ScaleMemory()
+        for profile in profiles {
+            guard let scale = memory.remembered(for: profile.id) else { continue }
+            await updateRDPConfiguration(of: profile.id) { $0.initialScale = .explicit(scale) }
+            memory.forget(profile.id)
+        }
     }
 
     func saveProxy(_ proxy: ProxyServer) async {
@@ -214,7 +246,6 @@ final class AppEnvironment {
             if let reference = profile.configuration.rdp?.gateway?.account.credentialReference {
                 try? credentials.delete(reference)
             }
-            ScaleMemory().forget(profile.id)
             await refresh()
         } catch {
             listMessage = String(localized: "接続先を削除できませんでした（\(String(describing: error))）。")
@@ -236,7 +267,6 @@ final class AppEnvironment {
 
     func duplicate(_ profile: ConnectionProfile) async {
         let copy = profile.duplicated(displayName: String(localized: "\(profile.displayName) のコピー"))
-        ScaleMemory().copy(from: profile.id, to: copy.id)
         await save(copy, password: nil)
     }
 

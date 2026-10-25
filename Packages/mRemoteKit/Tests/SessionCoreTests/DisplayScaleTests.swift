@@ -74,3 +74,35 @@ private extension ResolutionPolicy {
         return nil
     }
 }
+
+final class SessionSettingsTests: XCTestCase {
+    func testDataSaverIsOnOnlyWhenTheNetworkSaysSoUnlessChosen() {
+        XCTAssertTrue(DataSaverPolicy.automatic.isActive(onConstrainedNetwork: true))
+        XCTAssertFalse(DataSaverPolicy.automatic.isActive(onConstrainedNetwork: false))
+        XCTAssertTrue(DataSaverPolicy.always.isActive(onConstrainedNetwork: false))
+        XCTAssertFalse(DataSaverPolicy.never.isActive(onConstrainedNetwork: true))
+    }
+
+    /// The global 初期倍率 is no longer offered; one left at 100% by the
+    /// previous version must not decide anything.
+    func testTheScaleIsTheConnectionsOwnNeverTheGlobalOne() {
+        var global = GlobalSettings.default
+        global.initialScale = .oneToOne
+        func scale(_ own: Inheritable<InitialScale>) -> InitialScale {
+            let profile = ConnectionProfile(
+                displayName: "Mac", endpoint: RemoteEndpoint(host: "mac", port: 3389),
+                configuration: .rdp(RDPConfiguration(initialScale: own))
+            )
+            return EffectiveProfileResolver().resolve(profile: profile, globalSettings: global).initialScale
+        }
+        XCTAssertEqual(scale(.inherit), .fit)
+        XCTAssertEqual(scale(.explicit(.oneToOne)), .oneToOne)
+    }
+
+    func testADocumentWithoutTheDataSaverDecodesAsAutomatic() throws {
+        let data = try JSONEncoder().encode(RDPConfiguration())
+        let decoded = try JSONDecoder().decode(RDPConfiguration.self, from: data)
+        XCTAssertNil(decoded.dataSaver)
+        XCTAssertEqual(decoded.preferredDataSaver, .automatic)
+    }
+}

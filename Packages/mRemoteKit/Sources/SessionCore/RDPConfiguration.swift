@@ -71,6 +71,23 @@ extension ResolutionPolicy {
     }
 }
 
+/// Whether to spend less data: audio compressed and a Retina desktop sent at
+/// half its pixels (docs/changes/2026-10-25-data-saver.md).
+public enum DataSaverPolicy: String, Hashable, Sendable, Codable, CaseIterable {
+    /// On while the network is cellular or in Low Data Mode.
+    case automatic
+    case always
+    case never
+
+    public func isActive(onConstrainedNetwork constrained: Bool) -> Bool {
+        switch self {
+        case .automatic: return constrained
+        case .always: return true
+        case .never: return false
+        }
+    }
+}
+
 public enum InitialScale: String, Hashable, Sendable, Codable, CaseIterable {
     case fit
     case oneToOne
@@ -220,11 +237,15 @@ public struct RDPConfiguration: Hashable, Sendable, Codable {
     public var platform: RemotePlatform?
     /// The stream a Mac server is asked for. Nil is automatic.
     public var streamQuality: StreamQuality?
+    /// Saving data: nil is automatic, on only on cellular or Low Data Mode
+    /// (docs/changes/2026-10-25-data-saver.md).
+    public var dataSaver: DataSaverPolicy?
 
     public var redirectsMicrophone: Bool { microphone ?? false }
     public var prefersH264: Bool { usesH264 ?? true }
     public var remotePlatform: RemotePlatform { platform ?? .automatic }
     public var preferredStreamQuality: StreamQuality { streamQuality ?? .automatic }
+    public var preferredDataSaver: DataSaverPolicy { dataSaver ?? .automatic }
 
     public init(
         resolutionPolicy: Inheritable<ResolutionPolicy> = .inherit,

@@ -148,10 +148,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         self.configuration = configuration
         self.id = session.id
         self.displayName = configuration.displayName
-        var runtime = SessionRuntimeState(from: configuration)
-        // The scale this connection was last viewed at, not a setting.
-        runtime.scale = ScaleMemory().scale(for: configuration.profileID)
-        self.runtime = runtime
+        self.runtime = SessionRuntimeState(from: configuration)
         self.isMacHost = configuration.remotePlatform == .macOS
         self.softwareKeyboard = SoftwareKeyboardController(
             mode: environment.globalSettings.softwareKeyboardMode,
@@ -450,6 +447,7 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
     func setStreamQuality(_ quality: StreamQuality) async {
         guard let capable = session as? any MacExtensionCapableSession else { return }
         await capable.setStreamQuality(quality)
+        saveToConnection { $0.streamQuality = quality == .automatic ? nil : quality }
     }
 
     // MARK: - Clipboard
@@ -789,10 +787,19 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
 
     // MARK: - Presentation
 
-    /// From the menu or a double tap. The connection opens at it next time.
+    /// From the menu or a double tap. Saved as the connection's own scale,
+    /// so it opens at it next time.
     func setScaleMode(_ mode: InitialScale) {
         runtime.scale = mode
-        ScaleMemory().remember(mode, for: configuration.profileID)
+        saveToConnection { $0.initialScale = .explicit(mode) }
+    }
+
+    /// What the session menu changes is the connection's own setting from
+    /// then on (docs/changes/2026-10-25-session-settings-writeback.md).
+    private func saveToConnection(_ change: @escaping (inout RDPConfiguration) -> Void) {
+        let profileID = configuration.profileID
+        let environment = environment
+        Task { await environment.updateRDPConfiguration(of: profileID, change) }
     }
 
     /// Live, per-session, and never written back to the profile unless the
@@ -811,12 +818,14 @@ final class SessionWorkspaceModel: Identifiable, Hashable {
         requestDesktopLayout()
     }
 
-    /// Live, for this session only: a chosen size is kept through rotation and
-    /// the deck, and 自動 goes back to following the screen.
+    /// Live, and saved as the connection's own resolution: a chosen size is
+    /// kept through rotation and the deck, and 自動 goes back to following
+    /// the screen.
     func setResolution(_ resolution: ResolutionPolicy) {
         guard resolution != runtime.resolution else { return }
         runtime.resolution = resolution
         requestDesktopLayout()
+        saveToConnection { $0.resolutionPolicy = .explicit(resolution) }
     }
 
     func setExternalDesktopSize(_ size: (width: Int, height: Int)?) {
