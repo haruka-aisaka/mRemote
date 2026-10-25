@@ -12,6 +12,16 @@ import AppleAdapters
 final class AudioCoordinator {
     static let shared = AudioCoordinator()
 
+    /// Tests on a simulator: what the app plays comes out of the Mac it
+    /// runs on, where the server under test captures it again and sends it
+    /// back - an echo that never ends. MREMOTE_MUTE_PLAYBACK=1 plays it at
+    /// volume zero; the sound still arrives and is pulled as usual. Debug
+    /// builds only.
+    #if DEBUG
+    private static let playsSilentlyForTests = ProcessInfo.processInfo.environment["MREMOTE_MUTE_PLAYBACK"] == "1"
+    #else
+    private static let playsSilentlyForTests = false
+    #endif
     private let engine = AVAudioEngine()
     private var sourceNode: AVAudioSourceNode?
     private var stream: PCMAudioStream?
@@ -108,7 +118,7 @@ final class AudioCoordinator {
                 nodeStream = stream
             }
         }
-        sourceNode?.volume = isMuted ? 0 : 1
+        sourceNode?.volume = isMuted || Self.playsSilentlyForTests ? 0 : 1
 
         guard sourceNode != nil, !isSuspended else {
             if sourceNode == nil, engine.isRunning { engine.pause() }

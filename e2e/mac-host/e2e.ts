@@ -29,8 +29,14 @@ const TARGET = `${SERVER_WORK}/e2e-target`;
 const TARGET_DIR = `${RUN}/target`;
 const COLOR_BOXES = `${WORK}/color-boxes`;
 const APP_ID = "com.mikuta0407.mRemote";
+const RUNNER_ID = "com.mikuta0407.mRemoteUITests.xctrunner";
 const PROFILE = "E2E Mac";
 const RESOLUTION = { w: 1920, h: 1080, label: "1920×1080（16:9）" };
+/** アプリが受け取った音声（AAC なら展開後）の書き出し先 */
+const AUDIO_DUMP = `${RUN}/app-audio.raw`;
+/** 「1」でモバイル回線・低データモード相当（Debug ビルドのアプリが 0.5 秒ごとに読む） */
+const CONSTRAINT_FILE = `${RUN}/constrained`;
+const { analyzeTone, writeToneWav, TONE_HZ, TONE_SECONDS } = await import(`file://${SERVER}/tests/e2e/tone.ts`);
 
 const args = Deno.args;
 const only = args.includes("--only") ? args[args.indexOf("--only") + 1].split(",") : null;
@@ -105,6 +111,11 @@ class App {
       TEST_RUNNER_MREMOTE_LIVE_RESOLUTION: RESOLUTION.label,
       TEST_RUNNER_MREMOTE_LIVE_HOLD: "5400", // 全部で 40 分ほどかかる
       TEST_RUNNER_MREMOTE_LIVE_COMMANDS: this.commands,
+      // Debug ビルドだけの口: アプリが受け取った（展開後の）音声の書き出しと、回線の制約の模擬
+      TEST_RUNNER_MREMOTE_APP_MREMOTE_AUDIO_DUMP_FILE: AUDIO_DUMP,
+      TEST_RUNNER_MREMOTE_APP_MREMOTE_SIMULATED_CONSTRAINT_FILE: CONSTRAINT_FILE,
+      // シミュレータの音は Mac から出て、テスト用サーバがまた拾って送り返す（こだまが止まらない）ので鳴らさない
+      TEST_RUNNER_MREMOTE_APP_MREMOTE_MUTE_PLAYBACK: "1",
     };
     const logFile = await Deno.open(`${RUN}/xctest.log`, { create: true, write: true, truncate: true });
     this.proc = new Deno.Command("xcodebuild", {
@@ -158,9 +169,12 @@ let target: Deno.ChildProcess | undefined;
 /** 目印の窓が覆っている範囲（いま映っているはずの Mac の画面） */
 let frame: Frame | undefined;
 
-async function showTarget(): Promise<Frame> {
+async function showTarget(animate = false): Promise<Frame> {
+  hideTarget();
   await Deno.remove(TARGET_DIR, { recursive: true }).catch(() => {});
-  target = new Deno.Command(TARGET, { args: [TARGET_DIR], stdout: "null", stderr: "null" }).spawn();
+  target = new Deno.Command(TARGET, {
+    args: animate ? [TARGET_DIR, "--animate"] : [TARGET_DIR], stdout: "null", stderr: "null",
+  }).spawn();
   return await targetFrame();
 }
 
@@ -336,7 +350,10 @@ async function scaleSetting(app: App): Promise<string> {
 // ── 変更定義書のテストのための手順 ──────────────────────────────────
 
 async function startServer(extra: string[] = []) {
-  await run("deno", ["run", "-A", `${SERVER}/tests/e2e/e2e.ts`, "--serve", "--keep", "120", ...extra]);
+  // テストの正弦波を Mac のスピーカーから鳴らさない
+  await run("deno", [
+    "run", "-A", `${SERVER}/tests/e2e/e2e.ts`, "--serve", "--keep", "120", "--env", "RDP_AUDIO_LOCAL=0", ...extra,
+  ]);
 }
 
 async function stopServer() {
@@ -433,6 +450,84 @@ async function tapAt(app: App, s: Shot, u: number, v: number): Promise<string> {
   return `(${click.x.toFixed(0)},${click.y.toFixed(0)})`;
 }
 
+// ── 通信量・音声・設定の道具（docs/changes/2026-10-25-data-saver.md・-session-settings-writeback.md）──
+
+/** シミュレータの mRemote が seconds 秒に受け取った量（kbps） */
+async function appKbps(seconds: number): Promise<number> {
+  const pid = (await run("pgrep", ["-f", "mRemote.app/mRemote$"], false)).trim().split("\n")[0];
+  expect(pid, "mRemote が動いていない");
+  const bytes = async () => {
+    const out = await run("nettop", ["-P", "-L", "1", "-p", pid, "-x"], false);
+    const [header, row] = out.trim().split("\n");
+    const column = header.split(",").indexOf("bytes_in");
+    return Number(row?.split(",")[column] ?? 0);
+  };
+  const a = await bytes();
+  await sleep(seconds * 1000);
+  const b = await bytes();
+  return ((b - a) * 8) / 1000 / seconds;
+}
+
+async function setConstrained(on: boolean) {
+  await Deno.writeTextFile(CONSTRAINT_FILE, on ? "1" : "0");
+  await sleep(1500); // アプリは 0.5 秒ごとに読む
+}
+
+/** Mac で正弦波を鳴らし、アプリが受け取った音（展開後）を調べる */
+async function playToneAndCheck(name: string) {
+  const wav = `${RUN}/tone.wav`;
+  await writeToneWav(wav);
+  const before = (await Deno.stat(AUDIO_DUMP).catch(() => ({ size: 0 }))).size;
+  await run("afplay", [wav]);
+  await sleep(1500);
+  const all = await Deno.readFile(AUDIO_DUMP);
+  const [rate, channels] = (await Deno.readTextFile(`${AUDIO_DUMP}.format`)).trim().split(" ").map(Number);
+  const start = before - (before % (2 * channels));
+  const report = analyzeTone(all.subarray(start), rate, channels);
+  log(`${name}: ${JSON.stringify(report)}`);
+  expect(report.seconds > TONE_SECONDS - 0.5, `${name}: 音が短い（欠けた）`, report);
+  expect(Math.abs(report.frequency - TONE_HZ) < TONE_HZ * 0.005, `${name}: 周波数がずれている`, report);
+  expect(report.snrDb > 25 && report.dropouts === 0, `${name}: 音が崩れている`, report);
+  return report;
+}
+
+async function setDataSaver(app: App, label: "自動（モバイル回線・低データモードで有効）" | "常に" | "使わない") {
+  await withMenu(app, async () => {
+    expect((await app.cmd("reveal session-data-saver-picker")) === "ok", "メニューに省データがない");
+    await app.cmd("tap session-data-saver-picker");
+    expect((await app.cmd(`choose ${label}`)) === "ok", `省データの ${label} が選べない`);
+  });
+}
+
+async function dataSaverStatus(app: App): Promise<string> {
+  return await withMenu(app, async () => {
+    await app.cmd("reveal session-data-saver-status");
+    return (await app.cmd("value session-data-saver-status")).replace(/^value=\S* label=/, "");
+  });
+}
+
+/** 接続先の編集画面を開いて、ピッカーの値を読む（取り消して閉じる） */
+async function editorValues(app: App, name: string, ids: string[]): Promise<Record<string, string>> {
+  await app.cmd(`hold profile-row-${name} 1.5`);
+  expect((await app.cmd("button 編集")) === "ok", "編集がない");
+  const values: Record<string, string> = {};
+  for (const id of ids) {
+    expect((await app.cmd(`reveal ${id}`)) === "ok", `編集画面に ${id} がない`);
+    values[id] = (await app.cmd(`value ${id}`)).replace(/^value=\S* label=[^、]*、/, "");
+  }
+  await app.cmd("tap profile-cancel-button");
+  await app.cmd("wait profile-list 5");
+  return values;
+}
+
+async function setMenuPicker(app: App, id: string, label: string) {
+  await withMenu(app, async () => {
+    expect((await app.cmd(`reveal ${id}`)) === "ok", `メニューに ${id} がない`);
+    await app.cmd(`tap ${id}`);
+    expect((await app.cmd(`choose ${label}`)) === "ok", `${label} が選べない`);
+  });
+}
+
 // ── テスト ────────────────────────────────────────────────────────────
 
 interface Result {
@@ -458,8 +553,18 @@ async function test(name: string, title: string, body: () => Promise<string | vo
   }
 }
 
+async function productionInUse(): Promise<boolean> {
+  const out = await run("netstat", ["-anp", "tcp"], false);
+  return /\.3389\s+\S+\s+ESTABLISHED/.test(out);
+}
+
 async function main() {
   await Deno.mkdir(RUN, { recursive: true });
+  // 本番のサーバ（3389）を使っている人がいると、テスト用の仮想ディスプレイがその人の画面からメインを奪う
+  if (await productionInUse() && !args.includes("--force")) {
+    console.error("本番のサーバ（3389）に接続中のクライアントがあります。切断してから実行してください（--force で無視）");
+    Deno.exit(2);
+  }
   const sim = await simulatorId();
   console.log(`準備: シミュレータ ${simulatorArg}（${sim}）`);
   await run("xcrun", ["simctl", "boot", sim], false);
@@ -471,12 +576,19 @@ async function main() {
   await run("swiftc", ["-O", "-o", COLOR_BOXES, `${HERE}color-boxes.swift`]);
   console.log("準備: テスト用サーバを起動");
   console.log("  " + (await run("deno", [
-    "run", "-A", `${SERVER}/tests/e2e/e2e.ts`, "--serve", "--keep", "120",
+    "run", "-A", `${SERVER}/tests/e2e/e2e.ts`, "--serve", "--keep", "120", "--env", "RDP_AUDIO_LOCAL=0",
     // MREMOTE_E2E_SERVER_LOG=debug: サーバが受けたキーやポインタもログに出す
     ...(Deno.env.get("MREMOTE_E2E_SERVER_LOG") ? ["--log", Deno.env.get("MREMOTE_E2E_SERVER_LOG")!] : []),
   ])).trim());
+  // 前の実行が止まりきらずに残した UI テストのランナーは、同じコマンドファイルを読み続けるので止める
+  await run("xcrun", ["simctl", "terminate", sim, RUNNER_ID], false);
+  await run("xcrun", ["simctl", "terminate", sim, APP_ID], false);
   // 前の実行のプロファイルや設定を残さない
   await run("xcrun", ["simctl", "uninstall", sim, APP_ID], false);
+  await Deno.remove(CONSTRAINT_FILE).catch(() => {});
+  // アプリは最初の音で書き出し先を作り直す。前の実行の分が残っていると、その大きさから先を読んでしまう
+  await Deno.remove(AUDIO_DUMP).catch(() => {});
+  await Deno.remove(`${AUDIO_DUMP}.format`).catch(() => {});
 
   const app = new App();
   await app.start(sim);
@@ -719,7 +831,8 @@ async function main() {
       await startServer();
       await openProfile(app, PROFILE);
       await expectScale(app, "100%", "remember-failed");
-      return "失敗のあとも 100%";
+      await expectDisplay(RESOLUTION.w, RESOLUTION.h);
+      return "失敗のあとも 100%・解像度もそのまま";
     });
 
     await test("remember-duplicate", "複製は同じ倍率で始まり、複製先を変えても元は変わらない", async () => {
@@ -764,6 +877,11 @@ async function main() {
       const path = `${container}/Library/Application Support/mRemote-profiles.json`;
       const doc = JSON.parse(await Deno.readTextFile(path));
       doc.globalSettings.initialScale = "oneToOne";
+      // 前の版は接続先に表示倍率を書かなかった
+      for (const profile of doc.profiles) {
+        const rdp = profile.configuration?.rdp?._0;
+        if (rdp) rdp.initialScale = { inherit: {} };
+      }
       await Deno.writeTextFile(path, JSON.stringify(doc));
       // アプリの設定はアプリのコンテナの中にある。cfprefsd を通して消す（ファイルを直接書くと古い値が戻る）
       const prefs = `${container}/Library/Preferences/${APP_ID}`;
@@ -777,6 +895,113 @@ async function main() {
       await openProfile(app, PROFILE);
       await expectScale(app, "画面に合わせる", "upgrade");
       return "前の版の 100% の設定は使われない";
+    });
+
+    // ── メニューの設定を接続先に保存（docs/changes/2026-10-25-session-settings-writeback.md）──
+
+    await test("settings-migrate", "前の版で端末に覚えていた表示倍率 100% は、接続先の設定に移って 100% で始まる", async () => {
+      hideTarget();
+      await app.cmd("terminate");
+      const sim = await simulatorId();
+      const container = (await run("xcrun", ["simctl", "get_app_container", sim, APP_ID, "data"])).trim();
+      const path = `${container}/Library/Application Support/mRemote-profiles.json`;
+      const doc = JSON.parse(await Deno.readTextFile(path));
+      const profile = doc.profiles.find((p: { displayName: string }) => p.displayName === PROFILE);
+      profile.configuration.rdp._0.initialScale = { inherit: {} };
+      await Deno.writeTextFile(path, JSON.stringify(doc));
+      const prefs = `${container}/Library/Preferences/${APP_ID}`;
+      await run("xcrun", ["simctl", "spawn", sim, "defaults", "write", prefs,
+        `remembered-scale.${profile.id.rawValue}`, "oneToOne"]);
+      expect((await app.cmd("launch", 60000)) === "ok", "アプリが起動しない");
+      const editor = await editorValues(app, PROFILE, ["profile-scale-picker"]);
+      expect(editor["profile-scale-picker"] === "100%", "編集画面の表示倍率が 100% でない", editor);
+      const left = await run("xcrun", ["simctl", "spawn", sim, "defaults", "read", prefs], false);
+      expect(!left.includes("remembered-scale"), "端末の記憶が残っている", left);
+      await openProfile(app, PROFILE);
+      await expectScale(app, "100%", "migrate");
+      return "移して 100%・端末の記憶は消えた";
+    });
+
+    await test("writeback-resolution", "メニューで変えた解像度で次も始まり、編集画面にも出る", async () => {
+      await setMenuPicker(app, "session-resolution-picker", "2848×2004（iPhone Duo）");
+      await expectDisplay(2848, 2004);
+      await disconnectToList(app);
+      const editor = await editorValues(app, PROFILE, ["profile-resolution-picker"]);
+      expect(editor["profile-resolution-picker"] === "2848×2004（iPhone Duo）", "編集画面の解像度が違う", editor);
+      await openProfile(app, PROFILE);
+      await expectDisplay(2848, 2004);
+      // 元に戻す（以降のテストは 1920×1080 の前提）
+      await setMenuPicker(app, "session-resolution-picker", RESOLUTION.label);
+      await expectDisplay(RESOLUTION.w, RESOLUTION.h);
+      return "2848×2004 で始まり、編集画面も 2848×2004";
+    });
+
+    await test("writeback-quality", "メニューで変えた画質で次も始まり、編集画面にも出る", async () => {
+      await setMenuPicker(app, "session-stream-quality", "低画質・省データ（15fps）");
+      await disconnectToList(app);
+      const editor = await editorValues(app, PROFILE, ["profile-stream-quality-picker"]);
+      expect(editor["profile-stream-quality-picker"] === "低画質・省データ（15fps）", "編集画面の画質が違う", editor);
+      await openProfile(app, PROFILE);
+      const menu = await withMenu(app, async () => {
+        await app.cmd("reveal session-stream-quality");
+        return await app.cmd("value session-stream-quality");
+      });
+      expect(menu.includes("低画質・省データ（15fps）"), "メニューの画質が戻っている", menu);
+      await setMenuPicker(app, "session-stream-quality", "自動（モバイル回線では低画質）");
+      return "低画質で始まり、編集画面も低画質";
+    });
+
+    await test("writeback-scale-editor", "メニューの表示倍率は編集画面に出て、編集画面で変えると次の接続に効く", async () => {
+      await setScale(app, "100%");
+      await disconnectToList(app);
+      let editor = await editorValues(app, PROFILE, ["profile-scale-picker"]);
+      expect(editor["profile-scale-picker"] === "100%", "編集画面の表示倍率が 100% でない", editor);
+      // 編集画面で「画面に合わせる」にして保存
+      await app.cmd(`hold profile-row-${PROFILE} 1.5`);
+      await app.cmd("button 編集");
+      await app.cmd("reveal profile-scale-picker");
+      await app.cmd("tap profile-scale-picker");
+      expect((await app.cmd("choose 画面に合わせる")) === "ok", "画面に合わせるが選べない");
+      await app.cmd("tap profile-save-button");
+      await app.cmd("wait profile-list 10");
+      editor = await editorValues(app, PROFILE, ["profile-scale-picker"]);
+      expect(editor["profile-scale-picker"] === "画面に合わせる", "保存されていない", editor);
+      await openProfile(app, PROFILE);
+      await expectScale(app, "画面に合わせる", "editor-fit");
+      return "編集画面で変えた倍率で始まった";
+    });
+
+    await test("writeback-inherit", "「全体設定に従う」だった解像度をメニューで変えると、その値になる", async () => {
+      await disconnectToList(app);
+      expect((await app.cmd("addprofile E2E 継承", 120000)) === "ok", "接続先を作れない");
+      let editor = await editorValues(app, "E2E 継承", ["profile-resolution-picker"]);
+      expect(editor["profile-resolution-picker"] === "全体設定に従う", "最初から全体設定に従うでない", editor);
+      await openProfile(app, "E2E 継承");
+      await setMenuPicker(app, "session-resolution-picker", "1600×1200（4:3）");
+      await expectDisplay(1600, 1200);
+      await disconnectToList(app);
+      editor = await editorValues(app, "E2E 継承", ["profile-resolution-picker"]);
+      expect(editor["profile-resolution-picker"] === "1600×1200（4:3）", "固定の値になっていない", editor);
+      await openProfile(app, PROFILE);
+      return "全体設定に従う → 1600×1200（4:3）";
+    });
+
+    await test("writeback-deleted", "開いている接続先を削除してから設定を変えても落ちず、何も残らない", async () => {
+      await disconnectToList(app);
+      await openProfile(app, "E2E 継承");
+      await returnToList(app);
+      await app.cmd("hold profile-row-E2E 継承 1.5");
+      expect((await app.cmd("button 削除")) === "ok", "削除がない");
+      expect((await app.cmd("waitgone profile-row-E2E 継承 10")) === "ok", "削除されない");
+      await openRunning(app, "E2E 継承");
+      await setScale(app, "100%");
+      await setMenuPicker(app, "session-resolution-picker", "2048×1536（4:3）");
+      await expectDisplay(2048, 1536);
+      expect((await app.cmd("exists session-status")) === "exists=false", "接続が切れた");
+      await disconnectToList(app);
+      expect((await app.cmd("exists profile-row-E2E 継承")) === "exists=false", "削除した接続先が戻ってきた");
+      await openProfile(app, PROFILE);
+      return "落ちず、削除した接続先は戻らない";
     });
 
     // ── 解像度の候補（docs/changes/2026-10-25-resolution-presets.md）──
@@ -889,6 +1114,137 @@ async function main() {
       await stopServer();
       await startServer();
       return "2848×2004 のまま・説明あり";
+    });
+
+    // ── 省データ（docs/changes/2026-10-25-data-saver.md）──
+
+    await test("saver-silence", "音が止まったら受信量が戻り、次の音は欠けずに届く（無音は送らない）", async () => {
+      await disconnectToList(app);
+      expect((await app.cmd("addprofile E2E 省データ|2848×2004（iPhone Duo）", 120000)) === "ok", "接続先を作れない");
+      await openProfile(app, "E2E 省データ");
+      await setDataSaver(app, "使わない");
+      await expectDisplay(2848, 2004);
+      await playToneAndCheck("1 回目");
+      await sleep(3000);
+      const kbps = await appKbps(15);
+      log(`音が止まったあとの静止画面: ${kbps.toFixed(0)}kbps`);
+      expect(kbps < 150, "無音なのに音声が流れている", { kbps });
+      await playToneAndCheck("止まったあとの音");
+      return `静止 ${kbps.toFixed(0)}kbps・次の音も欠けない`;
+    });
+
+    await test("saver-always", "省データ「常に」: 音声は AAC で少なく、Mac は等倍で映りタップも合う", async () => {
+      await setDataSaver(app, "常に");
+      const d = await expectDisplay(1424, 1002);
+      expect(!d.hidpi && d.w === 1424, "等倍の 1424×1002 になっていない", d);
+      await expectScale(app, "画面に合わせる", "saver-fit");
+      const s = await shot(app, "saver-tap");
+      const click = await tapAt(app, s, 0.3, 0.6);
+      expect((await dataSaverStatus(app)).startsWith("有効です"), "メニューで有効と出ていない");
+      // 音声込みの受信量
+      const wav = `${RUN}/tone.wav`;
+      await writeToneWav(wav);
+      const measuring = appKbps(4);
+      await run("afplay", [wav]);
+      const kbps = await measuring;
+      log(`省データで音を鳴らしている間: ${kbps.toFixed(0)}kbps`);
+      expect(kbps < 300, "音声込みの受信量が多い", { kbps });
+      await playToneAndCheck("AAC の音");
+      return `1424×1002 等倍・タップ ${click}・音声込み ${kbps.toFixed(0)}kbps`;
+    });
+
+    await test("saver-moving", "省データ「常に」では、動きのある画面の受信量が「使わない」の半分未満", async () => {
+      frame = await showTarget(true);
+      await sleep(3000);
+      const saving = await appKbps(15);
+      await setDataSaver(app, "使わない");
+      await expectDisplay(2848, 2004);
+      await showTarget(true);
+      await sleep(3000);
+      const full = await appKbps(15);
+      log(`動きのある画面: 省データ ${saving.toFixed(0)}kbps・使わない ${full.toFixed(0)}kbps`);
+      frame = await showTarget();
+      expect(saving < full / 2, "半分未満になっていない", { saving, full });
+      return `省データ ${saving.toFixed(0)}kbps・使わない ${full.toFixed(0)}kbps`;
+    });
+
+    await test("saver-never", "「使わない」に戻すと Retina の 2848×2004 と非圧縮の音声に戻り、編集画面にも出る", async () => {
+      const d = await expectDisplay(2848, 2004);
+      expect(d.hidpi, "Retina に戻っていない", d);
+      const wav = `${RUN}/tone.wav`;
+      await writeToneWav(wav);
+      const measuring = appKbps(4);
+      await run("afplay", [wav]);
+      const kbps = await measuring;
+      log(`使わないで音を鳴らしている間: ${kbps.toFixed(0)}kbps`);
+      expect(kbps > 1000, "音声が非圧縮に戻っていない", { kbps });
+      await playToneAndCheck("非圧縮の音");
+      await disconnectToList(app);
+      const editor = await editorValues(app, "E2E 省データ", ["profile-data-saver-picker"]);
+      expect(editor["profile-data-saver-picker"] === "使わない", "編集画面の省データが違う", editor);
+      await openProfile(app, "E2E 省データ");
+      return `2848×2004 Retina・音声 ${kbps.toFixed(0)}kbps・編集画面も使わない`;
+    });
+
+    await test("saver-auto", "省データ「自動」: 回線の制約が付くと、つないだまま有効になり、外れると戻る", async () => {
+      await setConstrained(false);
+      await setDataSaver(app, "自動（モバイル回線・低データモードで有効）");
+      await expectDisplay(2848, 2004);
+      expect((await dataSaverStatus(app)).startsWith("いまは無効"), "Wi-Fi 相当で無効と出ていない");
+      await setConstrained(true);
+      await expectDisplay(1424, 1002);
+      expect((await dataSaverStatus(app)).startsWith("いまは有効"), "制約ありで有効と出ていない");
+      await playToneAndCheck("自動で有効の音");
+      await setConstrained(false);
+      await expectDisplay(2848, 2004);
+      expect((await app.cmd("exists session-status")) === "exists=false", "接続が切れた");
+      return "制約あり 1424×1002 → なし 2848×2004";
+    });
+
+    await test("saver-unscaled", "拡大率 100% で頼んでいる画面は、省データでも大きさが変わらない", async () => {
+      await setMenuPicker(app, "session-remote-scale-picker", "100%");
+      await expectDisplay(2848, 2004);
+      await setDataSaver(app, "常に");
+      await sleep(3000);
+      const d = await expectDisplay(2848, 2004);
+      expect(!d.hidpi, "拡大率 100% なのに Retina", d);
+      await setMenuPicker(app, "session-remote-scale-picker", "自動（端末に合わせる）");
+      await expectDisplay(1424, 1002);
+      return "拡大率 100% では 2848×2004 のまま";
+    });
+
+    await test("saver-switch-audio", "音を鳴らしたまま省データを切り替えても、落ちず音が続く", async () => {
+      const wav = `${RUN}/long-tone.wav`;
+      await writeToneWav(wav);
+      const playing = (async () => {
+        for (let i = 0; i < 3; i++) await run("afplay", [wav]);
+      })();
+      await sleep(2000);
+      await setDataSaver(app, "使わない");
+      await sleep(2000);
+      await setDataSaver(app, "常に");
+      await playing;
+      expect((await app.cmd("exists session-status")) === "exists=false", "接続が切れた");
+      await playToneAndCheck("切り替えたあとの音");
+      await setDataSaver(app, "自動（モバイル回線・低データモードで有効）");
+      return "切り替え中も落ちず、そのあとの音も崩れない";
+    });
+
+    await test("saver-nodisp", "表示制御チャネルのないサーバでは、省データでも画面の大きさが変わらず落ちない", async () => {
+      await disconnectToList(app);
+      await stopServer();
+      await startServer(["--env", "RDP_DISP=0"]);
+      await openProfile(app, "E2E 省データ");
+      await expectDisplay(2848, 2004);
+      await setDataSaver(app, "常に");
+      await sleep(4000);
+      await expectDisplay(2848, 2004);
+      expect((await app.cmd("exists session-status")) === "exists=false", "接続が切れた");
+      await setDataSaver(app, "自動（モバイル回線・低データモードで有効）");
+      await disconnectToList(app);
+      await stopServer();
+      await startServer();
+      return "2848×2004 のまま";
     });
   } finally {
     await app.end();
