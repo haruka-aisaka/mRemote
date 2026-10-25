@@ -167,9 +167,7 @@ private struct SessionCommands: View {
             get: { session?.runtime.resolution ?? .adaptive },
             set: { session?.setResolution($0) }
         )) {
-            ForEach([ResolutionPolicy.adaptive] + ResolutionPolicy.presets, id: \.self) { policy in
-                Text(Formatting.resolutionLabel(policy)).tag(policy)
-            }
+            ResolutionPickerRows()
         }
         .disabled(session?.supportsDynamicResolution != true)
         if let session, let mac = session.macExtensions, mac.features.contains(.streamConfig) {

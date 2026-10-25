@@ -79,7 +79,7 @@ struct ProfileEditorView: View {
                     InheritablePicker(
                         title: String(localized: "解像度"),
                         selection: $model.resolutionPolicy,
-                        options: [.adaptive] + ResolutionPolicy.presets,
+                        groups: ResolutionChoices.groups,
                         label: Formatting.resolutionLabel
                     )
                     .accessibilityIdentifier("profile-resolution-picker")
@@ -409,8 +409,30 @@ struct ProfileEditorView: View {
 struct InheritablePicker<Value: Hashable & Sendable & Codable>: View {
     let title: String
     @Binding var selection: Inheritable<Value>
-    let options: [Value]
+    /// Options under an optional heading each, in order.
+    let groups: [(heading: String?, options: [Value])]
     let label: (Value) -> String
+
+    init(
+        title: String,
+        selection: Binding<Inheritable<Value>>,
+        options: [Value],
+        label: @escaping (Value) -> String
+    ) {
+        self.init(title: title, selection: selection, groups: [(nil, options)], label: label)
+    }
+
+    init(
+        title: String,
+        selection: Binding<Inheritable<Value>>,
+        groups: [(heading: String?, options: [Value])],
+        label: @escaping (Value) -> String
+    ) {
+        self.title = title
+        _selection = selection
+        self.groups = groups
+        self.label = label
+    }
 
     var body: some View {
         Picker(title, selection: Binding(
@@ -418,9 +440,19 @@ struct InheritablePicker<Value: Hashable & Sendable & Codable>: View {
             set: { selection = $0.inheritable }
         )) {
             Text("全体設定に従う").tag(Choice<Value>.inherit)
-            ForEach(options, id: \.self) { option in
-                Text(label(option)).tag(Choice.explicit(option))
+            ForEach(groups.indices, id: \.self) { index in
+                if let heading = groups[index].heading {
+                    Section(heading) { rows(groups[index].options) }
+                } else {
+                    rows(groups[index].options)
+                }
             }
+        }
+    }
+
+    private func rows(_ options: [Value]) -> some View {
+        ForEach(options, id: \.self) { option in
+            Text(label(option)).tag(Choice.explicit(option))
         }
     }
 

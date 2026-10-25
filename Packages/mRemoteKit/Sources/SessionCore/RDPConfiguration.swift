@@ -8,9 +8,13 @@ public enum ResolutionPolicy: Hashable, Sendable, Codable {
 }
 
 extension ResolutionPolicy {
-    /// What the pickers offer besides following the screen: the common 4:3,
-    /// 16:9 and 16:10 desktop sizes, smallest first.
-    public static let presets: [ResolutionPolicy] = [
+    /// What the pickers offer besides following the screen, landscape:
+    /// the common 4:3, 3:2, 16:9 and 16:10 desktop sizes, and the iPhone
+    /// Duo's own shapes (its inner screen opened flat, about 1.42:1, and its
+    /// outer one, about 1.45:1), smallest first. Every one added for the Duo
+    /// comes up Retina on a Mac running macos-rdp-server
+    /// (docs/changes/2026-10-25-resolution-presets.md).
+    public static let landscapePresets: [ResolutionPolicy] = [
         .fixed(width: 1_024, height: 768),
         .fixed(width: 1_280, height: 720),
         .fixed(width: 1_280, height: 800),
@@ -18,13 +22,42 @@ extension ResolutionPolicy {
         .fixed(width: 1_366, height: 768),
         .fixed(width: 1_440, height: 900),
         .fixed(width: 1_600, height: 900),
+        .fixed(width: 1_600, height: 1_200),
         .fixed(width: 1_680, height: 1_050),
         .fixed(width: 1_920, height: 1_080),
         .fixed(width: 1_920, height: 1_200),
+        .fixed(width: 1_920, height: 1_352),
+        .fixed(width: 2_034, height: 1_398),
+        .fixed(width: 2_048, height: 1_536),
+        .fixed(width: 2_160, height: 1_440),
+        .fixed(width: 2_272, height: 1_600),
         .fixed(width: 2_560, height: 1_440),
         .fixed(width: 2_560, height: 1_600),
+        .fixed(width: 2_560, height: 1_800),
+        .fixed(width: 2_560, height: 1_920),
+        .fixed(width: 2_848, height: 2_004),
+        .fixed(width: 2_880, height: 1_920),
+        .fixed(width: 2_880, height: 2_160),
         .fixed(width: 3_840, height: 2_160),
     ]
+
+    /// The sizes added for the Duo, turned upright, for a screen held
+    /// portrait. Smallest first, by the long side.
+    public static let portraitPresets: [ResolutionPolicy] = [
+        .fixed(width: 1_200, height: 1_600),
+        .fixed(width: 1_352, height: 1_920),
+        .fixed(width: 1_398, height: 2_034),
+        .fixed(width: 1_536, height: 2_048),
+        .fixed(width: 1_440, height: 2_160),
+        .fixed(width: 1_600, height: 2_272),
+        .fixed(width: 1_800, height: 2_560),
+        .fixed(width: 1_920, height: 2_560),
+        .fixed(width: 2_004, height: 2_848),
+        .fixed(width: 1_920, height: 2_880),
+        .fixed(width: 2_160, height: 2_880),
+    ]
+
+    public static var presets: [ResolutionPolicy] { landscapePresets + portraitPresets }
 
     /// The desktop size to ask for, given the size the surface would fill.
     /// Nil while an adaptive policy has nothing to follow yet.

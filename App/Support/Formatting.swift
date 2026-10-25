@@ -29,8 +29,15 @@ enum Formatting {
             return String(localized: "自動（画面に合わせる）")
         case let .fixed(width, height):
             let ratio = Double(width) / Double(max(height, 1))
-            let named = [("4:3", 4.0 / 3), ("5:4", 5.0 / 4), ("16:9", 16.0 / 9), ("16:10", 16.0 / 10)]
-                .first { abs($0.1 - ratio) < 0.01 }?.0
+            // The Duo's shapes are those of its screens: the inner one opened
+            // flat (2853×2007) and the outer one (2034×1398).
+            let shapes: [(name: String, ratio: Double)] = [
+                ("4:3", 4.0 / 3), ("5:4", 5.0 / 4), ("16:9", 16.0 / 9), ("16:10", 16.0 / 10), ("3:2", 3.0 / 2),
+                ("iPhone Duo", 2_853.0 / 2_007), ("iPhone Duo 外側", 2_034.0 / 1_398),
+                ("3:4", 3.0 / 4), ("2:3", 2.0 / 3),
+                ("iPhone Duo 縦", 2_007.0 / 2_853), ("iPhone Duo 外側 縦", 1_398.0 / 2_034),
+            ]
+            let named = shapes.first { abs($0.ratio - ratio) < 0.01 }?.name
             return named.map { "\(width)×\(height)（\($0)）" } ?? "\(width)×\(height)"
         }
     }

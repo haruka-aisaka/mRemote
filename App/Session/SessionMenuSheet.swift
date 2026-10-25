@@ -237,9 +237,7 @@ struct SessionMenuSheet: View {
                         get: { model.runtime.resolution },
                         set: { model.setResolution($0) }
                     )) {
-                        ForEach([ResolutionPolicy.adaptive] + ResolutionPolicy.presets, id: \.self) { policy in
-                            Text(Formatting.resolutionLabel(policy)).tag(policy)
-                        }
+                        ResolutionPickerRows()
                     }
                     .accessibilityIdentifier("session-resolution-picker")
                     if !model.supportsDynamicResolution, model.state == .connected {

@@ -49,4 +49,28 @@ final class DisplayScaleTests: XCTestCase {
             XCTAssertEqual(width % 2, 0)
         }
     }
+
+    func testThePresetsAreLandscapeThenPortraitEachSmallestFirst() {
+        let landscape = ResolutionPolicy.landscapePresets.compactMap(\.fixedSize)
+        let portrait = ResolutionPolicy.portraitPresets.compactMap(\.fixedSize)
+        XCTAssertEqual(landscape.count, 24)
+        XCTAssertEqual(portrait.count, 11)
+        XCTAssertTrue(landscape.allSatisfy { $0.width > $0.height })
+        XCTAssertTrue(portrait.allSatisfy { $0.width < $0.height })
+        XCTAssertEqual(landscape.map { [$0.width, $0.height] }, landscape.map { [$0.width, $0.height] }
+            .sorted { ($0[0], $0[1]) < ($1[0], $1[1]) })
+        XCTAssertEqual(portrait.map { [$0.height, $0.width] }, portrait.map { [$0.height, $0.width] }
+            .sorted { ($0[0], $0[1]) < ($1[0], $1[1]) })
+        // Every upright size is one of the landscape ones turned.
+        for size in portrait {
+            XCTAssertTrue(landscape.contains { $0.width == size.height && $0.height == size.width }, "\(size)")
+        }
+    }
+}
+
+private extension ResolutionPolicy {
+    var fixedSize: (width: Int, height: Int)? {
+        if case let .fixed(width, height) = self { return (width, height) }
+        return nil
+    }
 }
