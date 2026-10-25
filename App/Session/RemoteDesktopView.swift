@@ -88,6 +88,11 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// points would hand back a desktop at half the device's resolution.
     var onRenderSizeChange: ((Int, Int) -> Void)?
     var onTransformChange: ((ViewportTransform) -> Void)?
+    /// The user switched between fitted and 100% here, with a double tap.
+    /// The session holds the mode (the menu shows it, and every update of
+    /// the surface hands it back), so it has to hear of the switch: kept
+    /// only in this view, it went back at the next update.
+    var onScaleModeChange: ((InitialScale) -> Void)?
     var onDiagnostic: ((String) -> Void)?
     /// Called whenever a key observation changed the counters. The snapshot
     /// carries no characters; see `InputDiagnostics`.
@@ -562,7 +567,9 @@ final class RemoteDesktopView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
         guard recognizer.state == .ended else { return }
-        setScaleMode(scaleMode == .fit ? .oneToOne : .fit)
+        let mode: InitialScale = scaleMode == .fit ? .oneToOne : .fit
+        setScaleMode(mode)
+        onScaleModeChange?(mode)
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

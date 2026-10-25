@@ -62,6 +62,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
     let isInputTraceEnabled: Bool
     let onRenderSizeChange: (Int, Int) -> Void
     let onDesktopSizeChange: (Int, Int) -> Void
+    var onScaleModeChange: (InitialScale) -> Void = { _ in }
     let onInputDiagnostics: (InputDiagnostics) -> Void
 
     func makeUIView(context: Context) -> RemoteDesktopView {
@@ -92,6 +93,7 @@ struct RemoteDesktopSurface: UIViewRepresentable {
         view.setPrimaryRegion(primaryRegion?.primary)
         view.onRenderSizeChange = onRenderSizeChange
         view.onDesktopSizeChange = onDesktopSizeChange
+        view.onScaleModeChange = onScaleModeChange
         view.onInputDiagnostics = onInputDiagnostics
         view.inputSink = inputSink
         view.setInputTraceEnabled(isInputTraceEnabled)

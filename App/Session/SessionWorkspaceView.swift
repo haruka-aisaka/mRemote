@@ -502,6 +502,9 @@ struct SessionWorkspaceView: View {
                 onDesktopSizeChange: { width, height in
                     model.desktopSizeChanged(width: width, height: height)
                 },
+                onScaleModeChange: { mode in
+                    model.setScaleMode(mode)
+                },
                 onInputDiagnostics: { diagnostics in
                     environment.inputDiagnostics.update(diagnostics)
                 }
