@@ -14,6 +14,7 @@ import XCTest
 ///     TEST_RUNNER_MREMOTE_LIVE_HOLD=600      # seconds to keep the session
 ///     TEST_RUNNER_MREMOTE_LIVE_COMMANDS=/path/commands.txt   # optional
 ///     TEST_RUNNER_MREMOTE_LIVE_SCRIPT='sleep 5;orient left'   # optional
+///     TEST_RUNNER_MREMOTE_LIVE_RESOLUTION='1920×1080（16:9）'   # optional, for a new profile
 ///     TEST_RUNNER_MREMOTE_APP_<NAME>=<value>                  # app environment
 ///
 /// With a command file, lines appended to it while the session is held are
@@ -49,6 +50,15 @@ import XCTest
 ///     key <label>                      tap a key of the iOS software keyboard
 ///     textfield <label>                tap the text field with this label
 ///     orient <portrait|left|right>     rotate the device
+///     shot <path>                      save a screenshot of the device's screen as PNG
+///     exists <id>                      report whether the element is there
+///     wait <id> <seconds>              wait for the element to appear
+///     waitgone <id> <seconds>          wait for the element to go away
+///     end                              stop holding the session and finish
+///     reveal <id>                      scroll the list (the session menu, say)
+///                                      until the element can be tapped
+///     connected <seconds>              answer the prompts of a new connection
+///                                      and wait for its desktop
 ///
 /// The password is typed into the credential prompt and not saved.
 final class LiveRDPUITests: XCTestCase {
@@ -68,6 +78,7 @@ final class LiveRDPUITests: XCTestCase {
               let password = environment["MREMOTE_LIVE_PASSWORD"] else {
             throw XCTSkip("MREMOTE_LIVE_HOST, _USER and _PASSWORD are not set")
         }
+        self.password = password
         let hold = TimeInterval(environment["MREMOTE_LIVE_HOLD"] ?? "") ?? 300
         continueAfterFailure = false
         app = XCUIApplication()
@@ -102,7 +113,7 @@ final class LiveRDPUITests: XCTestCase {
             if !command.isEmpty { print("live script: \(perform(command)) \(command)") }
         }
         let deadline = Date().addingTimeInterval(hold)
-        while Date() < deadline {
+        while Date() < deadline, !ended {
             // Prompts can come back, after a reconnect for instance.
             answerChallenges(password: password, wait: 0)
             if let commandPath {
@@ -119,6 +130,10 @@ final class LiveRDPUITests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.5)
         }
     }
+
+    /// Set by the `end` command.
+    private var ended = false
+    private var password = ""
 
     private func perform(_ line: String) -> String {
         let words = line.split(separator: " ").map(String.init)
@@ -285,6 +300,39 @@ final class LiveRDPUITests: XCTestCase {
             app.typeKey(special[key] ?? key, modifierFlags: flags)
         case "sleep":
             Thread.sleep(forTimeInterval: TimeInterval(number(0)))
+        case "end":
+            ended = true
+        case "reveal":
+            // A list builds its rows as they scroll in, and a half-height
+            // sheet shows only the first few.
+            let found = element(arguments.joined(separator: " "))
+            let list = app.collectionViews.firstMatch
+            for _ in 0..<12 where !(found.exists && found.isHittable) {
+                guard list.exists else { break }
+                list.swipeUp()
+            }
+            return found.exists && found.isHittable ? "ok" : "missing"
+        case "connected":
+            // After opening a connection again from the list: the prompts
+            // come back, then the status text goes when the desktop comes.
+            let timeout = TimeInterval(number(0) > 0 ? number(0) : 60)
+            answerChallenges(password: password, wait: 10)
+            return element("session-status").waitForNonExistence(timeout: timeout) ? "ok" : "timeout"
+        case "shot":
+            // The screen the app is on, as the user sees it - on the
+            // iPhone Duo folded, the outer one. simctl's own screenshot
+            // takes the inner screen, which is dark then.
+            let path = arguments.joined(separator: " ")
+            let png = XCUIScreen.main.screenshot().pngRepresentation
+            guard FileManager.default.createFile(atPath: path, contents: png) else { return "unwritable" }
+            return "shot scale=\(UIScreen.main.scale)"
+        case "exists":
+            return "exists=\(element(arguments.joined(separator: " ")).exists)"
+        case "wait", "waitgone":
+            let found = element(arguments.dropLast().joined(separator: " "))
+            let timeout = TimeInterval(Double(arguments.last ?? "") ?? 5)
+            let ok = verb == "wait" ? found.waitForExistence(timeout: timeout) : found.waitForNonExistence(timeout: timeout)
+            return ok ? "ok" : "timeout"
         default:
             return "unknown"
         }
@@ -390,6 +438,21 @@ final class LiveRDPUITests: XCTestCase {
         }
         username.tap()
         app.typeText(user)
+        // TEST_RUNNER_MREMOTE_LIVE_RESOLUTION: a fixed size, as its label
+        // in the picker ("1920×1080（16:9）"). Above the platform in the form.
+        if let resolution = environment["MREMOTE_LIVE_RESOLUTION"] {
+            let picker = element("profile-resolution-picker")
+            let form = app.collectionViews
+                .matching(NSPredicate(format: "identifier != 'profile-list'")).firstMatch
+            for _ in 0..<15 where !(picker.exists && picker.isHittable) {
+                form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                    .press(forDuration: 0.05, thenDragTo: form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+            }
+            picker.tap()
+            let option = app.buttons[resolution].firstMatch
+            XCTAssertTrue(option.waitForExistence(timeout: 3), "the resolution \(resolution) is offered")
+            option.tap()
+        }
         // TEST_RUNNER_MREMOTE_LIVE_PLATFORM=macOS: a Mac running macos-rdp-server.
         if environment["MREMOTE_LIVE_PLATFORM"] == "macOS" {
             let picker = element("profile-platform-picker")
