@@ -165,11 +165,15 @@ class App {
   async cmd(line: string, timeoutMs = 30000): Promise<string> {
     await Deno.writeTextFile(this.commands, line + "\n", { append: true });
     const n = ++this.sent;
-    const done = await waitFor(`「${line}」の完了`, async () => {
+    const finished = async () => {
       const text = await Deno.readTextFile(`${this.commands}.done`).catch(() => "");
       return text.split("\n").find((l) => l.startsWith(`${n} `));
-    }, timeoutMs).catch(async (e) => {
+    };
+    const done = await waitFor(`「${line}」の完了`, finished, timeoutMs).catch(async (e) => {
       const tail = (await Deno.readTextFile(`${RUN}/xctest.log`).catch(() => "")).split("\n").slice(-15).join("\n");
+      // アプリ側はまだこの命令を実行している（XCTest が「アプリが落ち着くまで」60 秒ずつ待つことがある）。
+      // ここで先へ進むと、次のテストの命令がこの後ろに並んで足並みがずれ、残りが全部失敗する。終わるまで待つ
+      await waitFor(`「${line}」が遅れて終わるの`, finished, 300000).catch(() => {});
       throw new Failure(`${(e as Error).message}\n--- xctest.log の最後 ---\n${tail}`);
     });
     // "<番号> <結果> <コマンド>"
