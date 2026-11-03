@@ -15,7 +15,9 @@ final class MacExtensionsTests: XCTestCase {
         XCTAssertEqual(MacExtensionFeatures.macKeys.rawValue, 1)
         XCTAssertEqual(MacExtensionFeatures.cursorAlpha.rawValue, 32)
         XCTAssertEqual(MacExtensionFeatures.gestures.rawValue, 64)
-        XCTAssertEqual(MacExtensionFeatures.all.rawValue, 0x7F)
+        XCTAssertEqual(MacExtensionFeatures.audioAAC.rawValue, 128)
+        XCTAssertEqual(MacExtensionFeatures.alive.rawValue, 256)
+        XCTAssertEqual(MacExtensionFeatures.all.rawValue, 0x1FF)
     }
 
     func testPlatformDefaultsAndRoundTrip() throws {

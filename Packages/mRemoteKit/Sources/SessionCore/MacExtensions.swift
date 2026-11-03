@@ -57,9 +57,15 @@ public struct MacExtensionFeatures: OptionSet, Hashable, Sendable {
     public static let gestures = MacExtensionFeatures(rawValue: 1 << 6)
     /// The server sends its audio as AAC on request, to save data.
     public static let audioAAC = MacExtensionFeatures(rawValue: 1 << 7)
+    /// The app says it is still there every 30 seconds, so the server can end
+    /// a session the app can no longer talk to: suspended in the background,
+    /// killed, or out of coverage
+    /// (docs/changes/2026-11-03-disconnect-unresponsive-client.md).
+    public static let alive = MacExtensionFeatures(rawValue: 1 << 8)
 
     public static let all: MacExtensionFeatures = [
         .macKeys, .pointer, .preciseScroll, .streamConfig, .inputSource, .cursorAlpha, .gestures, .audioAAC,
+        .alive,
     ]
 }
 

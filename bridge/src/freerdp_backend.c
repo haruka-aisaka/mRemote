@@ -266,6 +266,8 @@ struct mr_freerdp_backend {
     mr_freerdp_macrdpx *macrdpx;
     uint32_t macrdpx_negotiated;
     int macrdpx_ready;
+    /* When the next ALIVE is due (GetTickCount64), once ALIVE is agreed. */
+    UINT64 macrdpx_alive_due;
 };
 
 /* ABI 5 handlers wired up when their channel connects, defined further down. */
@@ -2212,6 +2214,7 @@ static void mr_freerdp_macrdpx_dispatch(mr_freerdp_macrdpx *plugin)
             backend->macrdpx_negotiated = mrx_negotiate(backend->macrdpx_caps,
                                                         message.u.hello.caps);
             backend->macrdpx_ready = 1;
+            backend->macrdpx_alive_due = GetTickCount64() + MRX_ALIVE_INTERVAL_SECONDS * 1000u;
         } else if (!backend->macrdpx_ready ||
                    (message.type != MRX_MSG_STREAM_STATUS &&
                     message.type != MRX_MSG_INPUT_SOURCE)) {
@@ -2264,6 +2267,33 @@ static void mr_freerdp_macrdpx_received(
         mr_freerdp_macrdpx_dispatch(plugin);
         plugin->data_in_length = 0u;
     }
+}
+
+/* ALIVE every MRX_ALIVE_INTERVAL_SECONDS once the server agreed to it. It
+ * stops by itself when the app cannot run - suspended in the background,
+ * killed - and that silence is what lets the server end the session
+ * (docs/changes/2026-11-03-disconnect-unresponsive-client.md). Returns the
+ * milliseconds until the next one is due, for the worker's wait. */
+static DWORD mr_freerdp_macrdpx_keep_alive(mr_freerdp_backend *backend)
+{
+    const UINT64 interval = (UINT64)MRX_ALIVE_INTERVAL_SECONDS * 1000u;
+    UINT64 now;
+    mrx_message alive;
+    if (backend->macrdpx == NULL || !backend->macrdpx_ready ||
+        (backend->macrdpx_negotiated & MRX_CAP_ALIVE) == 0u) {
+        return INFINITE;
+    }
+    now = GetTickCount64();
+    if (now < backend->macrdpx_alive_due) {
+        return (DWORD)(backend->macrdpx_alive_due - now);
+    }
+    memset(&alive, 0, sizeof(alive));
+    alive.type = MRX_MSG_ALIVE;
+    if (!mr_freerdp_macrdpx_write(backend->macrdpx, &alive)) {
+        WLog_WARN(MR_FREERDP_LOG_TAG, "MACRDPX: could not send ALIVE");
+    }
+    backend->macrdpx_alive_due = now + interval;
+    return (DWORD)interval;
 }
 
 static VOID VCAPITYPE mr_freerdp_macrdpx_open_event(
@@ -3959,6 +3989,12 @@ static mr_rdp_status mr_freerdp_run(mr_rdp_backend *base)
         }
         handles[handle_count++] = backend->command_event;
         wait_timeout = mr_freerdp_clipboard_probe_wait_timeout(backend);
+        {
+            const DWORD alive_timeout = mr_freerdp_macrdpx_keep_alive(backend);
+            if (alive_timeout < wait_timeout) {
+                wait_timeout = alive_timeout;
+            }
+        }
         wait_status = WaitForMultipleObjects(
             handle_count, handles, FALSE, wait_timeout);
         if (wait_status == WAIT_FAILED) {
