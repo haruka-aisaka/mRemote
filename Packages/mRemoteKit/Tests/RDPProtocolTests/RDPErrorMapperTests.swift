@@ -20,6 +20,17 @@ final class RDPErrorMapperTests: XCTestCase {
         )
     }
 
+    func testATransportFailureAfterConnectingIsADropWorthRetrying() {
+        let transport = RDPErrorMapper.classify(status: .backend, nativeCode: connect(0x0D))
+        XCTAssertEqual(transport, .failed(.connectionRefused))
+        let dropped = RDPErrorMapper.droppedAfterConnecting(transport)
+        XCTAssertEqual(dropped, .failed(.networkUnreachable))
+        if case .failed(let error) = dropped { XCTAssertTrue(error.isRetriable) }
+        // Anything else is what it was: a sign-out stays a sign-out.
+        XCTAssertEqual(RDPErrorMapper.droppedAfterConnecting(.failed(.authenticationFailed)), .failed(.authenticationFailed))
+        XCTAssertEqual(RDPErrorMapper.droppedAfterConnecting(.stoppedLocally), .stoppedLocally)
+    }
+
     func testThroughAProxyTheNetworkFailuresAreTheProxys() {
         XCTAssertEqual(RDPErrorMapper.throughProxy(.failed(.connectionRefused)), .failed(.proxyUnreachable))
         XCTAssertEqual(RDPErrorMapper.throughProxy(.failed(.nameResolutionFailed)), .failed(.proxyUnreachable))

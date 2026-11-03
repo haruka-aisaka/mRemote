@@ -167,6 +167,21 @@ public enum RDPErrorMapper {
         }
     }
 
+    /// FreeRDP reports a connection that drops after it was up the same way
+    /// as one that could not be made: ERRCONNECT_CONNECT_TRANSPORT_FAILED.
+    /// Once connected, that is the network going away, or the server ending
+    /// the session by closing it - as it does for a client gone quiet
+    /// (docs/changes/2026-11-03-disconnect-unresponsive-client.md) - not a
+    /// refusal, and reconnecting is worth trying.
+    public static func droppedAfterConnecting(_ cause: RDPTerminationCause) -> RDPTerminationCause {
+        switch cause {
+        case .failed(.connectionRefused):
+            return .failed(.networkUnreachable)
+        default:
+            return cause
+        }
+    }
+
     /// Through a proxy, FreeRDP reports the proxy's silence or refusal as the
     /// connect failing, and the name it resolved is the proxy's: the
     /// computer's never reached this device. So the network causes become

@@ -56,6 +56,9 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
     private var storedCredentialWasRejected = false
     private var suppliedCredential: SuppliedCredential?
     private var terminationCause: RDPTerminationCause?
+    /// The attempt got as far as a session. The worker reports it is
+    /// disconnecting before it reports why, so the state alone no longer says.
+    private var attemptConnected = false
     private var visibility: SessionVisibility = .focused
     private var negotiatedChannels: Set<RDPBridgeChannel> = []
     private var currentDesktopSize: (width: Int, height: Int)
@@ -584,6 +587,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
             await withCheckedContinuation { workerFinished.append($0) }
         }
         guard machine.state == .connecting else { return }
+        attemptConnected = false
 
         guard let credential = resolveCredential() else {
             raise(.credential(CredentialChallenge(
@@ -764,7 +768,10 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
                 // handshake or while the session is tearing down.
                 pointerSink.setAccepting(machine.state.acceptsInput)
                 emit(.stateChanged(machine.state, generation: machine.generation))
-                if machine.state == .connected { sendDesiredDesktopSize() }
+                if machine.state == .connected {
+                    attemptConnected = true
+                    sendDesiredDesktopSize()
+                }
             }
 
         case let .transportSecurity(security, generation):
@@ -775,6 +782,7 @@ actor RDPRemoteSession: DesktopSession, AudioCapableSession, ClipboardCapableSes
         case let .failure(status, nativeCode, generation):
             guard generation == machine.generation.rawValue else { return }
             var cause = RDPErrorMapper.classify(status: status, nativeCode: nativeCode)
+            if attemptConnected { cause = RDPErrorMapper.droppedAfterConnecting(cause) }
             if configuration.proxy != nil { cause = RDPErrorMapper.throughProxy(cause) }
             terminationCause = cause
             logger.sessionError("native failure \(status.name) code=\(nativeCode) -> \(cause)")
