@@ -89,6 +89,8 @@ typedef struct mr_freerdp_rail_window {
 
 /* ABI 5: one H.264 decoder per graphics surface; Windows uses a handful. */
 #define MR_FREERDP_MAX_H264_SURFACES 16u
+/* How often a decoder waiting for a key frame asks the server again. */
+#define MR_FREERDP_KEY_FRAME_RETRY_MS 1000u
 
 typedef struct mr_freerdp_h264_surface {
     UINT16 surface_id;
@@ -256,6 +258,8 @@ struct mr_freerdp_backend {
      * touches these. */
     pcRdpgfxSurfaceCommand gdi_surface_command;
     mr_freerdp_h264_surface h264[MR_FREERDP_MAX_H264_SURFACES];
+    /* When a key frame was last asked for; 0 once one has been decoded. */
+    UINT64 key_frame_requested_at;
     /* ABI 6 MACRDPX: offered features, the open channel, and what the
      * server's HELLO agreed to (zero until it arrives). Worker only. */
     uint32_t macrdpx_caps;
@@ -2478,6 +2482,37 @@ static void mr_freerdp_h264_release_all(mr_freerdp_backend *backend)
     }
 }
 
+/* RDP has no "send a key frame" request. A server resumes output after
+ * Suppress Output with a picture the client can decode on its own, as it
+ * must for a window restored from minimised, so output is suppressed and at
+ * once allowed again. Without this a decoder that lost its references (the
+ * system takes VideoToolbox from a backgrounded app) stays blank or frozen
+ * until the screen changes enough for the encoder to choose a key frame. */
+static void mr_freerdp_request_key_frame(mr_freerdp_backend *backend, const gdiGfxSurface *surface)
+{
+    rdpContext *context = backend->context;
+    const UINT64 now = GetTickCount64();
+    RECTANGLE_16 area;
+    if (context == NULL || context->update == NULL || context->update->SuppressOutput == NULL) {
+        return;
+    }
+    if (backend->key_frame_requested_at != 0u &&
+        now - backend->key_frame_requested_at < MR_FREERDP_KEY_FRAME_RETRY_MS) {
+        return;
+    }
+    backend->key_frame_requested_at = now;
+    area.left = 0u;
+    area.top = 0u;
+    area.right = (UINT16)(surface->width > 0u ? surface->width - 1u : 0u);
+    area.bottom = (UINT16)(surface->height > 0u ? surface->height - 1u : 0u);
+    if (!context->update->SuppressOutput(context, 0, NULL) ||
+        !context->update->SuppressOutput(context, 1, &area)) {
+        WLog_WARN(MR_FREERDP_LOG_TAG, "could not ask the server for a key frame");
+        return;
+    }
+    WLog_INFO(MR_FREERDP_LOG_TAG, "asked the server for a key frame (surface %" PRIu16 ")", surface->surfaceId);
+}
+
 /* AVC420 goes to VideoToolbox; every other codec to gdi as before. The
  * update that follows mirrors gdi's own: the region is invalidated, and
  * drawn now when it arrived outside a frame. */
@@ -2528,13 +2563,26 @@ static UINT mr_freerdp_surface_command(RdpgfxClientContext *context, const RDPGF
             decoder, stream->data, stream->length, surface->data, surface->scanline,
             surface->width, surface->height,
             (const mr_h264_rect *)stream->meta.regionRects, stream->meta.numRegionRects);
-        if (decoded != MR_H264_OK) {
+        if (decoded == MR_H264_ERROR_DECODE || decoded == MR_H264_ERROR_NEEDS_KEY_FRAME) {
             /* As gdi does: a picture that cannot be decoded is skipped, not
-             * fatal; the server's next key frame repairs it. */
+             * fatal. The decoder then waits for a key frame, asked for here. */
+            if (decoded == MR_H264_ERROR_DECODE) {
+                WLog_WARN(MR_FREERDP_LOG_TAG,
+                          "H.264 picture skipped (VideoToolbox %" PRId32 "), codec %" PRIu16 ", %" PRIu32 " bytes",
+                          mr_h264_decoder_last_status(decoder), cmd->codecId, stream->length);
+            } else {
+                WLog_DBG(MR_FREERDP_LOG_TAG, "H.264 delta skipped until a key frame, %" PRIu32 " bytes",
+                         stream->length);
+            }
+            mr_freerdp_request_key_frame(backend, surface);
+            return CHANNEL_RC_OK;
+        }
+        if (decoded != MR_H264_OK) {
             WLog_WARN(MR_FREERDP_LOG_TAG, "H.264 picture skipped (%d), codec %" PRIu16 ", %" PRIu32 " bytes",
                       decoded, cmd->codecId, stream->length);
             return CHANNEL_RC_OK;
         }
+        backend->key_frame_requested_at = 0u;
         WLog_DBG(MR_FREERDP_LOG_TAG, "H.264 codec %" PRIu16 ": %" PRIu32 " rects into surface %" PRIu16 " %" PRIu32 "x%" PRIu32,
                  cmd->codecId, stream->meta.numRegionRects, surface->surfaceId, surface->width, surface->height);
     }

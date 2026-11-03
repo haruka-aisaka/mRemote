@@ -22,6 +22,9 @@ struct mr_h264_decoder {
     OSStatus picture_status;
     uint8_t *avcc;
     size_t avcc_capacity;
+    /* A new session has no reference pictures: only an IDR may come next. */
+    int awaiting_key_frame;
+    OSStatus last_status;
 };
 
 typedef struct mr_h264_nal {
@@ -131,7 +134,16 @@ static int mr_h264_make_session(mr_h264_decoder *decoder)
 
 mr_h264_decoder *mr_h264_decoder_new(void)
 {
-    return (mr_h264_decoder *)calloc(1u, sizeof(mr_h264_decoder));
+    mr_h264_decoder *decoder = (mr_h264_decoder *)calloc(1u, sizeof(mr_h264_decoder));
+    if (decoder != NULL) {
+        decoder->awaiting_key_frame = 1;
+    }
+    return decoder;
+}
+
+int32_t mr_h264_decoder_last_status(const mr_h264_decoder *decoder)
+{
+    return decoder != NULL ? (int32_t)decoder->last_status : 0;
 }
 
 void mr_h264_decoder_free(mr_h264_decoder *decoder)
@@ -212,6 +224,7 @@ int mr_h264_decoder_decode(
     size_t offset = 0u;
     size_t avcc_length = 0u;
     int parameters_changed = 0;
+    int has_key_frame = 0;
     mr_h264_nal nal;
     CMBlockBufferRef block = NULL;
     CMSampleBufferRef sample = NULL;
@@ -239,6 +252,9 @@ int mr_h264_decoder_decode(
         } else if (type == 8u) {
             parameters_changed |= mr_h264_remember(decoder->pps, &decoder->pps_length, &nal);
         } else if (type != 9u) {
+            if (type == 5u) {
+                has_key_frame = 1;
+            }
             if (avcc_length + 4u + nal.length > decoder->avcc_capacity) {
                 return MR_H264_ERROR_MEMORY;
             }
@@ -258,9 +274,15 @@ int mr_h264_decoder_decode(
         if (made != MR_H264_OK) {
             return made;
         }
+        decoder->awaiting_key_frame = 1;
     }
     if (avcc_length == 0u) {
         return MR_H264_OK;
+    }
+    /* Decoding a delta without its references gives no picture at best and
+     * a smeared one at worst; the caller asks the server for a key frame. */
+    if (decoder->awaiting_key_frame && !has_key_frame) {
+        return MR_H264_ERROR_NEEDS_KEY_FRAME;
     }
 
     status = CMBlockBufferCreateWithMemoryBlock(
@@ -287,17 +309,21 @@ int mr_h264_decoder_decode(
     }
     decoder->picture_status = noErr;
     status = VTDecompressionSessionDecodeFrame(decoder->session, sample, 0, NULL, &info);
-    if (status == kVTInvalidSessionErr) {
-        /* The system takes decoders away from a backgrounded app; the next
-         * key frame starts a fresh one. */
-        mr_h264_reset_session(decoder);
-    } else if (status == noErr) {
+    if (status == noErr) {
         (void)VTDecompressionSessionWaitForAsynchronousFrames(decoder->session);
     }
     CFRelease(sample);
     if (status != noErr || decoder->picture_status != noErr || decoder->picture == NULL) {
+        /* The system takes decoders away from a backgrounded app, and says
+         * so either here or only in the output callback. Either way, and for
+         * any other failure, the session is not trusted again: a fresh one
+         * starts at the next key frame. */
+        decoder->last_status = status != noErr ? status : decoder->picture_status;
+        mr_h264_reset_session(decoder);
+        decoder->awaiting_key_frame = 1;
         return MR_H264_ERROR_DECODE;
     }
+    decoder->awaiting_key_frame = 0;
     mr_h264_copy_rects(
         decoder->picture, destination, destination_stride,
         destination_width, destination_height, rects, rect_count);

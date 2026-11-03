@@ -170,9 +170,87 @@ static int test_round_trip(void)
     return 1;
 }
 
+/* The offset of the first picture NAL unit's payload (past its header byte),
+ * skipping the parameter sets in front of it. */
+static size_t slice_payload(const uint8_t *bytes, size_t length)
+{
+    size_t index;
+    for (index = 0u; index + 4u < length; ++index) {
+        if (bytes[index] == 0u && bytes[index + 1u] == 0u && bytes[index + 2u] == 1u) {
+            const uint8_t type = bytes[index + 3u] & 0x1Fu;
+            if (type == 1u || type == 5u) {
+                return index + 4u;
+            }
+        }
+    }
+    return length;
+}
+
+/* A delta is never decoded without its references: not by a new decoder,
+ * and not after a failure has made the decoder start over. Either waits for
+ * the next key frame, and the surface is left alone until then. */
+static int test_a_delta_waits_for_a_key_frame(void)
+{
+    encoded stream;
+    mr_h264_decoder *decoder;
+    uint8_t *surface;
+    uint8_t *broken;
+    size_t payload;
+    size_t index;
+    const uint32_t stride = WIDTH * 4u;
+    const mr_h264_rect whole = { 0u, 0u, WIDTH, HEIGHT };
+    int frame;
+
+    CHECK(encode(&stream));
+    decoder = mr_h264_decoder_new();
+    CHECK(decoder != NULL);
+    surface = (uint8_t *)malloc(stride * HEIGHT);
+    CHECK(surface != NULL);
+
+    /* A new decoder: frame 1 is a delta. */
+    memset(surface, 0x55, stride * HEIGHT);
+    CHECK(mr_h264_decoder_decode(decoder, stream.bytes[1], stream.length[1],
+                                 surface, stride, WIDTH, HEIGHT, &whole, 1u) == MR_H264_ERROR_NEEDS_KEY_FRAME);
+    CHECK(surface[(HEIGHT / 2u) * stride + 4u * 4u] == 0x55u);
+    CHECK(mr_h264_decoder_decode(decoder, stream.bytes[0], stream.length[0],
+                                 surface, stride, WIDTH, HEIGHT, &whole, 1u) == MR_H264_OK);
+    CHECK(mr_h264_decoder_decode(decoder, stream.bytes[1], stream.length[1],
+                                 surface, stride, WIDTH, HEIGHT, &whole, 1u) == MR_H264_OK);
+
+    /* A delta VideoToolbox cannot decode: its slice is noise. */
+    broken = (uint8_t *)malloc(stream.length[2]);
+    CHECK(broken != NULL);
+    memcpy(broken, stream.bytes[2], stream.length[2]);
+    payload = slice_payload(broken, stream.length[2]);
+    CHECK(payload < stream.length[2]);
+    for (index = payload; index < stream.length[2]; ++index) {
+        broken[index] = (uint8_t)(0xFFu - (index * 37u));
+    }
+    CHECK(mr_h264_decoder_decode(decoder, broken, stream.length[2],
+                                 surface, stride, WIDTH, HEIGHT, &whole, 1u) == MR_H264_ERROR_DECODE);
+    CHECK(mr_h264_decoder_last_status(decoder) != 0);
+    /* After it, the next delta waits too, until a key frame. */
+    CHECK(mr_h264_decoder_decode(decoder, stream.bytes[3], stream.length[3],
+                                 surface, stride, WIDTH, HEIGHT, &whole, 1u) == MR_H264_ERROR_NEEDS_KEY_FRAME);
+    CHECK(mr_h264_decoder_decode(decoder, stream.bytes[0], stream.length[0],
+                                 surface, stride, WIDTH, HEIGHT, &whole, 1u) == MR_H264_OK);
+    CHECK(surface[(HEIGHT / 2u) * stride + 4u * 4u] < 80u);
+
+    mr_h264_decoder_free(decoder);
+    free(broken);
+    free(surface);
+    for (frame = 0; frame < FRAMES; ++frame) {
+        free(stream.bytes[frame]);
+    }
+    return 1;
+}
+
 int main(void)
 {
     if (!test_round_trip()) {
+        return 1;
+    }
+    if (!test_a_delta_waits_for_a_key_frame()) {
         return 1;
     }
     printf("h264 decoder tests passed\n");
