@@ -147,10 +147,12 @@ struct SessionWorkspaceView: View {
         )
         #endif
         .statusBarHidden()
-        .persistentSystemOverlays(.hidden)
-        // As in a game: the home indicator stays away while the deck's keys
+        // As in a game: the home indicator stays faint while the deck's keys
         // and pad are used up to the screen's edge, and a swipe up from it
-        // first shows the indicator, then a second goes home.
+        // first brings the indicator up, then a second goes home. Only the
+        // deferral, not also `.persistentSystemOverlays(.hidden)`: with the
+        // indicator hidden as well, an iPhone Duo went home on the first
+        // swipe (docs/changes/2026-11-03-deck-trackpad-and-home-bar.md).
         .defersSystemGestures(on: .bottom)
         // Only the presented session raises its challenge here; one waiting in
         // the background shows as 確認待ち in the list and the switcher.

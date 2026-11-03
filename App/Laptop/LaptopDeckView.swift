@@ -267,9 +267,9 @@ final class LaptopDeckView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // The home indicator is hidden while a session is up and its swipe
-        // deferred (SessionWorkspaceView), so the deck goes down to the
-        // screen's edge; the sides still keep clear of the corners.
+        // The home indicator's swipe is deferred while a session is up, which
+        // keeps the indicator faint (SessionWorkspaceView), so the deck goes
+        // down to the screen's edge; the sides still keep clear of the corners.
         var insets = safeAreaInsets
         insets.bottom = 0
         let area = bounds.inset(by: insets).insetBy(dx: 6, dy: 6)
