@@ -25,6 +25,10 @@ struct SessionWorkspaceView: View {
     /// A deck 自動 brought up was put away with the keyboard button: it stays
     /// away until the device is unfolded, without turning 自動 off.
     @State private var dismissesFoldedDeck = false
+    /// Whether the deck has a trackpad on screen - not when the arrangement
+    /// is keyboard only, nor when the deck is too short to hold one beside
+    /// the keys. Without it the desktop is the trackpad.
+    @State private var deckShowsPad = true
     @AppStorage(LaptopDeckArrangement.storageKey)
     private var deckArrangement = LaptopDeckArrangement.keyboardAboveTrackpad
     @AppStorage(TouchPointerMode.storageKey) private var touchMode = TouchPointerMode.direct
@@ -136,7 +140,7 @@ struct SessionWorkspaceView: View {
                 + "phase=\(scenePhase) accepts=\(model.acceptsInput) "
                 + "safeArea=\(Int(windowSafeArea.top)),\(Int(windowSafeArea.leading)),"
                 + "\(Int(windowSafeArea.bottom)),\(Int(windowSafeArea.trailing)) hinge=\(hingePosture)"
-                + " external=\(externalTakesDesktop)"
+                + " external=\(externalTakesDesktop) deckPad=\(deckShowsPad)"
         )
         #endif
         .statusBarHidden()
@@ -244,9 +248,10 @@ struct SessionWorkspaceView: View {
             VStack(spacing: 0) {
                 ZStack {
                     desktop(
-                        // The keyboard-only deck has no pad of its own, so the
-                        // desktop is its trackpad whatever touch mode is chosen.
-                        touchMode: showsDeck && !deckArrangement.hasTrackpad ? .trackpad : touchMode,
+                        // A deck with no pad of its own - keyboard only, or too
+                        // short for one - leaves the desktop to be its
+                        // trackpad whatever touch mode is chosen.
+                        touchMode: showsDeck && !deckShowsPad ? .trackpad : touchMode,
                         renderSizeOverride: layout.renderSizeOverride
                     )
                     // Inset by what the system reports for this device and
@@ -432,7 +437,8 @@ struct SessionWorkspaceView: View {
             capsLockRole: capsLockRole,
             showsTrackpadButtons: effectiveDeckPlatform == .mac ? showsMacTrackpadButtons : showsTrackpadButtons,
             platform: effectiveDeckPlatform,
-            isSplit: split
+            isSplit: split,
+            onPadVisibilityChange: { deckShowsPad = $0 }
         )
     }
 

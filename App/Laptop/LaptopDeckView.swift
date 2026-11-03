@@ -109,6 +109,11 @@ final class LaptopDeckView: UIView {
     private var repeatTimer: Timer?
     private let padTracker: TrackpadGestureTracker
 
+    /// Told whether the pad is on screen after a layout that changed it: a
+    /// deck too short for one leaves the desktop to be the trackpad.
+    var onPadVisibilityChange: ((Bool) -> Void)?
+    private var reportedPadVisible: Bool?
+
     init(
         layout: LaptopKeyboardLayout,
         arrangement: LaptopDeckArrangement,
@@ -150,7 +155,6 @@ final class LaptopDeckView: UIView {
             button.accessibilityIdentifier = identifier
             addSubview(button)
         }
-        applyArrangement()
     }
 
     required init?(coder: NSCoder) {
@@ -171,7 +175,6 @@ final class LaptopDeckView: UIView {
         guard newArrangement != arrangement else { return }
         releaseEverything()
         arrangement = newArrangement
-        applyArrangement()
         setNeedsLayout()
     }
 
@@ -194,17 +197,9 @@ final class LaptopDeckView: UIView {
         guard shows != showsTrackpadButtons else { return }
         releaseEverything()
         showsTrackpadButtons = shows
-        applyArrangement()
         setNeedsLayout()
     }
 
-    private var hasButtons: Bool { arrangement.hasTrackpad && showsTrackpadButtons }
-
-    private func applyArrangement() {
-        pad.isHidden = !arrangement.hasTrackpad
-        leftButton.isHidden = !hasButtons
-        rightButton.isHidden = !hasButtons
-    }
 
     /// Closing the gate lets go of everything, exactly as the surface does:
     /// a key or a button held across a menu or a session switch would stay
@@ -263,94 +258,59 @@ final class LaptopDeckView: UIView {
         let area = bounds.inset(by: safeAreaInsets).insetBy(dx: 6, dy: 6)
         guard area.width > 0, area.height > 0 else { return }
 
-        let spacing: CGFloat = 10
-        if isSplit {
-            layoutSplit(in: area, spacing: spacing)
-            return
-        }
-        let keyboardHeight: CGFloat
-        let keyboardY: CGFloat
-        let lower: CGRect
-        switch arrangement {
-        case .keyboardOnly:
-            // Keys taller than a thumb only make the reach longer, so the
-            // spare height goes above and below rather than into the keys.
-            keyboardHeight = min(area.height, 340)
-            keyboardY = area.midY - keyboardHeight / 2
-            lower = .zero
-        case .keyboardAboveTrackpad:
-            keyboardHeight = (area.height * 0.56).rounded()
-            keyboardY = area.minY
-            lower = CGRect(
-                x: area.minX,
-                y: keyboardY + keyboardHeight + spacing,
-                width: area.width,
-                height: area.height - keyboardHeight - spacing
-            )
-        case .trackpadAboveKeyboard:
-            keyboardHeight = (area.height * 0.56).rounded()
-            keyboardY = area.maxY - keyboardHeight
-            lower = CGRect(
-                x: area.minX,
-                y: area.minY,
-                width: area.width,
-                height: area.height - keyboardHeight - spacing
-            )
-        }
-        layoutKeys(in: CGRect(x: area.minX, y: keyboardY, width: area.width, height: keyboardHeight))
-        if arrangement.hasTrackpad {
-            layoutTrackpad(in: lower)
-        }
-    }
+        let halves = isSplit ? LaptopKeyboardHalves(layout) : nil
+        let geometry = LaptopDeckGeometry.layout(
+            in: area,
+            arrangement: arrangement,
+            rows: .init(heights: layout.rows.map(\.height), units: LaptopKeyboardLayout.unitsPerRow),
+            halfRows: halves.map { .init(heights: $0.left.map(\.height), units: $0.unitsPerHalf) },
+            hasButtons: showsTrackpadButtons
+        )
 
-    private func layoutKeys(in keyboard: CGRect) {
-        let unitWidth = keyboard.width / CGFloat(LaptopKeyboardLayout.unitsPerRow)
         keyFrames = []
         var parts: [String: [CGRect]] = [:]
-        layoutRows(layout.rows, in: keyboard, unitWidth: unitWidth, trailing: false, parts: &parts)
+        if let keyboard = geometry.keyboard {
+            layoutRows(
+                layout.rows,
+                in: keyboard,
+                unitWidth: keyboard.width / CGFloat(LaptopKeyboardLayout.unitsPerRow),
+                trailing: false,
+                parts: &parts
+            )
+        }
+        if let halves, let left = geometry.leftHalf, let right = geometry.rightHalf {
+            let unitWidth = left.width / CGFloat(halves.unitsPerHalf)
+            layoutRows(halves.left, in: left, unitWidth: unitWidth, trailing: false, parts: &parts)
+            layoutRows(halves.right, in: right, unitWidth: unitWidth, trailing: true, parts: &parts)
+        }
         for (id, rects) in parts {
             keyViews[id]?.setParts(rects)
         }
+
+        pad.isHidden = geometry.pad == nil
+        leftButton.isHidden = geometry.leftButton == nil
+        rightButton.isHidden = geometry.rightButton == nil
+        pad.frame = geometry.pad ?? .zero
+        leftButton.frame = geometry.leftButton ?? .zero
+        rightButton.frame = geometry.rightButton ?? .zero
+        reportPadVisibility(geometry.showsPad)
     }
 
-    /// The left half against the left edge and the right half against the
-    /// right, each row from the outside in, so the thumbs find the same keys
-    /// at the same reach; the trackpad, if any, between them.
-    private func layoutSplit(in area: CGRect, spacing: CGFloat) {
-        let halves = LaptopKeyboardHalves(layout)
-        let middleWidth = arrangement.hasTrackpad ? max(area.width * 0.24, 160) : area.width * 0.04
-        let halfWidth = (area.width - middleWidth - spacing * 2) / 2
-        let unitWidth = halfWidth / CGFloat(halves.unitsPerHalf)
-        // Keys taller than a thumb only make the reach longer.
-        let height = min(area.height, unitWidth * 5.6)
-        let keysY = area.maxY - height
-        keyFrames = []
-        var parts: [String: [CGRect]] = [:]
-        layoutRows(
-            halves.left,
-            in: CGRect(x: area.minX, y: keysY, width: halfWidth, height: height),
-            unitWidth: unitWidth,
-            trailing: false,
-            parts: &parts
-        )
-        layoutRows(
-            halves.right,
-            in: CGRect(x: area.maxX - halfWidth, y: keysY, width: halfWidth, height: height),
-            unitWidth: unitWidth,
-            trailing: true,
-            parts: &parts
-        )
-        for (id, rects) in parts {
-            keyViews[id]?.setParts(rects)
-        }
-        if arrangement.hasTrackpad {
-            layoutTrackpad(
-                in: CGRect(x: area.minX + halfWidth + spacing, y: area.minY, width: middleWidth, height: area.height),
-                fillsWidth: true
-            )
+    private func reportPadVisibility(_ visible: Bool) {
+        guard visible != reportedPadVisible else { return }
+        // A pad that went from under a finger lets go of what it held.
+        if reportedPadVisible != nil { releaseEverything() }
+        reportedPadVisible = visible
+        // After the layout pass: SwiftUI may be laying out when this runs.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.reportedPadVisible == visible else { return }
+            self.onPadVisibilityChange?(visible)
         }
     }
 
+    /// Each row from the leading edge, or - for the right half of a split
+    /// keyboard - from the trailing one, so the thumbs find the same keys at
+    /// the same reach.
     private func layoutRows(
         _ rows: [LaptopKeyboardRow],
         in keyboard: CGRect,
@@ -359,7 +319,7 @@ final class LaptopDeckView: UIView {
         parts: inout [String: [CGRect]]
     ) {
         let totalRowHeight = rows.reduce(0) { $0 + $1.height }
-        let gap: CGFloat = 4
+        let gap = LaptopDeckGeometry.rowGap
         let unitHeight = (keyboard.height - gap * CGFloat(rows.count - 1)) / CGFloat(totalRowHeight)
         var y = keyboard.minY
         for row in rows {
@@ -378,38 +338,13 @@ final class LaptopDeckView: UIView {
         }
     }
 
-    /// The pad with its two buttons below it, on the user's side, as on a
-    /// laptop: the buttons sit under the thumbs whichever way round the
-    /// keyboard is.
-    private func layoutTrackpad(in lower: CGRect, fillsWidth: Bool = false) {
-        let padWidth = fillsWidth ? lower.width : min(lower.width, max(lower.width * 0.72, 300))
-        let buttonHeight = hasButtons ? min(40, lower.height * 0.22) : 0
-        let padHeight = lower.height - (hasButtons ? buttonHeight + 6 : 0)
-        let padFrame = CGRect(
-            x: lower.midX - padWidth / 2,
-            y: lower.minY,
-            width: padWidth,
-            height: padHeight
-        )
-        pad.frame = padFrame
-        let buttonY = padFrame.maxY + 6
-        leftButton.frame = CGRect(x: padFrame.minX, y: buttonY, width: padWidth / 2 - 3, height: buttonHeight)
-        rightButton.frame = CGRect(
-            x: padFrame.midX + 3,
-            y: buttonY,
-            width: padWidth / 2 - 3,
-            height: buttonHeight
-        )
-    }
-
     private func region(at point: CGPoint) -> Region? {
         if let key = keyFrames.first(where: { $0.frame.contains(point) })?.key {
             return .key(key)
         }
-        guard arrangement.hasTrackpad else { return nil }
-        if hasButtons, leftButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.left) }
-        if hasButtons, rightButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.right) }
-        if pad.frame.insetBy(dx: -8, dy: -8).contains(point) { return .pad }
+        if !leftButton.isHidden, leftButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.left) }
+        if !rightButton.isHidden, rightButton.frame.insetBy(dx: -3, dy: -4).contains(point) { return .button(.right) }
+        if !pad.isHidden, pad.frame.insetBy(dx: -8, dy: -8).contains(point) { return .pad }
         return nil
     }
 
@@ -741,6 +676,8 @@ struct LaptopDeck: UIViewRepresentable {
     /// Only Windows hosts exist today; a Mac host's session will pass `.mac`.
     var platform: LaptopKeyboardPlatform = .windows
     var isSplit = false
+    /// Whether the pad is on screen: it goes when the deck is too short.
+    var onPadVisibilityChange: (Bool) -> Void = { _ in }
 
     func makeUIView(context: Context) -> LaptopDeckView {
         let view = LaptopDeckView(
@@ -751,6 +688,7 @@ struct LaptopDeck: UIViewRepresentable {
         view.setTrackpadButtons(showsTrackpadButtons)
         view.setSplit(isSplit)
         view.setInputEnabled(isInputEnabled)
+        view.onPadVisibilityChange = onPadVisibilityChange
         return view
     }
 
@@ -760,6 +698,7 @@ struct LaptopDeck: UIViewRepresentable {
         view.setTrackpadButtons(showsTrackpadButtons)
         view.setSplit(isSplit)
         view.setInputEnabled(isInputEnabled)
+        view.onPadVisibilityChange = onPadVisibilityChange
     }
 
     static func dismantleUIView(_ view: LaptopDeckView, coordinator: Coordinator) {
