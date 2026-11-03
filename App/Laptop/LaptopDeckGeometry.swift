@@ -70,14 +70,21 @@ struct LaptopDeckGeometry: Equatable {
     ///   - area: the deck less its safe area and margin.
     ///   - rows: the whole keyboard's rows.
     ///   - halfRows: the rows of one half, when the keyboard is split.
+    ///   - keysHidden: the keys put away so the pad takes the whole deck.
     static func layout(
         in area: CGRect,
         arrangement: LaptopDeckArrangement,
         rows: Rows,
         halfRows: Rows?,
+        keysHidden: Bool,
         hasButtons: Bool
     ) -> LaptopDeckGeometry {
         guard area.width > 0, area.height > 0 else { return LaptopDeckGeometry() }
+        if keysHidden {
+            var geometry = LaptopDeckGeometry()
+            geometry.placeTrackpad(in: area, hasButtons: hasButtons, fillsWidth: true)
+            return geometry
+        }
         if let halfRows {
             return split(in: area, arrangement: arrangement, halves: halfRows, hasButtons: hasButtons)
         }

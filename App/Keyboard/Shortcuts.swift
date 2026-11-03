@@ -10,36 +10,66 @@ enum DeckShortcutStrip {
 /// The user's shortcuts as a row of buttons along the top of the laptop
 /// deck, dark like the keys below.
 struct ShortcutStrip: View {
+    /// The button at the strip's leading end that puts the deck's keys away
+    /// so the trackpad takes the whole deck, and brings them back.
+    struct KeysToggle {
+        var keysHidden: Bool
+        var toggle: () -> Void
+    }
+
     let shortcuts: [KeyShortcut]
     let isEnabled: Bool
+    var keysToggle: KeysToggle?
     let send: (KeyShortcut) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(shortcuts) { shortcut in
-                    Button {
-                        send(shortcut)
-                    } label: {
-                        Text(shortcut.displayTitle)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .frame(height: DeckShortcutStrip.height - 8)
-                            .background(Color(white: 0.24), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint(shortcut.keysDescription)
-                    .accessibilityIdentifier("deck-shortcut-\(shortcut.keysDescription)")
+        HStack(spacing: 0) {
+            if let keysToggle {
+                // Outside the shortcuts' gate: moving the keys aside sends
+                // nothing, so it works while the session takes no input.
+                Button(action: keysToggle.toggle) {
+                    Image(systemName: keysToggle.keysHidden ? "keyboard" : "keyboard.chevron.compact.down")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: DeckShortcutStrip.height - 8)
+                        .background(Color(white: 0.3), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .frame(height: DeckShortcutStrip.height)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .padding(.leading, 6)
+                .accessibilityLabel(keysToggle.keysHidden
+                                    ? String(localized: "キーボードを表示")
+                                    : String(localized: "キーボードを隠してトラックパッドを広げる"))
+                .accessibilityIdentifier("deck-keys-toggle")
             }
-            .padding(.horizontal, 6)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(shortcuts) { shortcut in
+                        Button {
+                            send(shortcut)
+                        } label: {
+                            Text(shortcut.displayTitle)
+                                .font(.system(size: 13, weight: .medium))
+                                .lineLimit(1)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .frame(height: DeckShortcutStrip.height - 8)
+                                .background(Color(white: 0.24), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint(shortcut.keysDescription)
+                        .accessibilityIdentifier("deck-shortcut-\(shortcut.keysDescription)")
+                    }
+                }
+                .padding(.horizontal, 6)
+            }
+            .disabled(!isEnabled)
+            .opacity(isEnabled ? 1 : 0.5)
         }
         .frame(height: DeckShortcutStrip.height)
         .background(Color.black)
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.5)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deck-shortcut-strip")
     }
 }

@@ -25,6 +25,9 @@ struct SessionWorkspaceView: View {
     /// A deck 自動 brought up was put away with the keyboard button: it stays
     /// away until the device is unfolded, without turning 自動 off.
     @State private var dismissesFoldedDeck = false
+    /// The deck's keys put away so its trackpad takes the whole deck. Not
+    /// kept: the deck comes back with its keys each time it is shown.
+    @State private var deckKeysHidden = false
     /// Whether the deck has a trackpad on screen - not when the arrangement
     /// is keyboard only, nor when the deck is too short to hold one beside
     /// the keys. Without it the desktop is the trackpad.
@@ -140,7 +143,7 @@ struct SessionWorkspaceView: View {
                 + "phase=\(scenePhase) accepts=\(model.acceptsInput) "
                 + "safeArea=\(Int(windowSafeArea.top)),\(Int(windowSafeArea.leading)),"
                 + "\(Int(windowSafeArea.bottom)),\(Int(windowSafeArea.trailing)) hinge=\(hingePosture)"
-                + " external=\(externalTakesDesktop) deckPad=\(deckShowsPad)"
+                + " external=\(externalTakesDesktop) deckPad=\(deckShowsPad) deckKeysHidden=\(deckKeysHidden)"
         )
         #endif
         .statusBarHidden()
@@ -287,7 +290,7 @@ struct SessionWorkspaceView: View {
                         }
                         // Halves at the sides for the thumbs, on a screen wide
                         // enough to hold the device by them.
-                        laptopDeck(split: splitsDeck)
+                        laptopDeck(split: splitsDeck, sideInsets: safeArea)
                     }
                     .frame(height: layout.deckHeight)
                     // Placed where it ends up rather than slid in: the desktop
@@ -342,6 +345,10 @@ struct SessionWorkspaceView: View {
             model.setExtendedDisplaySize(nil)
         }
         .animation(.easeInOut(duration: 0.25), value: showsDeck)
+        .onChange(of: deck != .hidden) { _, shown in
+            // Shown again, the deck has its keys again.
+            if !shown { deckKeysHidden = false }
+        }
         .onChange(of: wantsDeck, initial: true) { _, wants in
             // The deck is the keyboard now; the system one would only cover it.
             if wants { model.softwareKeyboard.hide() }
@@ -414,14 +421,22 @@ struct SessionWorkspaceView: View {
         model.isMacHost ? KeyShortcut.macDefaults : shortcuts.shortcuts
     }
 
-    private func laptopDeck(split: Bool) -> some View {
+    /// - Parameter sideInsets: the screen's safe area, for a deck along an
+    ///   edge: the strip keeps clear of the island and the corners at the
+    ///   sides, as the keys do (LaptopDeckView). A floating panel is already
+    ///   inside it.
+    private func laptopDeck(split: Bool, sideInsets: EdgeInsets = EdgeInsets()) -> some View {
         VStack(spacing: 0) {
-            if showsDeckShortcuts, !deckShortcuts.isEmpty {
-                ShortcutStrip(
-                    shortcuts: deckShortcuts,
-                    isEnabled: model.acceptsInput && scenePhase == .active
-                ) { model.send($0) }
-            }
+            // Always there, for the button that puts the keys away; the
+            // shortcuts on it only when asked for.
+            ShortcutStrip(
+                shortcuts: showsDeckShortcuts ? deckShortcuts : [],
+                isEnabled: model.acceptsInput && scenePhase == .active,
+                keysToggle: .init(keysHidden: deckKeysHidden) { deckKeysHidden.toggle() }
+            ) { model.send($0) }
+            .padding(.leading, sideInsets.leading)
+            .padding(.trailing, sideInsets.trailing)
+            .background(Color.black)
             laptopKeys(split: split)
         }
     }
@@ -438,6 +453,7 @@ struct SessionWorkspaceView: View {
             showsTrackpadButtons: effectiveDeckPlatform == .mac ? showsMacTrackpadButtons : showsTrackpadButtons,
             platform: effectiveDeckPlatform,
             isSplit: split,
+            keysHidden: deckKeysHidden,
             onPadVisibilityChange: { deckShowsPad = $0 }
         )
     }

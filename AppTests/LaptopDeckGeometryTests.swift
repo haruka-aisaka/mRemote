@@ -13,6 +13,7 @@ final class LaptopDeckGeometryTests: XCTestCase {
         _ size: CGSize,
         _ arrangement: LaptopDeckArrangement = .keyboardAboveTrackpad,
         split: Bool = false,
+        keysHidden: Bool = false,
         buttons: Bool = true
     ) -> LaptopDeckGeometry {
         LaptopDeckGeometry.layout(
@@ -20,6 +21,7 @@ final class LaptopDeckGeometryTests: XCTestCase {
             arrangement: arrangement,
             rows: rows,
             halfRows: split ? halves : nil,
+            keysHidden: keysHidden,
             hasButtons: buttons
         )
     }
@@ -95,6 +97,20 @@ final class LaptopDeckGeometryTests: XCTestCase {
         let keyboard = try XCTUnwrap(geometry.keyboard)
         XCTAssertEqual(keyboard.width, 380)
         XCTAssertEqual(keyboard.midY, 306, accuracy: 0.001, "in the middle")
+    }
+
+    func testKeysPutAwayLeaveTheWholeDeckToThePad() throws {
+        for arrangement in LaptopDeckArrangement.allCases {
+            for split in [false, true] {
+                let geometry = layout(CGSize(width: 840, height: 140), arrangement, split: split, keysHidden: true)
+                XCTAssertNil(geometry.keyboard)
+                XCTAssertNil(geometry.leftHalf)
+                let pad = try XCTUnwrap(geometry.pad)
+                XCTAssertEqual(pad.width, 840)
+                XCTAssertEqual(pad.minY, 6)
+                XCTAssertEqual(try XCTUnwrap(geometry.rightButton).maxX, 846, accuracy: 0.001)
+            }
+        }
     }
 
     func testSplitHalvesKeepSquareKeysWithThePadBetween() throws {

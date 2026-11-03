@@ -92,6 +92,8 @@ final class LaptopDeckView: UIView {
     /// The keys in two halves at the sides with the trackpad between, for
     /// thumbs on a wide screen.
     private var isSplit = false
+    /// The keys put away, so the pad takes the whole deck.
+    private var keysHidden = false
     private var composer = LaptopKeyboardComposer()
     private var isInputEnabled = false
 
@@ -200,6 +202,15 @@ final class LaptopDeckView: UIView {
         setNeedsLayout()
     }
 
+    /// Puts the keys away or brings them back. A key held, or a modifier
+    /// latched, as they go would stay down on the host, so all are let go.
+    func setKeysHidden(_ hidden: Bool) {
+        guard hidden != keysHidden else { return }
+        releaseEverything()
+        keysHidden = hidden
+        keyViews.values.forEach { $0.isHidden = hidden }
+        setNeedsLayout()
+    }
 
     /// Closing the gate lets go of everything, exactly as the surface does:
     /// a key or a button held across a menu or a session switch would stay
@@ -247,6 +258,7 @@ final class LaptopDeckView: UIView {
             let view = KeyCapView(key: key) { [weak self] key in
                 self?.accessibilityTap(key)
             }
+            view.isHidden = keysHidden
             keyViews[key.id] = view
             addSubview(view)
         }
@@ -264,6 +276,7 @@ final class LaptopDeckView: UIView {
             arrangement: arrangement,
             rows: .init(heights: layout.rows.map(\.height), units: LaptopKeyboardLayout.unitsPerRow),
             halfRows: halves.map { .init(heights: $0.left.map(\.height), units: $0.unitsPerHalf) },
+            keysHidden: keysHidden,
             hasButtons: showsTrackpadButtons
         )
 
@@ -676,6 +689,7 @@ struct LaptopDeck: UIViewRepresentable {
     /// Only Windows hosts exist today; a Mac host's session will pass `.mac`.
     var platform: LaptopKeyboardPlatform = .windows
     var isSplit = false
+    var keysHidden = false
     /// Whether the pad is on screen: it goes when the deck is too short.
     var onPadVisibilityChange: (Bool) -> Void = { _ in }
 
@@ -687,6 +701,7 @@ struct LaptopDeck: UIViewRepresentable {
         )
         view.setTrackpadButtons(showsTrackpadButtons)
         view.setSplit(isSplit)
+        view.setKeysHidden(keysHidden)
         view.setInputEnabled(isInputEnabled)
         view.onPadVisibilityChange = onPadVisibilityChange
         return view
@@ -697,6 +712,7 @@ struct LaptopDeck: UIViewRepresentable {
         view.setArrangement(arrangement)
         view.setTrackpadButtons(showsTrackpadButtons)
         view.setSplit(isSplit)
+        view.setKeysHidden(keysHidden)
         view.setInputEnabled(isInputEnabled)
         view.onPadVisibilityChange = onPadVisibilityChange
     }
