@@ -596,7 +596,23 @@ async function test(name: string, title: string, body: () => Promise<string | vo
 
 async function productionInUse(): Promise<boolean> {
   const out = await run("netstat", ["-anp", "tcp"], false);
-  return /\.3389\s+\S+\s+ESTABLISHED/.test(out);
+  // Deno から起動した netstat は、何も返さないことがある（2026-11 の macOS で、シェルからなら見える）。
+  // 待ち受けが見えているときだけ netstat を信じ、見えなければ本番サーバのログで確かめる
+  if (/\.3389\s+\S+\s+LISTEN/.test(out)) return /\.3389\s+\S+\s+ESTABLISHED/.test(out);
+  return productionLogSaysConnected();
+}
+
+/** 本番サーバのログで、最後の出来事が接続なら使用中とみなす（切断の行が無いまま止まった接続も使用中に数える） */
+async function productionLogSaysConnected(): Promise<boolean> {
+  const path = `${HOME}/Library/Logs/macos-rdp-agent.error.log`;
+  let text: string;
+  try {
+    text = await Deno.readTextFile(path);
+  } catch {
+    throw new Error(`本番のサーバに接続中のクライアントがいるか確かめられません（netstat が空で、${path} も読めない）。--force で無視`);
+  }
+  const events = text.split("\n").filter((l) => /client connected from|session torn down for/.test(l));
+  return events.at(-1)?.includes("client connected from") ?? false;
 }
 
 async function main() {
