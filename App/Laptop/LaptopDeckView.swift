@@ -226,7 +226,10 @@ final class LaptopDeckView: UIView {
 
     func releaseEverything() {
         stopRepeat()
-        channel.surface?.sendLaptopKeys(composer.releaseAll())
+        // Released whether or not there is a surface to tell: written as an
+        // argument of the optional call, it would not run without one.
+        let released = composer.releaseAll()
+        channel.surface?.sendLaptopKeys(released)
         for case .button(let button) in regions.values {
             channel.surface?.setLaptopButton(button, pressed: false)
         }
@@ -494,7 +497,8 @@ final class LaptopDeckView: UIView {
             return false
         }
         if !stillHeld {
-            channel.surface?.sendLaptopKeys(composer.touchUp(key, heldFor: heldFor))
+            let events = composer.touchUp(key, heldFor: heldFor)
+            channel.surface?.sendLaptopKeys(events)
         }
         refreshKeys()
     }
@@ -526,8 +530,10 @@ final class LaptopDeckView: UIView {
 
     private func accessibilityTap(_ key: LaptopKey) {
         guard isInputEnabled else { return }
-        channel.surface?.sendLaptopKeys(composer.touchDown(key))
-        channel.surface?.sendLaptopKeys(composer.touchUp(key))
+        let down = composer.touchDown(key)
+        channel.surface?.sendLaptopKeys(down)
+        let up = composer.touchUp(key)
+        channel.surface?.sendLaptopKeys(up)
         refreshKeys()
     }
 
