@@ -132,6 +132,10 @@ final class ChannelTests: XCTestCase {
         let fake = try XCTUnwrap(found as? FakeRemoteSession)
         // Keep the environment alive for the test's duration.
         retained = environment
+        // The state arrives as an event: clipboard actions are refused until
+        // it does, and a busy suite can get here first.
+        await waitUntil { model.state == .connected }
+        XCTAssertEqual(model.state, .connected)
         return (model, fake)
     }
 

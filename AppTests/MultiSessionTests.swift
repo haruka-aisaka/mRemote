@@ -48,7 +48,9 @@ final class MultiSessionTests: XCTestCase {
         let labModel = try XCTUnwrap(environment.runningSession(for: lab))
         XCTAssertTrue(labModel.isFocused)
         XCTAssertFalse(officeModel.isFocused)
-        // Only the focused session may take input.
+        // Only the focused session may take input. Its state arrives as an
+        // event, so a busy suite can get here before it does.
+        await waitUntil { labModel.acceptsInput }
         XCTAssertTrue(labModel.acceptsInput)
         XCTAssertFalse(officeModel.acceptsInput)
 
