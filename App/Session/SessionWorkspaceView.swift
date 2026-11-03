@@ -148,6 +148,10 @@ struct SessionWorkspaceView: View {
         #endif
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+        // As in a game: the home indicator stays away while the deck's keys
+        // and pad are used up to the screen's edge, and a swipe up from it
+        // first shows the indicator, then a second goes home.
+        .defersSystemGestures(on: .bottom)
         // Only the presented session raises its challenge here; one waiting in
         // the background shows as 確認待ち in the list and the switcher.
         .sheet(item: challengeBinding) { identified in

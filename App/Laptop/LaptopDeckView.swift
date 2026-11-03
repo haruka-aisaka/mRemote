@@ -267,7 +267,12 @@ final class LaptopDeckView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let area = bounds.inset(by: safeAreaInsets).insetBy(dx: 6, dy: 6)
+        // The home indicator is hidden while a session is up and its swipe
+        // deferred (SessionWorkspaceView), so the deck goes down to the
+        // screen's edge; the sides still keep clear of the corners.
+        var insets = safeAreaInsets
+        insets.bottom = 0
+        let area = bounds.inset(by: insets).insetBy(dx: 6, dy: 6)
         guard area.width > 0, area.height > 0 else { return }
 
         let halves = isSplit ? LaptopKeyboardHalves(layout) : nil
