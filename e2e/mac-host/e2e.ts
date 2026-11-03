@@ -11,6 +11,7 @@
  *   settings  表示倍率・解像度・画質を覚えて次の接続に引き継ぐ（約 25 分）
  *   presets   解像度の候補（約 15 分）
  *   saver     無音のときの音声・省データ（約 15 分）
+ *   alive     応答しなくなったアプリの接続をサーバが切る（約 10 分）
  *   full      全部
  * どの組も、最初に connect（接続先を作って接続する）を流す。
  *
@@ -60,6 +61,7 @@ const SUITES: Record<string, string[]> = {
     "saver-silence", "saver-always", "saver-moving", "saver-never", "saver-auto", "saver-unscaled",
     "saver-switch-audio", "saver-nodisp",
   ],
+  alive: ["alive-foreground", "alive-background", "alive-off"],
 };
 function selectedTests(): string[] | null {
   if (args.includes("--only")) return args[args.indexOf("--only") + 1].split(",");
@@ -393,6 +395,42 @@ async function startServer(extra: string[] = []) {
     "run", "-A", `${SERVER}/tests/e2e/e2e.ts`, "--serve", "--keep", "120", "--env", "RDP_AUDIO_LOCAL=0", ...extra,
   ]);
 }
+
+/** テスト用サーバのログに、この文が何回出たか */
+async function serverLogCount(text: string): Promise<number> {
+  const log = await Deno.readTextFile(`${SERVER_WORK}/server.log`).catch(() => "");
+  return log.split("\n").filter((l) => l.includes(text)).length;
+}
+const QUIET = "the client has gone quiet; disconnecting";
+
+/**
+ * ホームに戻し、iOS がするようにアプリを止める。シミュレータは裏に回ったアプリを止めず、
+ * ALIVE も送り続けるので、プロセスを SIGSTOP で止めて代わりにする（実機は約 30 秒の猶予のあと止まる）。
+ * 返した関数で再開する。テストが途中で失敗しても必ず呼ぶこと。
+ *
+ * UI 操作役（LiveRDPUITests）はコマンドを待つ間もアプリに問い合わせ、止まったアプリでは時間切れで落ちる。
+ * そこで止める間は sleep コマンドで休ませる。quietSeconds 以内に再開すること（再開後、休み明けまで待つ）。
+ */
+async function sendAppToBackground(app: App, quietSeconds: number): Promise<() => Promise<void>> {
+  await app.cmd("home");
+  const quiet = app.cmd(`sleep ${quietSeconds}`, (quietSeconds + 60) * 1000);
+  await sleep(1000);
+  const sim = await simulatorId();
+  const found = await run("pgrep", ["-f", `${sim}/data/Containers/Bundle/Application/[^/]+/mRemote\\.app/mRemote$`], false);
+  const pid = Number(found.trim().split("\n")[0]);
+  expect(pid > 0, "シミュレータの mRemote のプロセスが見つからない", found);
+  await run("kill", ["-STOP", String(pid)]);
+  log(`mRemote（${pid}）を止めた`);
+  let resumed = false;
+  return async () => {
+    if (resumed) return;
+    resumed = true;
+    await run("kill", ["-CONT", String(pid)], false);
+    log(`mRemote（${pid}）を再開した`);
+    await quiet;
+  };
+}
+const CONNECTED = "client connected from";
 
 async function stopServer() {
   hideTarget();
@@ -1303,6 +1341,80 @@ async function main() {
       await stopServer();
       await startServer();
       return "2848×2004 のまま";
+    });
+
+    // ── 応答しなくなったアプリ（docs/changes/2026-11-03-disconnect-unresponsive-client.md）──
+    // 本番の 20 分の代わりに 90 秒で切るサーバで確かめる。サーバは最後に届いた ALIVE から数えるので、
+    // 止めてから切られるまでは「時間 − ALIVE の間隔（30 秒）」から「時間」まで。
+
+    const aliveTimeout = 90;
+    const aliveInterval = 30;
+
+    await test("alive-foreground", "前面に出したままなら、何もしなくても時間を過ぎて切れない", async () => {
+      await disconnectToList(app);
+      await stopServer();
+      await startServer(["--env", `RDP_CLIENT_ALIVE_TIMEOUT=${aliveTimeout}`]);
+      await openProfile(app, PROFILE);
+      const quiet = await serverLogCount(QUIET);
+      await sleep((aliveTimeout + 30) * 1000);
+      expect((await serverLogCount(QUIET)) === quiet, "前面なのにサーバが切った");
+      expect((await app.cmd("exists session-status")) === "exists=false", "接続が切れた");
+      return `${aliveTimeout + 30} 秒つながったまま`;
+    });
+
+    await test("alive-background", "ホームに戻して時間を過ぎるとサーバが切り、戻ると自動でつなぎ直して操作できる", async () => {
+      await disconnectToList(app);
+      await stopServer();
+      await startServer(["--env", `RDP_CLIENT_ALIVE_TIMEOUT=${aliveTimeout}`]);
+      await openProfile(app, PROFILE);
+      // Mac の画面が動き続け、止まったアプリへの送信が詰まっても切れること
+      await showTarget(true);
+      const quiet = await serverLogCount(QUIET);
+      const connected = await serverLogCount(CONNECTED);
+      const started = Date.now();
+      const resume = await sendAppToBackground(app, aliveTimeout + 40);
+      let after: number;
+      try {
+        await waitFor("サーバが切る", async () => (await serverLogCount(QUIET)) > quiet, (aliveTimeout + 30) * 1000);
+        after = Math.round((Date.now() - started) / 1000);
+      } finally {
+        await resume();
+        await showTarget();
+      }
+      expect(after >= aliveTimeout - aliveInterval - 2, "時間より早く切られた", { after });
+      expect((await app.cmd("activate", 60000)) === "ok", "アプリが前面に戻らない");
+      await waitFor("自動の再接続", async () => (await serverLogCount(CONNECTED)) > connected, 60000);
+      expect((await app.cmd("connected 60", 120000)) === "ok", "再接続のあと画面が出ない");
+      await sleep(2000);
+      const s = await shot(app, "alive-back");
+      const click = await tapAt(app, s, 0.4, 0.6);
+      return `${after} 秒で切断・戻ると再接続・タップ ${click}`;
+    });
+
+    await test("alive-off", "0 にすると、ホームに戻して時間を過ぎても切れず、戻ればそのまま使える", async () => {
+      await disconnectToList(app);
+      await stopServer();
+      await startServer(["--env", "RDP_CLIENT_ALIVE_TIMEOUT=0"]);
+      await openProfile(app, PROFILE);
+      const quiet = await serverLogCount(QUIET);
+      const connected = await serverLogCount(CONNECTED);
+      const resume = await sendAppToBackground(app, aliveTimeout + 40);
+      try {
+        await sleep((aliveTimeout + 30) * 1000);
+      } finally {
+        await resume();
+      }
+      expect((await serverLogCount(QUIET)) === quiet, "0 なのにサーバが切った");
+      expect((await app.cmd("activate", 60000)) === "ok", "アプリが前面に戻らない");
+      await sleep(5000);
+      expect((await serverLogCount(CONNECTED)) === connected, "つなぎ直しになった（切れていた）");
+      expect((await app.cmd("exists session-status")) === "exists=false", "接続が切れた");
+      const s = await shot(app, "alive-off-back");
+      const click = await tapAt(app, s, 0.4, 0.6);
+      await disconnectToList(app);
+      await stopServer();
+      await startServer();
+      return `切れずに続く・タップ ${click}`;
     });
   } finally {
     await app.end();

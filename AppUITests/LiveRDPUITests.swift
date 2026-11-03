@@ -325,6 +325,13 @@ final class LiveRDPUITests: XCTestCase {
             button.tap()
         case "terminate":
             app.terminate()
+        case "home":
+            // To the home screen: the app goes to the background and is
+            // suspended, as when the user leaves it.
+            XCUIDevice.shared.press(.home)
+        case "activate":
+            app.activate()
+            guard app.wait(for: .runningForeground, timeout: 20) else { return "not foreground" }
         case "launch":
             app.launch()
             guard element("profile-list").waitForExistence(timeout: 10)
